@@ -1,0 +1,52 @@
+name: poultrypro
+description: "PoultryPro - Poultry Farm Management App"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Sharing & File Access
+  share_plus: ^7.2.1
+  path_provider: ^2.1.2
+
+  # PDF Generation & Printing
+  pdf: ^3.11.1
+  printing: ^5.13.1
+
+  # Firebase
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_storage: ^12.3.2
+
+  # State Management
+  get: ^4.6.6
+
+  # UI
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
+
+  # Network & APIs
+  http: ^1.1.0
+
+  # Multimedia
+  image_picker: ^1.0.7
+
+  # Utilities
+  intl: ^0.19.0
+  shared_preferences: ^2.3.3
+  uuid: ^4.5.1
+  google_ml_kit: ^0.21.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

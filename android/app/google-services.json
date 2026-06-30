@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "778847172278",
+    "project_id": "poultrypro-23f36",
+    "storage_bucket": "poultrypro-23f36.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:778847172278:android:d57dba2d9f202fc5475817",
+        "android_client_info": {
+          "package_name": "com.Tracko.poultrypro"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDJJ8AhmkoUd5nYzSKdSk4JGGCNnhneLPY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:778847172278:android:d2c2516c91da59ac475817",
+        "android_client_info": {
+          "package_name": "com.example.poultrypro"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDJJ8AhmkoUd5nYzSKdSk4JGGCNnhneLPY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

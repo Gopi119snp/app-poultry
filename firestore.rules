@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userCompanyId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId;
+    }
+
+    function belongsToCompany(companyId) {
+      return isSignedIn() && userCompanyId() == companyId;
+    }
+
+    // Login routing — authenticated users read their lookup entry
+    match /phone_lookup/{phone} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Auth uid → company mapping
+    match /users/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create, update: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Company profile
+    match /companies/{companyId} {
+      allow read, write: if belongsToCompany(companyId)
+        || (isSignedIn() && request.auth.uid == companyId);
+
+      match /data/{docId} {
+        allow read, write: if belongsToCompany(companyId)
+          || (isSignedIn() && request.auth.uid == companyId);
+      }
+    }
+  }
+}
