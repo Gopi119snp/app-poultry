@@ -2565,6 +2565,10 @@ class FeedHistoryScreen extends StatefulWidget {
 
 class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
   List<Map<String, dynamic>> _entries = [];
+  // lotName -> {S, G, F} sold bags via private sales
+  Map<String, Map<String, double>> _soldPerLot = {};
+  // lotName -> list of private sale entries
+  Map<String, List<Map<String, dynamic>>> _privateSalesPerLot = {};
   bool _isLoading = true;
 
   @override
@@ -2575,6 +2579,8 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
 
   Future<void> _loadHistory() async {
     setState(() => _isLoading = true);
+
+    // 1. Purchase lots load karo
     final String? jsonStr =
         await CompanyStore.instance.getString('feedPurchaseHistory');
     List<Map<String, dynamic>> loaded = [];
@@ -2584,15 +2590,43 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
         loaded = raw.map((e) => Map<String, dynamic>.from(e)).toList();
       } catch (_) {}
     }
+
+    // 2. Feed private sales load karo (sales_screen se)
+    final String? salesJson =
+        await CompanyStore.instance.getString('feedSalesHistory');
+    Map<String, Map<String, double>> soldPerLot = {};
+    Map<String, List<Map<String, dynamic>>> privateSalesPerLot = {};
+    if (salesJson != null) {
+      try {
+        final List<dynamic> rawSales = json.decode(salesJson);
+        for (final sale in rawSales) {
+          final String lotName = sale['lotName']?.toString() ?? '';
+          if (lotName.isEmpty) continue;
+          soldPerLot[lotName] ??= {'S': 0.0, 'G': 0.0, 'F': 0.0};
+          soldPerLot[lotName]!['S'] = soldPerLot[lotName]!['S']! +
+              ((sale['starter']?['qty'] as num?)?.toDouble() ?? 0.0);
+          soldPerLot[lotName]!['G'] = soldPerLot[lotName]!['G']! +
+              ((sale['grower']?['qty'] as num?)?.toDouble() ?? 0.0);
+          soldPerLot[lotName]!['F'] = soldPerLot[lotName]!['F']! +
+              ((sale['finisher']?['qty'] as num?)?.toDouble() ?? 0.0);
+          privateSalesPerLot[lotName] ??= [];
+          privateSalesPerLot[lotName]!
+              .add(Map<String, dynamic>.from(sale as Map));
+        }
+      } catch (_) {}
+    }
+
     if (mounted) {
       setState(() {
         _entries = loaded;
+        _soldPerLot = soldPerLot;
+        _privateSalesPerLot = privateSalesPerLot;
         _isLoading = false;
       });
     }
   }
 
-  // Har type ke liye ab tak kitni qty allocate ho chuki hai
+  // Farmers ko allocate ho chuki qty (dispatch)
   Map<String, double> _allocatedSoFar(Map<String, dynamic> entry) {
     final allocs = List<Map<String, dynamic>>.from(
       (entry['allocations'] as List<dynamic>?)
@@ -2667,23 +2701,32 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
                         itemBuilder: (context, index) {
                           final entry = _entries[index];
                           final String company = entry['company']?.toString() ?? '-';
-                          final double sBags =
-                              (entry['starter']?['bags'] as num?)?.toDouble() ?? 0.0;
-                          final double gBags =
-                              (entry['grower']?['bags'] as num?)?.toDouble() ?? 0.0;
-                          final double fBags =
-                              (entry['finisher']?['bags'] as num?)?.toDouble() ?? 0.0;
-                          final double grandTotal =
-                              (entry['grandTotal'] as num?)?.toDouble() ?? 0.0;
+                          final String addedByName = entry['addedByName']?.toString() ?? '';
+                          final String addedByRole = entry['addedByRole']?.toString() ?? '';
+                          final String lotDate = entry['date']?.toString() ?? '';
+
+                          final double sBags = (entry['starter']?['bags'] as num?)?.toDouble() ?? 0.0;
+                          final double gBags = (entry['grower']?['bags'] as num?)?.toDouble() ?? 0.0;
+                          final double fBags = (entry['finisher']?['bags'] as num?)?.toDouble() ?? 0.0;
+                          final double grandTotal = (entry['grandTotal'] as num?)?.toDouble() ?? 0.0;
+
                           final allocs = List<Map<String, dynamic>>.from(
                             (entry['allocations'] as List<dynamic>?)
                                     ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
                                 [],
                           );
+
+                          // Allocated to farmers
                           final allocatedSoFar = _allocatedSoFar(entry);
-                          final double sLeft = sBags - (allocatedSoFar['S'] ?? 0);
-                          final double gLeft = gBags - (allocatedSoFar['G'] ?? 0);
-                          final double fLeft = fBags - (allocatedSoFar['F'] ?? 0);
+                          // Sold via private sales
+                          final soldSoFar = _soldPerLot[company] ?? {'S': 0.0, 'G': 0.0, 'F': 0.0};
+                          final List<Map<String, dynamic>> privateSales =
+                              _privateSalesPerLot[company] ?? [];
+
+                          // Remaining = purchased - farmer allocated - private sold
+                          final double sLeft = sBags - (allocatedSoFar['S'] ?? 0) - (soldSoFar['S'] ?? 0);
+                          final double gLeft = gBags - (allocatedSoFar['G'] ?? 0) - (soldSoFar['G'] ?? 0);
+                          final double fLeft = fBags - (allocatedSoFar['F'] ?? 0) - (soldSoFar['F'] ?? 0);
                           final bool anyLeft = sLeft > 0 || gLeft > 0 || fLeft > 0;
 
                           return Container(
@@ -2719,10 +2762,26 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
                                                     fontSize: 14,
                                                     color: Colors.blue.shade900)),
                                             Text(
-                                              'S: ${sBags.toStringAsFixed(0)} | G: ${gBags.toStringAsFixed(0)} | F: ${fBags.toStringAsFixed(0)}',
-                                              style: const TextStyle(
-                                                  fontSize: 12, color: Colors.black54),
+                                              'S: ${sBags.toStringAsFixed(0)} | G: ${gBags.toStringAsFixed(0)} | F: ${fBags.toStringAsFixed(0)} Bag',
+                                              style: const TextStyle(fontSize: 12, color: Colors.black54),
                                             ),
+                                            Text(
+                                              'Bacha: S ${sLeft.clamp(0, double.infinity).toStringAsFixed(0)} | G ${gLeft.clamp(0, double.infinity).toStringAsFixed(0)} | F ${fLeft.clamp(0, double.infinity).toStringAsFixed(0)} Bag',
+                                              style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: anyLeft ? Colors.green.shade700 : Colors.grey),
+                                            ),
+                                            if (addedByName.isNotEmpty)
+                                              Text(
+                                                '👤 ${addedByRole.isNotEmpty ? "$addedByRole: " : ""}$addedByName',
+                                                style: const TextStyle(fontSize: 11, color: Colors.black54),
+                                              ),
+                                            if (lotDate.isNotEmpty)
+                                              Text(
+                                                '🕒 ${formatHistoryDateTime(lotDate)}',
+                                                style: const TextStyle(fontSize: 11, color: Colors.black45),
+                                              ),
                                           ],
                                         ),
                                       ),
@@ -2735,14 +2794,14 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
                                   ),
                                 ),
 
-                                // ── Allocation List ──
+                                // ── Farmer Allocation List ──
                                 if (allocs.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text('Allocations:',
+                                        Text('🧑 Farmer Allocations:',
                                             style: TextStyle(
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.bold,
@@ -2769,31 +2828,82 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
                                               decoration: BoxDecoration(
                                                 color: Colors.blue.shade50,
                                                 borderRadius: BorderRadius.circular(8),
-                                                border:
-                                                    Border.all(color: Colors.blue.shade200),
+                                                border: Border.all(color: Colors.blue.shade200),
                                               ),
                                               child: Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.spaceBetween,
+                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                 children: [
                                                   Expanded(
                                                     child: Text(
                                                       '🧑 ${a['farmerName'] ?? '-'}',
                                                       overflow: TextOverflow.ellipsis,
                                                       style: const TextStyle(
-                                                          fontSize: 12,
-                                                          fontWeight: FontWeight.w600),
+                                                          fontSize: 12, fontWeight: FontWeight.w600),
                                                     ),
                                                   ),
                                                   Text(parts.isEmpty ? '-' : parts,
                                                       style: const TextStyle(
-                                                          fontSize: 11,
-                                                          fontWeight: FontWeight.bold)),
+                                                          fontSize: 11, fontWeight: FontWeight.bold)),
                                                   const SizedBox(width: 6),
                                                   Icon(Icons.chevron_right_rounded,
                                                       size: 16, color: Colors.grey.shade500),
                                                 ],
                                               ),
+                                            ),
+                                          );
+                                        }),
+                                      ],
+                                    ),
+                                  ),
+
+                                // ── Private Sales Section (read-only, from sales_screen) ──
+                                if (privateSales.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('🛒 Private Sales:',
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.grey.shade700)),
+                                        const SizedBox(height: 6),
+                                        ...privateSales.map((sale) {
+                                          final parts = [
+                                            if (((sale['starter']?['qty'] as num?) ?? 0) > 0)
+                                              'S: ${(sale['starter']!['qty'] as num).toStringAsFixed(0)}',
+                                            if (((sale['grower']?['qty'] as num?) ?? 0) > 0)
+                                              'G: ${(sale['grower']!['qty'] as num).toStringAsFixed(0)}',
+                                            if (((sale['finisher']?['qty'] as num?) ?? 0) > 0)
+                                              'F: ${(sale['finisher']!['qty'] as num).toStringAsFixed(0)}',
+                                          ].join(' | ');
+                                          return Container(
+                                            margin: const EdgeInsets.only(bottom: 6),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: Colors.green.shade50,
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: Colors.green.shade200),
+                                            ),
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    '🛒 ${sale['buyerName'] ?? '-'}',
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                        fontSize: 12, fontWeight: FontWeight.w600),
+                                                  ),
+                                                ),
+                                                Text(parts.isEmpty ? '-' : parts,
+                                                    style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Colors.green.shade800)),
+                                              ],
                                             ),
                                           );
                                         }),
@@ -2807,8 +2917,7 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
                                   child: SizedBox(
                                     width: double.infinity,
                                     child: ElevatedButton.icon(
-                                      onPressed:
-                                          anyLeft ? () => _openAllocationForm(entry) : null,
+                                      onPressed: anyLeft ? () => _openAllocationForm(entry) : null,
                                       icon: const Icon(Icons.call_split_rounded, size: 18),
                                       label: Text(
                                         anyLeft ? 'Allocate Feed' : 'Fully Allocated',
@@ -2846,30 +2955,69 @@ Future<void> _showFeedAllocationDialog(
 ) async {
   final String company = lotEntry['company']?.toString() ?? 'Lot';
 
+  // ── Purchase lots ki info ──
   double sBags = (lotEntry['starter']?['bags'] as num?)?.toDouble() ?? 0.0;
   double gBags = (lotEntry['grower']?['bags'] as num?)?.toDouble() ?? 0.0;
   double fBags = (lotEntry['finisher']?['bags'] as num?)?.toDouble() ?? 0.0;
-  double sRate = (lotEntry['starter']?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
-  double gRate = (lotEntry['grower']?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
-  double fRate = (lotEntry['finisher']?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+  // Company ka purchase rate (per bag) — readonly info
+  double sPurchaseRate = (lotEntry['starter']?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+  double gPurchaseRate = (lotEntry['grower']?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+  double fPurchaseRate = (lotEntry['finisher']?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
 
+  // ── Farmer allocations already ho chuki ──
   List<Map<String, dynamic>> savedAllocations = List<Map<String, dynamic>>.from(
     (lotEntry['allocations'] as List<dynamic>?)
             ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
         [],
   );
-
   double allocS = 0, allocG = 0, allocF = 0;
   for (final a in savedAllocations) {
     allocS += (a['starterQty'] as num?)?.toDouble() ?? 0.0;
     allocG += (a['growerQty'] as num?)?.toDouble() ?? 0.0;
     allocF += (a['finisherQty'] as num?)?.toDouble() ?? 0.0;
   }
-  double availS = sBags - allocS;
-  double availG = gBags - allocG;
-  double availF = fBags - allocF;
 
-  // Company farmers load karo (Chicks wale section jaisa)
+  // ── Private sales bhi minus karo ──
+  double soldS = 0, soldG = 0, soldF = 0;
+  final String? salesJson = await CompanyStore.instance.getString('feedSalesHistory');
+  if (salesJson != null) {
+    try {
+      final List<dynamic> rawSales = json.decode(salesJson);
+      for (final sale in rawSales) {
+        if (sale['lotName']?.toString() == company) {
+          soldS += (sale['starter']?['qty'] as num?)?.toDouble() ?? 0.0;
+          soldG += (sale['grower']?['qty'] as num?)?.toDouble() ?? 0.0;
+          soldF += (sale['finisher']?['qty'] as num?)?.toDouble() ?? 0.0;
+        }
+      }
+    } catch (_) {}
+  }
+
+  double availS = (sBags - allocS - soldS).clamp(0.0, double.infinity);
+  double availG = (gBags - allocG - soldG).clamp(0.0, double.infinity);
+  double availF = (fBags - allocF - soldF).clamp(0.0, double.infinity);
+
+  // ── Settlement config se farmer billing rate load karo ──
+  // rule1SettlementConfig mein bigFeedRate (₹/kg) × bigKgPerBag = ₹/bag
+  double bigBillingPerBag = 42.0 * 50.0; // default fallback
+  double smBillingPerBag = 42.0 * 50.0;
+  try {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? r1Json = prefs.getString('rule1SettlementConfig');
+    if (r1Json != null) {
+      final Map<String, dynamic> r1 = json.decode(r1Json);
+      final double bigFeedRate = (r1['bigFeedRate'] ?? 42.0).toDouble();
+      final double bigKgPerBag = (r1['bigKgPerBag'] ?? 50.0).toDouble();
+      final double smFeedRate = (r1['smFeedRate'] ?? 42.0).toDouble();
+      final double smKgPerBag = (r1['smKgPerBag'] ?? 50.0).toDouble();
+      bigBillingPerBag = bigFeedRate * bigKgPerBag;
+      smBillingPerBag = smFeedRate * smKgPerBag;
+    }
+  } catch (_) {}
+  // Default: Big Size rate use karo (most common)
+  double defaultBillingPerBag = bigBillingPerBag;
+
+  // ── Company farmers load karo ──
   List<dynamic> rawFarmers = await CompanyStore.instance.getJsonList('companyFarmers');
   List<String> farmerOptions = rawFarmers.map((f) {
     String name = f['name']?.toString() ?? 'Unknown';
@@ -2883,11 +3031,11 @@ Future<void> _showFeedAllocationDialog(
   bool dropdownVisible = false;
 
   final starterQtyCtrl = TextEditingController();
-  final starterRateCtrl = TextEditingController(text: sRate.toStringAsFixed(2));
+  final starterRateCtrl = TextEditingController(text: defaultBillingPerBag.toStringAsFixed(2));
   final growerQtyCtrl = TextEditingController();
-  final growerRateCtrl = TextEditingController(text: gRate.toStringAsFixed(2));
+  final growerRateCtrl = TextEditingController(text: defaultBillingPerBag.toStringAsFixed(2));
   final finisherQtyCtrl = TextEditingController();
-  final finisherRateCtrl = TextEditingController(text: fRate.toStringAsFixed(2));
+  final finisherRateCtrl = TextEditingController(text: defaultBillingPerBag.toStringAsFixed(2));
 
   showDialog(
     context: context,
@@ -3022,14 +3170,14 @@ Future<void> _showFeedAllocationDialog(
                         const SizedBox(height: 20),
 
                         if (sBags > 0)
-                          _feedAllocInput(
-                              'Starter', starterQtyCtrl, starterRateCtrl, availS, setModalState),
+                          _feedAllocInput('Starter', starterQtyCtrl, starterRateCtrl,
+                              availS, sPurchaseRate, setModalState),
                         if (gBags > 0)
-                          _feedAllocInput(
-                              'Grower', growerQtyCtrl, growerRateCtrl, availG, setModalState),
+                          _feedAllocInput('Grower', growerQtyCtrl, growerRateCtrl,
+                              availG, gPurchaseRate, setModalState),
                         if (fBags > 0)
-                          _feedAllocInput('Finisher', finisherQtyCtrl, finisherRateCtrl, availF,
-                              setModalState),
+                          _feedAllocInput('Finisher', finisherQtyCtrl, finisherRateCtrl,
+                              availF, fPurchaseRate, setModalState),
                       ],
                     ),
                   ),
@@ -3138,10 +3286,23 @@ Future<void> _showFeedAllocationDialog(
   );
 }
 
-Widget _feedAllocInput(String title, TextEditingController qtyCtrl,
-    TextEditingController rateCtrl, double avail, StateSetter setModalState) {
+Widget _feedAllocInput(
+    String title,
+    TextEditingController qtyCtrl,
+    TextEditingController rateCtrl,
+    double avail,
+    double purchaseRatePerBag,
+    StateSetter setModalState) {
   double qty = double.tryParse(qtyCtrl.text) ?? 0.0;
+  double billingRate = double.tryParse(rateCtrl.text) ?? 0.0;
   bool isOver = qty > avail;
+
+  // Profit / Loss calculation (per bag aur total)
+  double totalCost = qty * purchaseRatePerBag;
+  double totalBilling = qty * billingRate;
+  double profit = totalBilling - totalCost;
+  bool hasCalc = qty > 0 && billingRate > 0;
+
   return Container(
     margin: const EdgeInsets.only(bottom: 16),
     padding: const EdgeInsets.all(12),
@@ -3153,11 +3314,13 @@ Widget _feedAllocInput(String title, TextEditingController qtyCtrl,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Header row
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('🌾 $title',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900)),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900)),
             Text('Bacha: ${avail.toStringAsFixed(0)} Bag',
                 style: TextStyle(
                     fontSize: 11,
@@ -3165,7 +3328,17 @@ Widget _feedAllocInput(String title, TextEditingController qtyCtrl,
                     fontWeight: FontWeight.bold)),
           ],
         ),
-        const SizedBox(height: 8),
+        // Purchase rate info (readonly)
+        if (purchaseRatePerBag > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 4),
+            child: Text(
+              'Auto Cost: ₹${purchaseRatePerBag.toStringAsFixed(2)} / Bag',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
+          ),
+        const SizedBox(height: 6),
+        // Qty + Billing Rate
         Row(
           children: [
             Expanded(
@@ -3185,11 +3358,45 @@ Widget _feedAllocInput(String title, TextEditingController qtyCtrl,
               child: TextField(
                 controller: rateCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Billing Rate (₹)', isDense: true),
+                onChanged: (_) => setModalState(() {}),
+                decoration: const InputDecoration(
+                    labelText: 'Billing Rate (₹/Bag)', isDense: true),
               ),
             ),
           ],
         ),
+        // Profit / Loss mini widget
+        if (hasCalc) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: profit >= 0 ? Colors.blue.shade50 : Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: profit >= 0 ? Colors.blue.shade200 : Colors.orange.shade200),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Cost: ₹${totalCost.toStringAsFixed(0)}',
+                    style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                Text('Bill: ₹${totalBilling.toStringAsFixed(0)}',
+                    style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                Text(
+                  profit >= 0
+                      ? '📈 +₹${profit.toStringAsFixed(0)}'
+                      : '📉 -₹${profit.abs().toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: profit >= 0 ? Colors.blue.shade800 : Colors.orange.shade800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     ),
   );
@@ -3455,9 +3662,15 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
               ),
             ),
             const SizedBox(height: 16),
-            if (hasStarter) _allocDetailRow('Starter', _starterQtyCtrl, _starterRateCtrl, _availFor('starter')),
-            if (hasGrower) _allocDetailRow('Grower', _growerQtyCtrl, _growerRateCtrl, _availFor('grower')),
-            if (hasFinisher) _allocDetailRow('Finisher', _finisherQtyCtrl, _finisherRateCtrl, _availFor('finisher')),
+            if (hasStarter) _allocDetailRow('Starter', _starterQtyCtrl, _starterRateCtrl,
+                _availFor('starter'),
+                purchaseRatePerBag: (entry['starter']?['perBagPrice'] as num?)?.toDouble() ?? 0.0),
+            if (hasGrower) _allocDetailRow('Grower', _growerQtyCtrl, _growerRateCtrl,
+                _availFor('grower'),
+                purchaseRatePerBag: (entry['grower']?['perBagPrice'] as num?)?.toDouble() ?? 0.0),
+            if (hasFinisher) _allocDetailRow('Finisher', _finisherQtyCtrl, _finisherRateCtrl,
+                _availFor('finisher'),
+                purchaseRatePerBag: (entry['finisher']?['perBagPrice'] as num?)?.toDouble() ?? 0.0),
             const SizedBox(height: 12),
             if (_alloc?['allocatedByName'] != null &&
                 (_alloc!['allocatedByName'] as String).isNotEmpty)
@@ -3493,9 +3706,20 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
   }
 
   Widget _allocDetailRow(
-      String title, TextEditingController qtyCtrl, TextEditingController rateCtrl, double avail) {
+      String title,
+      TextEditingController qtyCtrl,
+      TextEditingController rateCtrl,
+      double avail, {
+      double purchaseRatePerBag = 0.0,
+    }) {
     double qty = double.tryParse(qtyCtrl.text) ?? 0.0;
+    double billingRate = double.tryParse(rateCtrl.text) ?? 0.0;
     bool isOver = _isEditMode && qty > avail;
+    double totalCost = qty * purchaseRatePerBag;
+    double totalBilling = qty * billingRate;
+    double profit = totalBilling - totalCost;
+    bool hasCalc = qty > 0 && billingRate > 0;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(12),
@@ -3511,7 +3735,8 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('🌾 $title',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900)),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900)),
               if (_isEditMode)
                 Text('Max: ${avail.toStringAsFixed(0)} Bag',
                     style: TextStyle(
@@ -3520,7 +3745,13 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
                         fontWeight: FontWeight.bold)),
             ],
           ),
-          const SizedBox(height: 8),
+          if (purchaseRatePerBag > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 3, bottom: 3),
+              child: Text('Auto Cost: ₹${purchaseRatePerBag.toStringAsFixed(2)} / Bag',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+            ),
+          const SizedBox(height: 6),
           Row(
             children: [
               Expanded(
@@ -3530,7 +3761,9 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
-                      labelText: 'Qty (Bag)', isDense: true, errorText: isOver ? 'Max ${avail.toStringAsFixed(0)}' : null),
+                      labelText: 'Qty (Bag)',
+                      isDense: true,
+                      errorText: isOver ? 'Max ${avail.toStringAsFixed(0)}' : null),
                 ),
               ),
               const SizedBox(width: 10),
@@ -3539,11 +3772,44 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
                   controller: rateCtrl,
                   enabled: _isEditMode,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Billing Rate (₹)', isDense: true),
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                      labelText: 'Billing Rate (₹/Bag)', isDense: true),
                 ),
               ),
             ],
           ),
+          if (hasCalc) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: profit >= 0 ? Colors.blue.shade50 : Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: profit >= 0 ? Colors.blue.shade200 : Colors.orange.shade200),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Cost: ₹${totalCost.toStringAsFixed(0)}',
+                      style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                  Text('Bill: ₹${totalBilling.toStringAsFixed(0)}',
+                      style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                  Text(
+                    profit >= 0
+                        ? '📈 +₹${profit.toStringAsFixed(0)}'
+                        : '📉 -₹${profit.abs().toStringAsFixed(0)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: profit >= 0 ? Colors.blue.shade800 : Colors.orange.shade800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
