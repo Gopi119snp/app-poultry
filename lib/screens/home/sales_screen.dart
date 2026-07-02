@@ -2801,12 +2801,46 @@ class _SalesCategoryCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 💊 MEDICINE SALES — Unit conversion helpers
+// ═══════════════════════════════════════════════════════════════════════════
+const Map<String, double> _medMlMap   = {'ml': 1.0, 'liter': 1000.0};
+const Map<String, double> _medGramMap = {'gram': 1.0, 'kg': 1000.0};
+const List<String> kMedSaleUnits = ['ml','liter','gram','kg','packet','dabba'];
+
+double? _medToBase(double qty, String from, String base) {
+  final f = from.toLowerCase().trim();
+  final b = base.toLowerCase().trim();
+  if (f == b) return qty;
+  if (_medMlMap.containsKey(f)   && _medMlMap.containsKey(b))
+    return qty * _medMlMap[f]!   / _medMlMap[b]!;
+  if (_medGramMap.containsKey(f) && _medGramMap.containsKey(b))
+    return qty * _medGramMap[f]! / _medGramMap[b]!;
+  return null;
+}
+double? _medFromBase(double qty, String base, String to) =>
+    _medToBase(qty, base, to);
+
+bool _medCanConvert(String u1, String u2) {
+  final a = u1.toLowerCase().trim(), b = u2.toLowerCase().trim();
+  if (a == b) return true;
+  if (_medMlMap.containsKey(a)   && _medMlMap.containsKey(b))   return true;
+  if (_medGramMap.containsKey(a) && _medGramMap.containsKey(b)) return true;
+  return false;
+}
+
+String _medFmtDT(String? iso) {
+  if (iso == null) return '-';
+  try {
+    final dt = DateTime.parse(iso);
+    return '${dt.day.toString().padLeft(2,'0')}/${dt.month.toString().padLeft(2,'0')}/${dt.year}, ${dt.hour}:${dt.minute.toString().padLeft(2,'0')}';
+  } catch (_) { return '-'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 💊 MEDICINE SALES HISTORY SCREEN
-// Feed Sales ki tarah — MedicineSalesHistoryScreen
 // ═══════════════════════════════════════════════════════════════════════════
 class MedicineSalesHistoryScreen extends StatefulWidget {
   const MedicineSalesHistoryScreen({super.key});
-
   @override
   State<MedicineSalesHistoryScreen> createState() =>
       _MedicineSalesHistoryScreenState();
@@ -2814,24 +2848,20 @@ class MedicineSalesHistoryScreen extends StatefulWidget {
 
 class _MedicineSalesHistoryScreenState
     extends State<MedicineSalesHistoryScreen> {
-  List<Map<String, dynamic>> _medicineSales = [];
+  List<Map<String, dynamic>> _sales = [];
   bool _isLoading = true;
 
   @override
-  void initState() {
-    super.initState();
-    _loadSales();
-  }
+  void initState() { super.initState(); _load(); }
 
-  Future<void> _loadSales() async {
+  Future<void> _load() async {
     setState(() => _isLoading = true);
-    final String? jsonStr = await CompanyStore.instance.getString(
-      'medicineSalesHistory',
-    );
-    if (jsonStr != null) {
+    final String? j =
+        await CompanyStore.instance.getString('medicineSalesHistory');
+    if (j != null) {
       try {
-        final List<dynamic> raw = json.decode(jsonStr);
-        _medicineSales = raw.map((e) => Map<String, dynamic>.from(e)).toList();
+        final List<dynamic> raw = json.decode(j);
+        _sales = raw.map((e) => Map<String,dynamic>.from(e)).toList();
       } catch (_) {}
     }
     if (mounted) setState(() => _isLoading = false);
@@ -2844,26 +2874,15 @@ class _MedicineSalesHistoryScreenState
       appBar: AppBar(
         backgroundColor: Colors.teal.shade700,
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
           onPressed: () => Get.back(),
         ),
-        title: const Row(
-          children: [
-            Text('💊', style: TextStyle(fontSize: 18)),
-            SizedBox(width: 8),
-            Text(
-              'Medicine Sales',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
+        title: const Row(children: [
+          Text('💊', style: TextStyle(fontSize: 18)),
+          SizedBox(width: 8),
+          Text('Medicine Sales',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ]),
       ),
       body: Column(
         children: [
@@ -2875,56 +2894,43 @@ class _MedicineSalesHistoryScreenState
               child: ElevatedButton.icon(
                 onPressed: () async {
                   await Get.to(() => const AddPrivateMedicineSaleScreen());
-                  _loadSales();
+                  _load();
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal.shade700,
-                ),
-                icon: const Icon(
-                  Icons.add_shopping_cart_rounded,
-                  color: Colors.white,
-                ),
-                label: const Text(
-                  'Private Medicine Sale',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                    backgroundColor: Colors.teal.shade700),
+                icon: const Icon(Icons.add_shopping_cart_rounded,
+                    color: Colors.white),
+                label: const Text('Private Medicine Sale',
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ),
           ),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _medicineSales.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('💊', style: TextStyle(fontSize: 52)),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Koi medicine sale record nahi.',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 14,
-                          ),
+                : _sales.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text('💊', style: TextStyle(fontSize: 52)),
+                            const SizedBox(height: 12),
+                            Text('Koi medicine sale nahi.',
+                                style: TextStyle(
+                                    color: Colors.grey.shade600, fontSize: 14)),
+                          ],
                         ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _medicineSales.length,
-                    itemBuilder: (context, index) {
-                      final sale = _medicineSales[index];
-                      return _MedicineSaleCard(
-                        sale: sale,
-                        onRefresh: _loadSales,
-                      );
-                    },
-                  ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: _sales.length,
+                        itemBuilder: (ctx, i) {
+                          final sale = _sales[i];
+                          return _MedicineSaleCard(
+                              sale: sale, onRefresh: _load);
+                        },
+                      ),
           ),
         ],
       ),
@@ -2933,7 +2939,7 @@ class _MedicineSalesHistoryScreenState
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 💊 MEDICINE SALE CARD — List mein dikhne wala card
+// 💊 MEDICINE SALE CARD — List mein
 // ═══════════════════════════════════════════════════════════════════════════
 class _MedicineSaleCard extends StatelessWidget {
   final Map<String, dynamic> sale;
@@ -2944,26 +2950,22 @@ class _MedicineSaleCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final double totalSale =
         (sale['totalSaleAmount'] as num?)?.toDouble() ?? 0.0;
-    final double due = (sale['dueAmount'] as num?)?.toDouble() ?? 0.0;
-    final double profit = (sale['profitAmount'] as num?)?.toDouble() ?? 0.0;
+    final double due  = (sale['dueAmount']    as num?)?.toDouble() ?? 0.0;
+    final double profit=(sale['profitAmount'] as num?)?.toDouble() ?? 0.0;
     final bool isProfit = profit >= 0;
-
     final List<dynamic> items = sale['items'] as List<dynamic>? ?? [];
-    final String itemSummary = items.take(2).map((i) {
-      final String name = i['medicineName']?.toString() ?? '-';
-      final double qty = (i['qty'] as num?)?.toDouble() ?? 0.0;
-      final String unit = i['unit']?.toString() ?? '';
-      return '${qty.toStringAsFixed(0)} $unit $name';
-    }).join(', ') + (items.length > 2 ? ' +${items.length - 2} more' : '');
 
-    final String addedByName = sale['addedByName']?.toString() ?? '';
-    final String addedByRole = sale['addedByRole']?.toString() ?? '';
+    final String itemSummary = items.take(2).map((i) {
+      final double qty  = (i['qty']  as num?)?.toDouble() ?? 0.0;
+      final String unit = i['saleUnit']?.toString() ?? i['unit']?.toString() ?? '';
+      final String name = i['medicineName']?.toString() ?? '-';
+      return '${qty.toStringAsFixed(2)} $unit $name';
+    }).join(', ') + (items.length > 2 ? ' +${items.length-2} more' : '');
 
     return GestureDetector(
       onTap: () async {
-        final result = await Get.to(
-          () => MedicineSaleDetailScreen(sale: sale),
-        );
+        final result =
+            await Get.to(() => MedicineSaleDetailScreen(sale: sale));
         if (result == true) onRefresh();
       },
       child: Container(
@@ -2972,154 +2974,74 @@ class _MedicineSaleCard extends StatelessWidget {
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: Colors.teal.shade200, width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03),
+              blurRadius: 6, offset: const Offset(0,2))],
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Buyer + Amount ──
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(
-                      '🛒 ${sale['buyerName'] ?? 'Unknown'}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Colors.teal.shade900,
-                      ),
-                    ),
+                    child: Text('🛒 ${sale['buyerName'] ?? 'Unknown'}',
+                        style: TextStyle(fontWeight: FontWeight.bold,
+                            fontSize: 16, color: Colors.teal.shade900)),
                   ),
-                  Row(
-                    children: [
-                      Text(
-                        '₹${totalSale.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Colors.teal.shade900,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        color: Colors.grey.shade400,
-                        size: 18,
-                      ),
-                    ],
-                  ),
+                  Row(children: [
+                    Text('₹${totalSale.toStringAsFixed(2)}',
+                        style: TextStyle(fontWeight: FontWeight.bold,
+                            fontSize: 16, color: Colors.teal.shade900)),
+                    const SizedBox(width: 4),
+                    Icon(Icons.chevron_right_rounded,
+                        color: Colors.grey.shade400, size: 18),
+                  ]),
                 ],
               ),
-              const SizedBox(height: 6),
-
-              // ── Items summary ──
-              if (itemSummary.isNotEmpty)
-                Text(
-                  itemSummary,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.teal.shade700,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-
-              // ── Added By ──
-              if (addedByName.isNotEmpty) ...[
-                const SizedBox(height: 3),
-                Text(
-                  '👤 ${addedByRole.isNotEmpty ? '$addedByRole: ' : ''}$addedByName',
-                  style: const TextStyle(fontSize: 11, color: Colors.black45),
-                ),
+              if (itemSummary.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(itemSummary,
+                    style: TextStyle(fontSize: 12, color: Colors.teal.shade700),
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
               ],
-
-              Text(
-                '🕒 ${_formatDT(sale['date']?.toString())}',
-                style: const TextStyle(fontSize: 11, color: Colors.black45),
-              ),
+              Text('🕒 ${_medFmtDT(sale['date']?.toString())}',
+                  style: const TextStyle(fontSize: 11, color: Colors.black45)),
               const SizedBox(height: 10),
-
-              // ── Badges ──
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: due > 0
-                          ? Colors.red.shade50
-                          : Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: due > 0
-                            ? Colors.red.shade200
-                            : Colors.green.shade200,
-                      ),
-                    ),
-                    child: Text(
-                      due > 0 ? 'Due: ₹${due.toStringAsFixed(0)}' : '✅ Paid',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: due > 0
-                            ? Colors.red.shade900
-                            : Colors.green.shade900,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isProfit
-                          ? Colors.green.shade50
-                          : Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: isProfit
-                            ? Colors.green.shade200
-                            : Colors.red.shade200,
-                      ),
-                    ),
-                    child: Text(
-                      '${isProfit ? '📈' : '📉'} ₹${profit.abs().toStringAsFixed(0)}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: isProfit
-                            ? Colors.green.shade900
-                            : Colors.red.shade900,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              Row(children: [
+                _badge(
+                  due > 0 ? 'Due: ₹${due.toStringAsFixed(0)}' : '✅ Paid',
+                  due > 0 ? Colors.red : Colors.green,
+                ),
+                const SizedBox(width: 8),
+                _badge(
+                  '${isProfit ? '📈' : '📉'} ₹${profit.abs().toStringAsFixed(0)}',
+                  isProfit ? Colors.green : Colors.red,
+                ),
+              ]),
             ],
           ),
         ),
       ),
     );
   }
+
+  Widget _badge(String text, MaterialColor color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.shade50,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: color.shade200),
+    ),
+    child: Text(text,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
+            color: color.shade900)),
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 📝 ADD PRIVATE MEDICINE SALE SCREEN
-// Feed AddPrivateFeedSaleScreen ki tarah exact mirror
+// 📝 ADD PRIVATE MEDICINE SALE — Inline search with suggestions
 // ═══════════════════════════════════════════════════════════════════════════
 class AddPrivateMedicineSaleScreen extends StatefulWidget {
   final Map<String, dynamic>? existingSale;
@@ -3127,118 +3049,313 @@ class AddPrivateMedicineSaleScreen extends StatefulWidget {
 
   @override
   State<AddPrivateMedicineSaleScreen> createState() =>
-      _AddPrivateMedicineSaleScreenState(existingSale: existingSale);
+      _AddPrivateMedicineSaleScreenState();
 }
 
 class _AddPrivateMedicineSaleScreenState
     extends State<AddPrivateMedicineSaleScreen> {
-  // Medicine stock from purchase history
+
+  // ── Stock data ──
   List<Map<String, dynamic>> _medicineStock = [];
+  Map<String, double> _availableBaseQty = {}; // mId → base qty left
 
-  // Buyer info
+  // ── Buyer fields ──
   final _buyerNameCtrl = TextEditingController();
-  final _mobileCtrl = TextEditingController();
-  final _paidCtrl = TextEditingController();
+  final _mobileCtrl    = TextEditingController();
+  final _paidCtrl      = TextEditingController();
 
-  // Selected medicine items — dynamic list
-  // Each: {medicineId, medicineName, unit, costRate (farmerPrice), availableQty, qtyCtrl, rateCtrl}
-  List<Map<String, dynamic>> _selectedItems = [];
+  // ── Medicine search ──
+  final _searchCtrl = TextEditingController();
+  bool _showSuggestions = false;
+  List<Map<String, dynamic>> _suggestions = [];
 
-  // Available qty per medicine (purchased - already sold)
-  Map<String, double> _availableQty = {}; // medicineId -> available qty
+  // ── Added items list ──
+  // Each: {medicineId, medicineName, nickName, baseUnit, saleUnit,
+  //        weightedAvgCost, qtyCtrl, rateCtrl}
+  List<Map<String, dynamic>> _items = [];
 
-  // Edit mode
-  final bool _isEditMode;
-  final Map<String, dynamic>? _existingSale;
-
-  _AddPrivateMedicineSaleScreenState({Map<String, dynamic>? existingSale})
-    : _isEditMode = existingSale != null,
-      _existingSale = existingSale;
+  bool _isEditMode = false;
 
   @override
   void initState() {
     super.initState();
+    _isEditMode = widget.existingSale != null;
     _loadData();
+    _searchCtrl.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) {
+      setState(() { _showSuggestions = false; _suggestions = []; });
+      return;
+    }
+    // Already added medicines ko exclude karo
+    final addedIds = _items.map((i) => i['medicineId']?.toString()).toSet();
+
+    final filtered = _medicineStock.where((med) {
+      final mId       = med['id']?.toString() ?? '';
+      final name      = med['name']?.toString().toLowerCase() ?? '';
+      final nick      = med['nickName']?.toString().toLowerCase() ?? '';
+      final avail     = _availableBaseQty[mId] ?? 0.0;
+      final notAdded  = !addedIds.contains(mId);
+      final hasStock  = avail > 0;
+      return notAdded && hasStock && (name.contains(q) || nick.contains(q));
+    }).toList();
+
+    setState(() {
+      _suggestions    = filtered;
+      _showSuggestions = filtered.isNotEmpty;
+    });
   }
 
   Future<void> _loadData() async {
-    // 1. Medicine stock load karo
-    final String? stockJson = await CompanyStore.instance.getString(
-      'medicineStockList',
-    );
+    // 1. Stock load
+    final String? stockJson =
+        await CompanyStore.instance.getString('medicineStockList');
     List<Map<String, dynamic>> stock = [];
     if (stockJson != null) {
       try {
-        final List<dynamic> raw = json.decode(stockJson);
-        stock = raw.map((e) => Map<String, dynamic>.from(e)).toList();
+        stock = (json.decode(stockJson) as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e)).toList();
       } catch (_) {}
     }
 
-    // 2. Existing medicine sales load karo (sold qty calculate karne ke liye)
-    final String? salesJson = await CompanyStore.instance.getString(
-      'medicineSalesHistory',
-    );
-    Map<String, double> soldPerMedicine = {};
+    // 2. Sold base qty per medicine (exclude current sale if editing)
+    final String? salesJson =
+        await CompanyStore.instance.getString('medicineSalesHistory');
+    Map<String, double> soldBase = {};
     if (salesJson != null) {
       try {
         final List<dynamic> rawSales = json.decode(salesJson);
         for (final sale in rawSales) {
-          // Edit mode mein current sale skip karo
-          if (_isEditMode && sale['id'] == _existingSale!['id']) continue;
-          final List<dynamic> items = sale['items'] as List<dynamic>? ?? [];
-          for (final item in items) {
+          if (_isEditMode && sale['id'] == widget.existingSale!['id'])
+            continue;
+          final List<dynamic> sItems = sale['items'] as List<dynamic>? ?? [];
+          for (final item in sItems) {
             final String mId = item['medicineId']?.toString() ?? '';
             if (mId.isEmpty) continue;
-            soldPerMedicine[mId] =
-                (soldPerMedicine[mId] ?? 0.0) +
-                ((item['qty'] as num?)?.toDouble() ?? 0.0);
+            soldBase[mId] = (soldBase[mId] ?? 0.0) +
+                ((item['qtyInBaseUnit'] as num?)?.toDouble() ??
+                    (item['qty']        as num?)?.toDouble() ?? 0.0);
           }
         }
       } catch (_) {}
     }
 
-    // 3. Available = purchased - sold
-    Map<String, double> available = {};
+    // 3. Available = total − allocated − sold
+    Map<String, double> avail = {};
     for (final med in stock) {
-      final String mId = med['id']?.toString() ?? med['name']?.toString() ?? '';
-      final double purchased =
-          (med['totalQuantity'] as num?)?.toDouble() ?? 0.0;
-      final double sold = soldPerMedicine[mId] ?? 0.0;
-      available[mId] = (purchased - sold).clamp(0.0, double.infinity);
+      final String mId  = med['id']?.toString() ?? '';
+      if (mId.isEmpty) continue;
+      final double total = (med['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
+      double allocBase = 0;
+      final List<dynamic> allocs = med['allocations'] as List<dynamic>? ?? [];
+      for (final a in allocs) {
+        allocBase += (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+            (a['qty'] as num?)?.toDouble() ?? 0.0;
+      }
+      avail[mId] = (total - allocBase - (soldBase[mId] ?? 0.0))
+          .clamp(0.0, double.infinity);
     }
 
     setState(() {
-      _medicineStock = stock;
-      _availableQty = available;
+      _medicineStock      = stock;
+      _availableBaseQty   = avail;
 
-      // Edit mode: pre-fill
-      if (_isEditMode && _existingSale != null) {
-        _buyerNameCtrl.text = _existingSale!['buyerName']?.toString() ?? '';
-        _mobileCtrl.text = _existingSale!['mobile']?.toString() ?? '';
-        _paidCtrl.text =
-            (_existingSale!['paidAmount'] as num?)?.toStringAsFixed(2) ?? '0';
+      // Edit mode pre-fill
+      if (_isEditMode && widget.existingSale != null) {
+        final sale = widget.existingSale!;
+        _buyerNameCtrl.text = sale['buyerName']?.toString() ?? '';
+        _mobileCtrl.text    = sale['mobile']?.toString()    ?? '';
+        _paidCtrl.text      =
+            (sale['paidAmount'] as num?)?.toStringAsFixed(2) ?? '0';
 
-        final List<dynamic> existingItems =
-            _existingSale!['items'] as List<dynamic>? ?? [];
-        _selectedItems = existingItems.map((item) {
-          final Map<String, dynamic> m = Map<String, dynamic>.from(item);
-          final qtyCtrl = TextEditingController(
-            text: (m['qty'] as num?)?.toStringAsFixed(2) ?? '0',
-          );
-          final rateCtrl = TextEditingController(
-            text: (m['saleRate'] as num?)?.toStringAsFixed(2) ?? '0',
-          );
+        final List<dynamic> exItems = sale['items'] as List<dynamic>? ?? [];
+        _items = exItems.map((item) {
+          final m = Map<String, dynamic>.from(item);
+          final String bu = m['baseUnit']?.toString() ?? m['unit']?.toString() ?? '';
+          final String su = m['saleUnit']?.toString() ?? bu;
           return {
-            'medicineId': m['medicineId']?.toString() ?? '',
-            'medicineName': m['medicineName']?.toString() ?? '',
-            'unit': m['unit']?.toString() ?? '',
-            'costRate': (m['costRate'] as num?)?.toDouble() ?? 0.0,
-            'qtyCtrl': qtyCtrl,
-            'rateCtrl': rateCtrl,
+            'medicineId'     : m['medicineId']?.toString() ?? '',
+            'medicineName'   : m['medicineName']?.toString() ?? '',
+            'nickName'       : m['nickName']?.toString() ?? '',
+            'baseUnit'       : bu,
+            'saleUnit'       : su,
+            'weightedAvgCost': (m['costRatePerBase'] as num?)?.toDouble() ?? 0.0,
+            'qtyCtrl' : TextEditingController(
+                text: (m['qty'] as num?)?.toStringAsFixed(2) ?? ''),
+            'rateCtrl': TextEditingController(
+                text: (m['saleRate'] as num?)?.toStringAsFixed(2) ?? ''),
           };
         }).toList();
       }
     });
+  }
+
+  // Medicine suggestion tap → item add karo
+  void _addItemFromSuggestion(Map<String, dynamic> med) {
+    final String mId       = med['id']?.toString() ?? '';
+    final String baseUnit  = med['unit']?.toString() ?? 'unit';
+    final double avgCost   = (med['weightedAvgCost']   as num?)?.toDouble() ?? 0.0;
+    final double farmerRate= (med['currentFarmerRate'] as num?)?.toDouble() ?? 0.0;
+
+    setState(() {
+      _items.add({
+        'medicineId'     : mId,
+        'medicineName'   : med['name']?.toString() ?? '',
+        'nickName'       : med['nickName']?.toString() ?? '',
+        'baseUnit'       : baseUnit,
+        'saleUnit'       : baseUnit,
+        'weightedAvgCost': avgCost,
+        'qtyCtrl' : TextEditingController(),
+        'rateCtrl': TextEditingController(
+            text: farmerRate > 0 ? farmerRate.toStringAsFixed(2) : ''),
+      });
+
+      // Search field clear karo suggestions band karo
+      _searchCtrl.clear();
+      _showSuggestions = false;
+      _suggestions     = [];
+    });
+  }
+
+  // ── Financials ──
+  Map<String, double> _calcFinancials() {
+    double totalSale = 0, totalCost = 0;
+    for (final item in _items) {
+      final double qty   = double.tryParse(
+          (item['qtyCtrl']  as TextEditingController).text) ?? 0.0;
+      final double sRate = double.tryParse(
+          (item['rateCtrl'] as TextEditingController).text) ?? 0.0;
+      final String bu = item['baseUnit']?.toString() ?? '';
+      final String su = item['saleUnit']?.toString() ?? bu;
+      final double qBase = _medToBase(qty,   su, bu) ?? qty;
+      final double rBase = _medToBase(sRate, su, bu) ?? sRate;
+      final double cost  = (item['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+      totalSale += qBase * rBase;
+      totalCost += qBase * cost;
+    }
+    final double paid = double.tryParse(_paidCtrl.text) ?? 0.0;
+    return {
+      'totalSale': totalSale,
+      'totalCost': totalCost,
+      'profit'   : totalSale - totalCost,
+      'due'      : (totalSale - paid).clamp(0.0, double.infinity),
+    };
+  }
+
+  // ── Save ──
+  Future<void> _saveSale() async {
+    if (_buyerNameCtrl.text.trim().isEmpty) {
+      Get.snackbar('Error', 'Buyer Name zaroori hai',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      return;
+    }
+    if (_items.isEmpty) {
+      Get.snackbar('Error', 'Kam se kam ek medicine add karein',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      return;
+    }
+
+    for (final item in _items) {
+      final String bu  = item['baseUnit']?.toString() ?? '';
+      final String su  = item['saleUnit']?.toString() ?? bu;
+      final double qty = double.tryParse(
+          (item['qtyCtrl'] as TextEditingController).text) ?? 0.0;
+      final double qBase = _medToBase(qty, su, bu) ?? qty;
+      final double avail = _availableBaseQty[item['medicineId']?.toString() ?? ''] ?? 0.0;
+
+      if (qty <= 0) {
+        Get.snackbar('Error',
+            '${item['medicineName']}: quantity dalein',
+            backgroundColor: Colors.red, colorText: Colors.white);
+        return;
+      }
+      if (qBase > avail) {
+        final double availSu = _medFromBase(avail, bu, su) ?? avail;
+        Get.snackbar('Error',
+            '${item['medicineName']}: sirf ${availSu.toStringAsFixed(2)} $su available hai',
+            backgroundColor: Colors.red, colorText: Colors.white);
+        return;
+      }
+    }
+
+    final fin = _calcFinancials();
+    final String byName = await SessionService.currentName ?? '';
+    final String byRole = await SessionService.currentRole ?? '';
+
+    final List<Map<String, dynamic>> itemsList = _items.map((item) {
+      final String bu    = item['baseUnit']?.toString() ?? '';
+      final String su    = item['saleUnit']?.toString() ?? bu;
+      final double qty   = double.tryParse(
+          (item['qtyCtrl']  as TextEditingController).text) ?? 0.0;
+      final double sRate = double.tryParse(
+          (item['rateCtrl'] as TextEditingController).text) ?? 0.0;
+      final double qBase = _medToBase(qty,   su, bu) ?? qty;
+      final double rBase = _medToBase(sRate, su, bu) ?? sRate;
+      final double cost  = (item['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+      return {
+        'medicineId'    : item['medicineId'],
+        'medicineName'  : item['medicineName'],
+        'nickName'      : item['nickName'],
+        'baseUnit'      : bu,
+        'saleUnit'      : su,
+        'qty'           : qty,
+        'qtyInBaseUnit' : qBase,
+        'saleRate'      : sRate,
+        'saleRatePerBase': rBase,
+        'costRatePerBase': cost,
+        'totalSale'     : qBase * rBase,
+        'totalCost'     : qBase * cost,
+      };
+    }).toList();
+
+    final Map<String, dynamic> newSale = {
+      'id'          : _isEditMode
+          ? widget.existingSale!['id']
+          : DateTime.now().millisecondsSinceEpoch.toString(),
+      'date'        : _isEditMode
+          ? widget.existingSale!['date']
+          : DateTime.now().toIso8601String(),
+      'editedAt'    : _isEditMode ? DateTime.now().toIso8601String() : null,
+      'buyerName'   : _buyerNameCtrl.text.trim(),
+      'mobile'      : _mobileCtrl.text.trim(),
+      'addedByName' : _isEditMode
+          ? (widget.existingSale!['addedByName'] ?? byName) : byName,
+      'addedByRole' : _isEditMode
+          ? (widget.existingSale!['addedByRole'] ?? byRole) : byRole,
+      'editedByName': _isEditMode ? byName : null,
+      'editedByRole': _isEditMode ? byRole : null,
+      'items'            : itemsList,
+      'totalSaleAmount'  : fin['totalSale'],
+      'totalCostAmount'  : fin['totalCost'],
+      'profitAmount'     : fin['profit'],
+      'paidAmount'       : double.tryParse(_paidCtrl.text) ?? 0.0,
+      'dueAmount'        : fin['due'],
+    };
+
+    final String? existing =
+        await CompanyStore.instance.getString('medicineSalesHistory');
+    List<dynamic> list = existing != null ? json.decode(existing) : [];
+
+    if (_isEditMode) {
+      final int idx = list.indexWhere(
+          (s) => s['id'] == widget.existingSale!['id']);
+      if (idx != -1) list[idx] = newSale;
+      else list.insert(0, newSale);
+    } else {
+      list.insert(0, newSale);
+    }
+
+    await CompanyStore.instance.setString(
+        'medicineSalesHistory', json.encode(list));
+    Get.back(result: true);
+    Get.snackbar(
+      _isEditMode ? 'Updated ✅' : 'Success ✅',
+      _isEditMode ? 'Sale update ho gaya' : 'Sale save ho gaya',
+      backgroundColor: Colors.green, colorText: Colors.white,
+    );
   }
 
   @override
@@ -3246,326 +3363,30 @@ class _AddPrivateMedicineSaleScreenState
     _buyerNameCtrl.dispose();
     _mobileCtrl.dispose();
     _paidCtrl.dispose();
-    for (final item in _selectedItems) {
-      (item['qtyCtrl'] as TextEditingController).dispose();
+    _searchCtrl.dispose();
+    for (final item in _items) {
+      (item['qtyCtrl']  as TextEditingController).dispose();
       (item['rateCtrl'] as TextEditingController).dispose();
     }
     super.dispose();
   }
 
-  // ── Financial calculation ──
-  Map<String, double> _calculateFinancials() {
-    double totalSale = 0.0;
-    double totalCost = 0.0;
-
-    for (final item in _selectedItems) {
-      final double qty =
-          double.tryParse(
-            (item['qtyCtrl'] as TextEditingController).text,
-          ) ??
-          0.0;
-      final double saleRate =
-          double.tryParse(
-            (item['rateCtrl'] as TextEditingController).text,
-          ) ??
-          0.0;
-      final double costRate = (item['costRate'] as num?)?.toDouble() ?? 0.0;
-      totalSale += qty * saleRate;
-      totalCost += qty * costRate;
-    }
-
-    final double paid = double.tryParse(_paidCtrl.text) ?? 0.0;
-    final double due = (totalSale - paid).clamp(0.0, double.infinity);
-
-    return {
-      'totalSale': totalSale,
-      'totalCost': totalCost,
-      'profit': totalSale - totalCost,
-      'due': due,
-    };
-  }
-
-  // ── Add medicine item dialog ──
-  void _showAddMedicineDialog() {
-    Map<String, dynamic>? selectedMed;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx2, setDlg) => AlertDialog(
-          title: const Text('💊 Medicine Select Karein'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_medicineStock.isEmpty)
-                  const Text(
-                    'Koi medicine stock nahi. Pehle Purchase mein add karein.',
-                    style: TextStyle(color: Colors.grey),
-                  )
-                else
-                  DropdownButtonFormField<Map<String, dynamic>>(
-                    decoration: InputDecoration(
-                      labelText: 'Medicine Select Karein',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    items: _medicineStock.map((med) {
-                      final String mId =
-                          med['id']?.toString() ??
-                          med['name']?.toString() ??
-                          '';
-                      final double avail = _availableQty[mId] ?? 0.0;
-                      final bool alreadyAdded = _selectedItems.any(
-                        (i) => i['medicineId'] == mId,
-                      );
-                      return DropdownMenuItem<Map<String, dynamic>>(
-                        value: med,
-                        enabled: avail > 0 && !alreadyAdded,
-                        child: Text(
-                          '${med['name']} — ${avail.toStringAsFixed(0)} ${med['unit']} left'
-                          '${alreadyAdded ? ' (Added)' : ''}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: (avail <= 0 || alreadyAdded)
-                                ? Colors.grey
-                                : null,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (val) => setDlg(() => selectedMed = val),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: selectedMed == null
-                  ? null
-                  : () {
-                      Navigator.pop(ctx);
-                      final String mId =
-                          selectedMed!['id']?.toString() ??
-                          selectedMed!['name']?.toString() ??
-                          '';
-                      final double farmerPrice =
-                          (selectedMed!['farmerPrice'] as num?)?.toDouble() ??
-                          (selectedMed!['totalPrice'] as num?)?.toDouble() ??
-                          0.0;
-                      final double totalQty =
-                          (selectedMed!['totalQuantity'] as num?)?.toDouble() ??
-                          1.0;
-                      // Per unit farmer price
-                      final double perUnitFarmerPrice =
-                          totalQty > 0 ? farmerPrice / totalQty : 0.0;
-                      final double perUnitCost =
-                          (selectedMed!['totalPrice'] as num?)?.toDouble() ??
-                          0.0;
-                      final double perUnitActualCost =
-                          totalQty > 0 ? perUnitCost / totalQty : 0.0;
-
-                      setState(() {
-                        _selectedItems.add({
-                          'medicineId': mId,
-                          'medicineName':
-                              selectedMed!['name']?.toString() ?? '',
-                          'unit': selectedMed!['unit']?.toString() ?? '',
-                          'costRate': perUnitActualCost,
-                          'qtyCtrl': TextEditingController(text: ''),
-                          'rateCtrl': TextEditingController(
-                            text: perUnitFarmerPrice > 0
-                                ? perUnitFarmerPrice.toStringAsFixed(2)
-                                : '',
-                          ),
-                        });
-                      });
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal.shade700,
-              ),
-              child: const Text(
-                'Add',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Save Sale ──
-  Future<void> _saveSale() async {
-    if (_buyerNameCtrl.text.trim().isEmpty) {
-      Get.snackbar(
-        'Error',
-        'Buyer Name zaroori hai',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
-      return;
-    }
-    if (_selectedItems.isEmpty) {
-      Get.snackbar(
-        'Error',
-        'Kam se kam ek medicine select karein',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
-      return;
-    }
-
-    final fin = _calculateFinancials();
-    if ((fin['totalSale'] ?? 0) == 0) {
-      Get.snackbar(
-        'Error',
-        'Kam se kam ek item ki qty aur rate dalein',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
-      return;
-    }
-
-    // ── Available qty validation ──
-    for (final item in _selectedItems) {
-      final String mId = item['medicineId']?.toString() ?? '';
-      final double avail = _availableQty[mId] ?? 0.0;
-      final double entered =
-          double.tryParse(
-            (item['qtyCtrl'] as TextEditingController).text,
-          ) ??
-          0.0;
-      if (entered > 0 && entered > avail) {
-        Get.snackbar(
-          'Error',
-          '${item['medicineName']}: sirf ${avail.toStringAsFixed(0)} ${item['unit']} available hai',
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
-        return;
-      }
-    }
-
-    final String addedByName = await SessionService.currentName ?? '';
-    final String addedByRole = await SessionService.currentRole ?? '';
-
-    // Build items list
-    final List<Map<String, dynamic>> itemsList = _selectedItems.map((item) {
-      final double qty =
-          double.tryParse(
-            (item['qtyCtrl'] as TextEditingController).text,
-          ) ??
-          0.0;
-      final double saleRate =
-          double.tryParse(
-            (item['rateCtrl'] as TextEditingController).text,
-          ) ??
-          0.0;
-      final double costRate = (item['costRate'] as num?)?.toDouble() ?? 0.0;
-      return {
-        'medicineId': item['medicineId'],
-        'medicineName': item['medicineName'],
-        'unit': item['unit'],
-        'qty': qty,
-        'saleRate': saleRate,
-        'costRate': costRate,
-        'totalSale': qty * saleRate,
-        'totalCost': qty * costRate,
-      };
-    }).toList();
-
-    final Map<String, dynamic> newSale = {
-      'id': _isEditMode
-          ? _existingSale!['id']
-          : DateTime.now().millisecondsSinceEpoch.toString(),
-      'date': _isEditMode
-          ? _existingSale!['date']
-          : DateTime.now().toIso8601String(),
-      'editedAt': _isEditMode ? DateTime.now().toIso8601String() : null,
-      'buyerName': _buyerNameCtrl.text.trim(),
-      'mobile': _mobileCtrl.text.trim(),
-      'addedByName': _isEditMode
-          ? (_existingSale!['addedByName'] ?? addedByName)
-          : addedByName,
-      'addedByRole': _isEditMode
-          ? (_existingSale!['addedByRole'] ?? addedByRole)
-          : addedByRole,
-      'editedByName': _isEditMode ? addedByName : null,
-      'editedByRole': _isEditMode ? addedByRole : null,
-      'items': itemsList,
-      'totalSaleAmount': fin['totalSale'],
-      'totalCostAmount': fin['totalCost'],
-      'profitAmount': fin['profit'],
-      'paidAmount': double.tryParse(_paidCtrl.text) ?? 0.0,
-      'dueAmount': fin['due'],
-    };
-
-    final String? existingSales = await CompanyStore.instance.getString(
-      'medicineSalesHistory',
-    );
-    List<dynamic> salesList = existingSales != null
-        ? json.decode(existingSales)
-        : [];
-
-    if (_isEditMode) {
-      final int idx = salesList.indexWhere(
-        (s) => s['id'] == _existingSale!['id'],
-      );
-      if (idx != -1) {
-        salesList[idx] = newSale;
-      } else {
-        salesList.insert(0, newSale);
-      }
-    } else {
-      salesList.insert(0, newSale);
-    }
-
-    await CompanyStore.instance.setString(
-      'medicineSalesHistory',
-      json.encode(salesList),
-    );
-
-    Get.back(result: true);
-    Get.snackbar(
-      _isEditMode ? 'Updated ✅' : 'Success ✅',
-      _isEditMode
-          ? 'Medicine Sale Update Ho Gaya'
-          : 'Medicine Sale Record Save Ho Gaya',
-      backgroundColor: Colors.green,
-      colorText: Colors.white,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final fin = _calculateFinancials();
+    final fin = _calcFinancials();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         backgroundColor: Colors.teal.shade700,
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
           onPressed: () => Get.back(),
         ),
         title: Text(
           _isEditMode ? 'Medicine Sale Edit Karo' : 'New Private Medicine Sale',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
+          style: const TextStyle(color: Colors.white,
+              fontWeight: FontWeight.bold, fontSize: 16),
         ),
       ),
       body: SingleChildScrollView(
@@ -3573,14 +3394,13 @@ class _AddPrivateMedicineSaleScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── BUYER INFO ──
+            // ── Buyer info ──
             TextField(
               controller: _buyerNameCtrl,
               decoration: InputDecoration(
                 labelText: 'Buyer Name *',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
             const SizedBox(height: 12),
@@ -3596,87 +3416,231 @@ class _AddPrivateMedicineSaleScreenState
                 labelText: 'Mobile Number',
                 counterText: '',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
 
-            // ── MEDICINE ITEMS SECTION ──
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            // ── Medicine search section header ──
+            const Text('💊 Medicine Items',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+
+            // ── INLINE SEARCH FIELD ──
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '💊 Medicine Items',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _showAddMedicineDialog,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal.shade600,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                TextField(
+                  controller: _searchCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Medicine ka naam ya nickname type karein...',
+                    prefixIcon: const Icon(Icons.search_rounded,
+                        color: Colors.teal),
+                    suffixIcon: _searchCtrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear_rounded,
+                                size: 18, color: Colors.grey),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() {
+                                _showSuggestions = false;
+                                _suggestions     = [];
+                              });
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                          BorderSide(color: Colors.teal.shade200),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                          color: Colors.teal.shade600, width: 2),
                     ),
                   ),
-                  icon: const Icon(Icons.add, color: Colors.white, size: 16),
-                  label: const Text(
-                    'Add Item',
-                    style: TextStyle(color: Colors.white, fontSize: 12),
-                  ),
                 ),
+
+                // ── SUGGESTIONS DROPDOWN ──
+                if (_showSuggestions && _suggestions.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.teal.shade200),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      itemCount: _suggestions.length,
+                      separatorBuilder: (_, __) => Divider(
+                          height: 1, color: Colors.grey.shade100),
+                      itemBuilder: (ctx, i) {
+                        final med     = _suggestions[i];
+                        final String mId = med['id']?.toString() ?? '';
+                        final String name = med['name']?.toString() ?? '-';
+                        final String nick = med['nickName']?.toString() ?? '';
+                        final String unit = med['unit']?.toString() ?? '';
+                        final double avail = _availableBaseQty[mId] ?? 0.0;
+
+                        return InkWell(
+                          onTap: () => _addItemFromSuggestion(med),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 36, height: 36,
+                                  decoration: BoxDecoration(
+                                    color: Colors.teal.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Center(
+                                    child: Text('💊',
+                                        style: TextStyle(fontSize: 18)),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(name,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14)),
+                                      if (nick.isNotEmpty)
+                                        Text('"$nick"',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.teal.shade600)),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '${avail.toStringAsFixed(2)} $unit',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green.shade700),
+                                    ),
+                                    Text('available',
+                                        style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.grey.shade500)),
+                                  ],
+                                ),
+                                const SizedBox(width: 6),
+                                Icon(Icons.add_circle_rounded,
+                                    color: Colors.teal.shade600, size: 20),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+
+                // No results message
+                if (_searchCtrl.text.isNotEmpty &&
+                    !_showSuggestions &&
+                    _suggestions.isEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline_rounded,
+                            color: Colors.orange.shade700, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Koi medicine nahi mili. Purchase mein check karein.',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange.shade800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
-            const SizedBox(height: 12),
 
-            if (_selectedItems.isEmpty)
+            const SizedBox(height: 16),
+
+            // ── ADDED ITEMS LIST ──
+            if (_items.isEmpty)
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: Colors.grey.shade300),
+                  // Dashed border feel
                 ),
-                child: const Center(
-                  child: Text(
-                    '"Add Item" se medicine select karein',
-                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.search_rounded,
+                          color: Colors.grey.shade400, size: 32),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Upar search karein\naur medicine add karein',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: Colors.grey.shade500, fontSize: 13),
+                      ),
+                    ],
                   ),
                 ),
               )
             else
-              ...List.generate(_selectedItems.length, (index) {
-                return _buildMedicineInputSection(index);
-              }),
+              ...List.generate(_items.length, (i) => _buildItemCard(i)),
 
             const SizedBox(height: 8),
+            const Divider(thickness: 2, height: 32),
 
-            const Divider(thickness: 2),
-            const SizedBox(height: 12),
-
-            // ── PAYMENT ──
+            // ── Payment ──
             TextField(
               controller: _paidCtrl,
               keyboardType: TextInputType.number,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 labelText: 'Advance / Cash Mila (₹)',
-                prefixIcon: const Icon(
-                  Icons.currency_rupee,
-                  color: Colors.green,
-                ),
+                prefixIcon: const Icon(Icons.currency_rupee,
+                    color: Colors.green),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
             const SizedBox(height: 20),
 
-            // ── LIVE CALCULATION DASHBOARD ──
+            // ── Live calculation dashboard ──
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -3686,92 +3650,43 @@ class _AddPrivateMedicineSaleScreenState
               ),
               child: Column(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Total Sale Bill:'),
-                      Text(
-                        '₹${fin['totalSale']!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Total Purchase Cost:'),
-                      Text('₹${fin['totalCost']!.toStringAsFixed(2)}'),
-                    ],
-                  ),
+                  _calcRow('Total Sale Bill:',
+                      '₹${fin['totalSale']!.toStringAsFixed(2)}',
+                      bold: true, fontSize: 16),
+                  _calcRow('Total Purchase Cost:',
+                      '₹${fin['totalCost']!.toStringAsFixed(2)}'),
                   const Divider(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        fin['profit']! >= 0 ? 'Profit 📈' : 'Loss 📉',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: fin['profit']! >= 0
-                              ? Colors.green
-                              : Colors.red,
-                        ),
-                      ),
-                      Text(
-                        '₹${fin['profit']!.abs().toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: fin['profit']! >= 0
-                              ? Colors.green
-                              : Colors.red,
-                        ),
-                      ),
-                    ],
+                  _calcRow(
+                    fin['profit']! >= 0 ? 'Profit 📈' : 'Loss 📉',
+                    '₹${fin['profit']!.abs().toStringAsFixed(2)}',
+                    color: fin['profit']! >= 0 ? Colors.green : Colors.red,
+                    bold: true,
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Due (Udhaar) ⏳:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange,
-                        ),
-                      ),
-                      Text(
-                        '₹${fin['due']!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange,
-                        ),
-                      ),
-                    ],
+                  _calcRow(
+                    'Due (Udhaar) ⏳:',
+                    '₹${fin['due']!.toStringAsFixed(2)}',
+                    color: Colors.orange,
+                    bold: true,
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 30),
 
+            // ── Save button ──
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 52,
               child: ElevatedButton(
                 onPressed: _saveSale,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.teal.shade700,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text(
-                  'Save Medicine Sale',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                child: const Text('Save Medicine Sale',
+                    style: TextStyle(color: Colors.white,
+                        fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
             const SizedBox(height: 40),
@@ -3781,207 +3696,266 @@ class _AddPrivateMedicineSaleScreenState
     );
   }
 
-  // ── Medicine Item Input Widget (Feed ke _buildFeedInputSection jaisa) ──
-  Widget _buildMedicineInputSection(int index) {
-    final Map<String, dynamic> item = _selectedItems[index];
-    final String mId = item['medicineId']?.toString() ?? '';
-    final String medicineName = item['medicineName']?.toString() ?? '-';
-    final String unit = item['unit']?.toString() ?? '';
-    final double costRate = (item['costRate'] as num?)?.toDouble() ?? 0.0;
-    final double availQty = _availableQty[mId] ?? 0.0;
-    final TextEditingController qtyCtrl =
-        item['qtyCtrl'] as TextEditingController;
-    final TextEditingController rateCtrl =
-        item['rateCtrl'] as TextEditingController;
+  Widget _calcRow(String label, String value,
+      {Color? color, bool bold = false, double fontSize = 14}) {
+    final style = TextStyle(
+        fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+        color: color ?? Colors.black87,
+        fontSize: fontSize);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [Text(label, style: style), Text(value, style: style)],
+      ),
+    );
+  }
 
-    final double enteredQty = double.tryParse(qtyCtrl.text) ?? 0.0;
-    final bool isExceeded = enteredQty > availQty && availQty >= 0;
+  // ── Individual item card ──
+  Widget _buildItemCard(int index) {
+    final item         = _items[index];
+    final String bu    = item['baseUnit']?.toString() ?? '';
+    final String su    = item['saleUnit']?.toString() ?? bu;
+    final double cost  = (item['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+    final String mId   = item['medicineId']?.toString() ?? '';
+    final double availBase   = _availableBaseQty[mId] ?? 0.0;
+    final double availInSu   = _medFromBase(availBase, bu, su) ?? availBase;
+
+    final qtyCtrl  = item['qtyCtrl']  as TextEditingController;
+    final rateCtrl = item['rateCtrl'] as TextEditingController;
+
+    final double qty   = double.tryParse(qtyCtrl.text)  ?? 0.0;
+    final double sRate = double.tryParse(rateCtrl.text) ?? 0.0;
+    final double qBase = _medToBase(qty,   su, bu) ?? qty;
+    final double rBase = _medToBase(sRate, su, bu) ?? sRate;
+    final bool isOver  = qBase > availBase && availBase >= 0;
+    final double costInSu = _medFromBase(cost, bu, su) ?? cost;
+
+    // Mini profit calc
+    final double itemCost  = qBase * cost;
+    final double itemBill  = qBase * rBase;
+    final double itemProfit= itemBill - itemCost;
+    final bool hasCalc     = qty > 0 && sRate > 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isExceeded ? Colors.red.shade50 : Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        color: isOver ? Colors.red.shade50 : Colors.white,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isExceeded ? Colors.red.shade300 : Colors.grey.shade300,
-        ),
+            color: isOver ? Colors.red.shade300 : Colors.teal.shade200,
+            width: 1.3),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03),
+            blurRadius: 4, offset: const Offset(0,2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header ──
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  '💊 $medicineName',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Colors.teal.shade900,
-                  ),
-                ),
-              ),
-              // Remove button
-              GestureDetector(
-                onTap: () => setState(() {
-                  (item['qtyCtrl'] as TextEditingController).dispose();
-                  (item['rateCtrl'] as TextEditingController).dispose();
-                  _selectedItems.removeAt(index);
-                }),
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: Icon(
-                    Icons.close_rounded,
-                    size: 16,
-                    color: Colors.red.shade700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 4),
-          // ── Auto cost info + Available stock ──
-          Row(
-            children: [
-              if (costRate > 0)
-                Text(
-                  'Auto Cost: ₹${costRate.toStringAsFixed(2)} / $unit',
-                  style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-                ),
-              const Spacer(),
-              Text(
-                'Bacha: ${availQty.toStringAsFixed(0)} $unit',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: isExceeded
-                      ? Colors.red.shade700
-                      : Colors.green.shade700,
-                ),
-              ),
-            ],
-          ),
-
-          if (isExceeded)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                '⚠️ Sirf ${availQty.toStringAsFixed(0)} $unit available hai!',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.red.shade700,
-                  fontWeight: FontWeight.bold,
-                ),
+          // ── Card header ──
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.teal.shade50,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
               ),
             ),
-
-          const SizedBox(height: 10),
-          // ── Qty + Rate fields ──
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: qtyCtrl,
-                  onChanged: (_) => setState(() {}),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: 'Qty ($unit)',
-                    isDense: true,
-                    errorText: isExceeded
-                        ? 'Max ${availQty.toStringAsFixed(0)}'
-                        : null,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: rateCtrl,
-                  onChanged: (_) => setState(() {}),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: 'Sale Rate (₹/$unit)',
-                    isDense: true,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          // ── Live calculation mini widget ──
-          Builder(
-            builder: (ctx) {
-              final double qty = double.tryParse(qtyCtrl.text) ?? 0.0;
-              final double sRate = double.tryParse(rateCtrl.text) ?? 0.0;
-              if (qty <= 0 || sRate <= 0) return const SizedBox.shrink();
-              final double totalCost = qty * costRate;
-              final double totalBill = qty * sRate;
-              final double profit = totalBill - totalCost;
-              return Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: profit >= 0
-                        ? Colors.teal.shade50
-                        : Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: profit >= 0
-                          ? Colors.teal.shade200
-                          : Colors.orange.shade200,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Row(
+              children: [
+                const Text('💊', style: TextStyle(fontSize: 18)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Cost: ₹${totalCost.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.black54,
-                        ),
-                      ),
-                      Text(
-                        'Bill: ₹${totalBill.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.black54,
-                        ),
-                      ),
-                      Text(
-                        profit >= 0
-                            ? '📈 +₹${profit.toStringAsFixed(0)}'
-                            : '📉 -₹${profit.abs().toStringAsFixed(0)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: profit >= 0
-                              ? Colors.teal.shade800
-                              : Colors.orange.shade800,
-                        ),
-                      ),
+                      Text(item['medicineName']?.toString() ?? '-',
+                          style: TextStyle(fontWeight: FontWeight.bold,
+                              fontSize: 14, color: Colors.teal.shade900)),
+                      if ((item['nickName']?.toString() ?? '').isNotEmpty)
+                        Text('"${item['nickName']}"',
+                            style: TextStyle(fontSize: 11,
+                                color: Colors.teal.shade600)),
                     ],
                   ),
                 ),
-              );
-            },
+                // Remove button
+                InkWell(
+                  onTap: () => setState(() {
+                    (item['qtyCtrl']  as TextEditingController).dispose();
+                    (item['rateCtrl'] as TextEditingController).dispose();
+                    _items.removeAt(index);
+                    // Trigger suggestion refresh
+                    _onSearchChanged();
+                  }),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Icon(Icons.close_rounded,
+                        size: 16, color: Colors.red.shade700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Unit chips ──
+                Wrap(
+                  spacing: 6,
+                  children: kMedSaleUnits.map((u) {
+                    final bool enabled = _medCanConvert(u, bu);
+                    return ChoiceChip(
+                      label: Text(u, style: const TextStyle(fontSize: 11)),
+                      selected: su == u,
+                      onSelected: enabled
+                          ? (v) {
+                              if (!v) return;
+                              setState(() {
+                                item['saleUnit'] = u;
+                                // Rate convert karo
+                                if (sRate > 0) {
+                                  final double rInBase =
+                                      _medToBase(sRate, su, bu) ?? sRate;
+                                  final double rInNew =
+                                      _medFromBase(rInBase, bu, u) ?? rInBase;
+                                  rateCtrl.text = rInNew.toStringAsFixed(2);
+                                }
+                              });
+                            }
+                          : null,
+                      selectedColor: Colors.teal.shade700,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 0),
+                      labelStyle: TextStyle(
+                        color: !enabled
+                            ? Colors.grey.shade400
+                            : su == u
+                                ? Colors.white
+                                : Colors.black87,
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 6),
+
+                // Info row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (costInSu > 0)
+                      Text('Cost: ₹${costInSu.toStringAsFixed(2)} / $su',
+                          style: TextStyle(
+                              fontSize: 10, color: Colors.grey.shade600)),
+                    Text(
+                      isOver
+                          ? '⚠️ Sirf ${availInSu.toStringAsFixed(2)} $su bacha!'
+                          : 'Bacha: ${availInSu.toStringAsFixed(2)} $su',
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isOver
+                              ? Colors.red.shade700
+                              : Colors.green.shade700),
+                    ),
+                  ],
+                ),
+
+                if (su != bu && qty > 0)
+                  Text('= ${qBase.toStringAsFixed(3)} $bu',
+                      style: TextStyle(
+                          fontSize: 10, color: Colors.teal.shade700)),
+
+                const SizedBox(height: 8),
+
+                // ── Qty + Rate ──
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: qtyCtrl,
+                        onChanged: (_) => setState(() {}),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: InputDecoration(
+                          labelText: 'Qty ($su)',
+                          isDense: true,
+                          errorText: isOver
+                              ? 'Max ${availInSu.toStringAsFixed(2)}'
+                              : null,
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: rateCtrl,
+                        onChanged: (_) => setState(() {}),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: InputDecoration(
+                          labelText: 'Rate (₹/$su)',
+                          isDense: true,
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // ── Mini profit ──
+                if (hasCalc) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: itemProfit >= 0
+                          ? Colors.teal.shade50
+                          : Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: itemProfit >= 0
+                              ? Colors.teal.shade200
+                              : Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Cost: ₹${itemCost.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.black54)),
+                        Text('Bill: ₹${itemBill.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.black54)),
+                        Text(
+                          itemProfit >= 0
+                              ? '📈 +₹${itemProfit.toStringAsFixed(0)}'
+                              : '📉 -₹${itemProfit.abs().toStringAsFixed(0)}',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: itemProfit >= 0
+                                  ? Colors.teal.shade800
+                                  : Colors.orange.shade800),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ],
       ),
@@ -3990,8 +3964,7 @@ class _AddPrivateMedicineSaleScreenState
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 📋 MEDICINE SALE DETAIL SCREEN — Full info + Edit + Delete
-// Feed ke FeedSaleDetailScreen ka exact mirror
+// 📋 MEDICINE SALE DETAIL SCREEN
 // ═══════════════════════════════════════════════════════════════════════════
 class MedicineSaleDetailScreen extends StatelessWidget {
   final Map<String, dynamic> sale;
@@ -4003,390 +3976,235 @@ class MedicineSaleDetailScreen extends StatelessWidget {
         (sale['totalSaleAmount'] as num?)?.toDouble() ?? 0.0;
     final double totalCost =
         (sale['totalCostAmount'] as num?)?.toDouble() ?? 0.0;
-    final double profit = (sale['profitAmount'] as num?)?.toDouble() ?? 0.0;
-    final double paid = (sale['paidAmount'] as num?)?.toDouble() ?? 0.0;
-    final double due = (sale['dueAmount'] as num?)?.toDouble() ?? 0.0;
-    final bool isProfit = profit >= 0;
-
+    final double profit    =
+        (sale['profitAmount']   as num?)?.toDouble() ?? 0.0;
+    final double paid      =
+        (sale['paidAmount']     as num?)?.toDouble() ?? 0.0;
+    final double due       =
+        (sale['dueAmount']      as num?)?.toDouble() ?? 0.0;
+    final bool isProfit    = profit >= 0;
     final List<dynamic> items = sale['items'] as List<dynamic>? ?? [];
-    final String buyerName = sale['buyerName']?.toString() ?? '-';
-    final String mobile = sale['mobile']?.toString() ?? '';
-    final String addedByName = sale['addedByName']?.toString() ?? '';
-    final String addedByRole = sale['addedByRole']?.toString() ?? '';
-    final String dateTime = _formatDT(sale['date']?.toString());
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         backgroundColor: Colors.teal.shade700,
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: Colors.white),
           onPressed: () => Get.back(),
         ),
-        title: const Row(
-          children: [
-            Text('💊', style: TextStyle(fontSize: 18)),
-            SizedBox(width: 8),
-            Text(
-              'Medicine Sale Detail',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
+        title: const Text('💊 Medicine Sale Detail',
+            style: TextStyle(color: Colors.white,
+                fontWeight: FontWeight.bold, fontSize: 16)),
         actions: [
           IconButton(
             icon: const Icon(Icons.edit_rounded, color: Colors.white),
-            tooltip: 'Edit Sale',
             onPressed: () async {
               final result = await Get.to(
-                () => AddPrivateMedicineSaleScreen(existingSale: sale),
-              );
-              if (result == true) {
-                Get.back(result: true);
-              }
+                  () => AddPrivateMedicineSaleScreen(existingSale: sale));
+              if (result == true) Get.back(result: true);
             },
           ),
           IconButton(
             icon: const Icon(Icons.delete_rounded, color: Colors.white),
-            tooltip: 'Delete Sale',
-            onPressed: () => _confirmDeleteMedicineSale(context, sale),
+            onPressed: () => _medConfirmDelete(context, sale),
           ),
         ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.teal.shade200),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    buyerName,
-                    style: TextStyle(
-                      fontSize: 20,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.teal.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(sale['buyerName']?.toString() ?? '-',
+                  style: TextStyle(fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: Colors.teal.shade900,
-                    ),
+                      color: Colors.teal.shade900)),
+              if ((sale['mobile']?.toString() ?? '').isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('📞 ${sale['mobile']}',
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.grey.shade600)),
+                ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 12),
+
+              const Text('Medicine Breakdown',
+                  style: TextStyle(fontWeight: FontWeight.bold,
+                      fontSize: 13, color: Colors.black54)),
+              const SizedBox(height: 10),
+
+              // Items
+              ...items.map((item) {
+                final String name  = item['medicineName']?.toString() ?? '-';
+                final String nick  = item['nickName']?.toString() ?? '';
+                final double qty   = (item['qty']  as num?)?.toDouble() ?? 0.0;
+                final String su    =
+                    item['saleUnit']?.toString() ??
+                    item['unit']?.toString() ?? '';
+                final String bu    =
+                    item['baseUnit']?.toString() ?? su;
+                final double sRate =
+                    (item['saleRate'] as num?)?.toDouble() ?? 0.0;
+                final double rBase =
+                    (item['saleRatePerBase'] as num?)?.toDouble() ??
+                    _medToBase(sRate, su, bu) ?? sRate;
+                final double qBase =
+                    (item['qtyInBaseUnit'] as num?)?.toDouble() ??
+                    _medToBase(qty, su, bu) ?? qty;
+                final double total = qBase * rBase;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.teal.shade100),
                   ),
-                  if (mobile.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '📞 $mobile',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('💊 $name',
+                                style: TextStyle(fontWeight: FontWeight.bold,
+                                    fontSize: 13, color: Colors.teal.shade800)),
+                            if (nick.isNotEmpty)
+                              Text('"$nick"',
+                                  style: TextStyle(fontSize: 10,
+                                      color: Colors.teal.shade600)),
+                            Text(
+                              '${qty.toStringAsFixed(2)} $su  •  ₹${sRate.toStringAsFixed(2)} / $su',
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.black54),
+                            ),
+                            if (su != bu)
+                              Text(
+                                '(= ${qBase.toStringAsFixed(3)} $bu)',
+                                style: TextStyle(fontSize: 10,
+                                    color: Colors.grey.shade500),
+                              ),
+                          ],
                         ),
                       ),
-                    ),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 12),
-
-                  const Text(
-                    'Medicine Breakdown',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: Colors.black54,
-                    ),
+                      Text('₹${total.toStringAsFixed(2)}',
+                          style: TextStyle(fontWeight: FontWeight.bold,
+                              fontSize: 14, color: Colors.teal.shade800)),
+                    ],
                   ),
-                  const SizedBox(height: 10),
+                );
+              }),
 
-                  // ── Medicine items ──
-                  ...items.map((item) {
-                    final String mName =
-                        item['medicineName']?.toString() ?? '-';
-                    final double qty =
-                        (item['qty'] as num?)?.toDouble() ?? 0.0;
-                    final String unit = item['unit']?.toString() ?? '';
-                    final double sRate =
-                        (item['saleRate'] as num?)?.toDouble() ?? 0.0;
-                    final double total = qty * sRate;
+              const SizedBox(height: 8),
+              const Divider(),
+              const SizedBox(height: 8),
 
-                    return _medicineDetailRow(
-                      '💊 $mName',
-                      '${qty.toStringAsFixed(0)} $unit',
-                      '₹${sRate.toStringAsFixed(2)} / $unit',
-                      '₹${total.toStringAsFixed(2)}',
-                    );
-                  }),
+              _detRow('Total Sale Bill',
+                  '₹${totalSale.toStringAsFixed(2)}'),
+              _detRow('Total Purchase Cost',
+                  '₹${totalCost.toStringAsFixed(2)}'),
+              _detRow('Paid', '₹${paid.toStringAsFixed(2)}'),
+              const SizedBox(height: 12),
 
-                  const SizedBox(height: 8),
-                  const Divider(),
-                  const SizedBox(height: 8),
-
-                  _medicineInfoRow(
-                    'Total Sale Bill',
-                    '₹${totalSale.toStringAsFixed(2)}',
-                  ),
-                  _medicineInfoRow(
-                    'Total Purchase Cost',
-                    '₹${totalCost.toStringAsFixed(2)}',
-                  ),
-                  _medicineInfoRow('Paid', '₹${paid.toStringAsFixed(2)}'),
-                  const SizedBox(height: 12),
-
-                  // ── Due ──
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: due > 0
-                          ? Colors.red.shade50
-                          : Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: due > 0
-                            ? Colors.red.shade300
-                            : Colors.green.shade300,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          due > 0 ? '⏳ Baki (Due)' : '✅ Fully Paid',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: due > 0
-                                ? Colors.red.shade800
-                                : Colors.green.shade800,
-                          ),
-                        ),
-                        Text(
-                          due > 0 ? '₹${due.toStringAsFixed(2)}' : '₹0.00',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: due > 0
-                                ? Colors.red.shade800
-                                : Colors.green.shade800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // ── Profit/Loss ──
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: isProfit
-                          ? Colors.green.shade50
-                          : Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isProfit
-                            ? Colors.green.shade400
-                            : Colors.red.shade400,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          isProfit ? '📈 Profit' : '📉 Loss',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                            color: isProfit
-                                ? Colors.green.shade800
-                                : Colors.red.shade800,
-                          ),
-                        ),
-                        Text(
-                          '${isProfit ? '+' : '-'}₹${profit.abs().toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: isProfit
-                                ? Colors.green.shade800
-                                : Colors.red.shade800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Divider(),
-                  const SizedBox(height: 12),
-
-                  if (addedByName.isNotEmpty)
-                    _medicineInfoRow(
-                      '👤 Added By',
-                      addedByRole.isNotEmpty
-                          ? '$addedByRole: $addedByName'
-                          : addedByName,
-                    ),
-                  _medicineInfoRow('🕒 Date & Time', dateTime),
-                ],
+              _statusBox(
+                due > 0 ? '⏳ Baki (Due)' : '✅ Fully Paid',
+                due > 0 ? '₹${due.toStringAsFixed(2)}' : '₹0.00',
+                due > 0 ? Colors.red : Colors.green,
               ),
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 10),
+              _statusBox(
+                isProfit ? '📈 Profit' : '📉 Loss',
+                '${isProfit ? '+' : '-'}₹${profit.abs().toStringAsFixed(2)}',
+                isProfit ? Colors.green : Colors.red,
+                bigValue: true,
+              ),
 
-            // ── Payment placeholder ──
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.lock_clock_rounded,
-                    color: Colors.grey.shade400,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Payment feature jald aayega',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade500,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+
+              if ((sale['addedByName']?.toString() ?? '').isNotEmpty)
+                _detRow('👤 Added By',
+                    '${sale['addedByRole'] ?? ''}: ${sale['addedByName']}'),
+              _detRow('🕒 Date & Time',
+                  _medFmtDT(sale['date']?.toString())),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ── Medicine breakdown row (Feed ke _feedRow jaisa) ──
-  Widget _medicineDetailRow(
-    String label,
-    String qty,
-    String rate,
-    String total,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        padding: const EdgeInsets.all(10),
+  Widget _detRow(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(
+            fontSize: 13, color: Colors.black54)),
+        const SizedBox(width: 16),
+        Flexible(
+          child: Text(value, textAlign: TextAlign.right,
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600)),
+        ),
+      ],
+    ),
+  );
+
+  Widget _statusBox(String label, String value, MaterialColor color,
+      {bool bigValue = false}) =>
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.teal.shade50,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.teal.shade100),
+          color: color.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.shade300, width: 1.5),
         ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: Colors.teal.shade800,
-                    ),
-                  ),
-                  Text(
-                    'Qty: $qty  •  Rate: $rate',
-                    style: const TextStyle(fontSize: 11, color: Colors.black54),
-                  ),
-                ],
-              ),
-            ),
-            Text(
-              total,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: Colors.teal.shade800,
-              ),
-            ),
+            Text(label,
+                style: TextStyle(fontWeight: FontWeight.bold,
+                    fontSize: bigValue ? 15 : 14, color: color.shade800)),
+            Text(value,
+                style: TextStyle(fontWeight: FontWeight.bold,
+                    fontSize: bigValue ? 18 : 16, color: color.shade800)),
           ],
         ),
-      ),
-    );
-  }
-
-  // ── Info row (Feed ke _detailRow jaisa) ──
-  Widget _medicineInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 13, color: Colors.black54),
-          ),
-          const SizedBox(width: 16),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+      );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🗑️ DELETE CONFIRMATION — Medicine Sale
+// 🗑️ DELETE
 // ═══════════════════════════════════════════════════════════════════════════
-Future<void> _confirmDeleteMedicineSale(
-  BuildContext context,
-  Map<String, dynamic> sale,
-) async {
+Future<void> _medConfirmDelete(
+    BuildContext context, Map<String, dynamic> sale) async {
   final bool? confirm = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Delete Karein?'),
       content: const Text(
-        'Kya aap is medicine sale ki info ko delete karna chahte hain? Yeh permanent hai.',
-      ),
+          'Kya aap is medicine sale ko delete karna chahte hain?'),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('No'),
-        ),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No')),
         TextButton(
           onPressed: () => Navigator.pop(ctx, true),
           style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -4395,26 +4213,14 @@ Future<void> _confirmDeleteMedicineSale(
       ],
     ),
   );
-
-  if (confirm == true) {
-    final String? existingSales = await CompanyStore.instance.getString(
-      'medicineSalesHistory',
-    );
-    List<dynamic> salesList = existingSales != null
-        ? json.decode(existingSales)
-        : [];
-    salesList.removeWhere((s) => s['id'] == sale['id']);
-    await CompanyStore.instance.setString(
-      'medicineSalesHistory',
-      json.encode(salesList),
-    );
-
-    Get.back(result: true);
-    Get.snackbar(
-      'Deleted 🗑️',
-      'Medicine Sale Record Delete Ho Gaya',
-      backgroundColor: Colors.red,
-      colorText: Colors.white,
-    );
-  }
+  if (confirm != true) return;
+  final String? j =
+      await CompanyStore.instance.getString('medicineSalesHistory');
+  List<dynamic> list = j != null ? json.decode(j) : [];
+  list.removeWhere((s) => s['id'] == sale['id']);
+  await CompanyStore.instance.setString(
+      'medicineSalesHistory', json.encode(list));
+  Get.back(result: true);
+  Get.snackbar('Deleted 🗑️', 'Sale delete ho gaya',
+      backgroundColor: Colors.red, colorText: Colors.white);
 }
