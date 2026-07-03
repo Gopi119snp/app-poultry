@@ -3881,6 +3881,66 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (showEditButton)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: isEditable
+                  ? Colors.orange.shade50
+                  : const Color(0xFFE8F5E9),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isEditable
+                    ? Colors.orange.shade300
+                    : primaryGreen.withOpacity(0.4),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isEditable ? Icons.edit_note_rounded : Icons.lock_rounded,
+                  size: 20,
+                  color: isEditable ? Colors.orange.shade800 : primaryGreen,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isEditable
+                        ? 'Editing mode ON — neeche fields badal ke "Process Selected Rule Engine" dabao'
+                        : 'Rule 1 SAVED hai — parameters change karne ke liye yahan tap karo',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: isEditable
+                          ? Colors.orange.shade900
+                          : primaryGreen,
+                    ),
+                  ),
+                ),
+                if (!isEditable)
+                  TextButton(
+                    onPressed: onToggleEdit,
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.orange.shade100,
+                      foregroundColor: Colors.orange.shade900,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'Edit Karo',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -4320,6 +4380,66 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (showEditButton)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: isEditable
+                  ? Colors.orange.shade50
+                  : const Color(0xFFE8F5E9),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isEditable
+                    ? Colors.orange.shade300
+                    : primaryGreen.withOpacity(0.4),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isEditable ? Icons.edit_note_rounded : Icons.lock_rounded,
+                  size: 20,
+                  color: isEditable ? Colors.orange.shade800 : primaryGreen,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isEditable
+                        ? 'Editing mode ON — neeche fields badal ke "Process Selected Rule Engine" dabao'
+                        : 'Rule 2 SAVED hai — parameters change karne ke liye yahan tap karo',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: isEditable
+                          ? Colors.orange.shade900
+                          : primaryGreen,
+                    ),
+                  ),
+                ),
+                if (!isEditable)
+                  TextButton(
+                    onPressed: onToggleEdit,
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.orange.shade100,
+                      foregroundColor: Colors.orange.shade900,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'Edit Karo',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         const Text(
           '1. Base Rate Setup',
           style: TextStyle(
