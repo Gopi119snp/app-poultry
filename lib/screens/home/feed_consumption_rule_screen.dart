@@ -31,6 +31,7 @@ class _FeedConsumptionRuleScreenState
 
   bool _loading = true;
   bool _saving = false;
+  bool _showSavedBanner = false;
 
   FeedRuleType _ruleType = FeedRuleType.standardAgeChart;
   final TextEditingController _multiplierCtrl = TextEditingController(
@@ -42,6 +43,24 @@ class _FeedConsumptionRuleScreenState
     '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
   ];
+
+  /// Konse mahine kisi bhi season se cover nahi hain — inhi mahino mein
+  /// Default Multiplier use hoga. Agar list empty hai, matlab saare 12
+  /// mahine kisi season se cover ho chuke hain aur default kabhi use
+  /// nahi hoga.
+  List<String> _uncoveredMonthNames() {
+    final covered = <int>{};
+    for (final s in _seasons) {
+      for (int m = 1; m <= 12; m++) {
+        if (s.matchesMonth(m)) covered.add(m);
+      }
+    }
+    final uncovered = <String>[];
+    for (int m = 1; m <= 12; m++) {
+      if (!covered.contains(m)) uncovered.add(_monthNames[m]);
+    }
+    return uncovered;
+  }
 
   @override
   void initState() {
@@ -98,23 +117,45 @@ class _FeedConsumptionRuleScreenState
       seasonalOverrides: _seasons,
     );
 
-    await CompanyStore.instance.setString(
+    final encoded = jsonEncode(config.toJson());
+    await CompanyStore.instance.setString('feedConsumptionRuleConfig', encoded);
+
+    // ── Round-trip verify: turant wapas padh ke confirm karo ki
+    // Firestore/local dono mein sahi save hua ─────────────────────────────
+    final verifyRaw = await CompanyStore.instance.getString(
       'feedConsumptionRuleConfig',
-      jsonEncode(config.toJson()),
     );
+    final bool actuallySaved = verifyRaw == encoded;
 
-    setState(() => _saving = false);
     if (!mounted) return;
+    setState(() {
+      _saving = false;
+      _showSavedBanner = actuallySaved;
+    });
 
-    Get.snackbar(
-      'Rule Saved ✅',
-      'Feed consumption rule update ho gaya. Sabhi batches isi rule se calculate honge.',
-      backgroundColor: primaryGreen,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
-    );
-    Navigator.pop(context);
+    if (actuallySaved) {
+      Get.snackbar(
+        'Rule Saved ✅',
+        'Feed consumption rule update ho gaya. Sabhi batches isi rule se calculate honge.',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+        duration: const Duration(seconds: 3),
+      );
+      // Yahan se ab NAHI pop kar rahe — taaki "Saved" wala green banner
+      // screen pe dikhta rahe aur confirm ho ki save hua hai. User khud
+      // back arrow se bahar jaayega jab confirm ho jaaye.
+    } else {
+      Get.snackbar(
+        'Save Fail Hua ⚠️',
+        'Kuch gadbad hui, dobara try karein.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+    }
   }
 
   void _showAddSeasonDialog() {
@@ -236,6 +277,7 @@ class _FeedConsumptionRuleScreenState
                       multiplier: mult,
                     ),
                   );
+                  _showSavedBanner = false;
                 });
                 Navigator.pop(context);
               },
@@ -268,6 +310,39 @@ class _FeedConsumptionRuleScreenState
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                if (_showSavedBanner) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: primaryGreen.withOpacity(0.4)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.check_circle_rounded,
+                            color: primaryGreen, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Yeh rule cloud par SAVE ho chuka hai — sabhi '
+                            'batches abhi isi ke hisaab se calculate ho rahe hain.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: primaryGreen,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
                 const Text(
                   'Yeh rule aapki company ke SABHI batches ke "Expected '
                   'Consumed" aur "Expected Balance" calculation mein use hoga.',
@@ -322,6 +397,8 @@ class _FeedConsumptionRuleScreenState
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
+                          onChanged: (_) =>
+                              setState(() => _showSavedBanner = false),
                           decoration: InputDecoration(
                             prefixIcon: const Icon(Icons.tune_rounded, size: 20),
                             labelText: 'Multiplier (e.g. 4.5)',
@@ -404,13 +481,66 @@ class _FeedConsumptionRuleScreenState
                             IconButton(
                               icon: const Icon(Icons.delete_outline_rounded,
                                   color: Colors.redAccent, size: 20),
-                              onPressed: () =>
-                                  setState(() => _seasons.removeAt(i)),
+                              onPressed: () => setState(() {
+                                _seasons.removeAt(i);
+                                _showSavedBanner = false;
+                              }),
                             ),
                           ],
                         ),
                       );
                     }),
+
+                  const SizedBox(height: 12),
+                  Builder(builder: (context) {
+                    final uncovered = _uncoveredMonthNames();
+                    final bool allCovered = uncovered.isEmpty;
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: allCovered
+                            ? Colors.blue.shade50
+                            : Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: allCovered
+                              ? Colors.blue.shade100
+                              : Colors.amber.shade200,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            allCovered
+                                ? Icons.info_rounded
+                                : Icons.warning_amber_rounded,
+                            size: 18,
+                            color: allCovered
+                                ? Colors.blue.shade700
+                                : Colors.amber.shade800,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              allCovered
+                                  ? 'Saare 12 mahine seasons se covered hain — '
+                                    'isliye Default Multiplier (${_multiplierCtrl.text}) '
+                                    'kabhi use nahi hoga.'
+                                  : 'Default Multiplier (${_multiplierCtrl.text}) '
+                                    'in mahino mein use hoga: ${uncovered.join(", ")}',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: allCovered
+                                    ? Colors.blue.shade900
+                                    : Colors.amber.shade900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
                 ],
 
                 const SizedBox(height: 28),
@@ -458,7 +588,10 @@ class _FeedConsumptionRuleScreenState
     final bool selected = _ruleType == type;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () => setState(() => _ruleType = type),
+      onTap: () => setState(() {
+        _ruleType = type;
+        _showSavedBanner = false;
+      }),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -497,7 +630,10 @@ class _FeedConsumptionRuleScreenState
               value: type,
               groupValue: _ruleType,
               activeColor: primaryGreen,
-              onChanged: (v) => setState(() => _ruleType = v!),
+              onChanged: (v) => setState(() {
+                _ruleType = v!;
+                _showSavedBanner = false;
+              }),
             ),
           ],
         ),
