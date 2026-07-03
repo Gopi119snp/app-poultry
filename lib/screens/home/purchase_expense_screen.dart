@@ -4129,11 +4129,9 @@ bool canConvert(String unit1, String unit2) {
   return false;
 }
 
-/// Rs per BASE unit -> Rs per TARGET unit
-/// e.g. Rs2000/liter -> Rs2/ml  (DIVIDE, not multiply)
-double? pricePerUnit(double pricePerBase, String baseUnit, String targetUnit) {
-  final String b = baseUnit.toLowerCase().trim();
-  final String t = targetUnit.toLowerCase().trim();
+/// Rs/base → Rs/target  e.g. Rs2000/liter → Rs2/ml  (DIVIDE)
+double? pricePerUnit(double pricePerBase, String base, String target) {
+  final b = base.toLowerCase().trim(), t = target.toLowerCase().trim();
   if (b == t) return pricePerBase;
   if (_unitToMl.containsKey(b) && _unitToMl.containsKey(t))
     return pricePerBase * _unitToMl[b]! / _unitToMl[t]!;
@@ -4142,9 +4140,9 @@ double? pricePerUnit(double pricePerBase, String baseUnit, String targetUnit) {
   return null;
 }
 
-/// Rs per TARGET unit -> Rs per BASE unit
-double? priceToBase(double pricePerTarget, String targetUnit, String baseUnit) =>
-    pricePerUnit(pricePerTarget, targetUnit, baseUnit);
+/// Rs/target → Rs/base  e.g. Rs2/ml → Rs2000/liter
+double? priceToBase(double pricePerTarget, String target, String base) =>
+    pricePerUnit(pricePerTarget, target, base);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 💊 MEDICINE HISTORY SCREEN — Running lot per medicine type
@@ -4442,32 +4440,92 @@ class _MedicineRunningLotCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Add more stock button
-                GestureDetector(
-                  onTap: () async {
-                    await _showAddMoreStockDialog(context, med);
-                    onRefresh();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.shade700,
-                      borderRadius: BorderRadius.circular(8),
+                // Add more stock button + Delete lot button
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      onTap: () async {
+                        await _showAddMoreStockDialog(context, med);
+                        onRefresh();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.shade700,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.add, color: Colors.white, size: 14),
+                            SizedBox(width: 4),
+                            Text('Add',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
                     ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.add, color: Colors.white, size: 14),
-                        SizedBox(width: 4),
-                        Text('Add',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold)),
-                      ],
+                    const SizedBox(width: 8),
+                    // Delete entire lot
+                    GestureDetector(
+                      onTap: () async {
+                        final bool? confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Pura Lot Delete Karein?'),
+                            content: Text(
+                              'Kya aap "$name" ka poora lot delete karna chahte hain?\n\n'
+                              '⚠️ Isse is medicine ki saari purchase history, '
+                              'farmer allocations sab delete ho jayenge.\n\n'
+                              'Yeh permanent hai.',
+                            ),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Cancel')),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                style: TextButton.styleFrom(
+                                    foregroundColor: Colors.red),
+                                child: const Text('Yes, Delete Lot'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm != true) return;
+
+                        final String? sj = await CompanyStore.instance
+                            .getString('medicineStockList');
+                        if (sj == null) return;
+                        List<dynamic> all = json.decode(sj);
+                        all.removeWhere(
+                            (m) => m['id']?.toString() == mId);
+                        await CompanyStore.instance.setString(
+                            'medicineStockList', json.encode(all));
+                        Get.snackbar('Deleted 🗑️',
+                            '"$name" lot delete ho gaya',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white);
+                        onRefresh();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.shade300),
+                        ),
+                        child: Icon(Icons.delete_rounded,
+                            color: Colors.red.shade700, size: 16),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ],
             ),
@@ -5211,6 +5269,212 @@ class _MedicinePurchaseHistoryScreenState
     if (mounted) setState(() => _isLoading = false);
   }
 
+  // ── Delete ek purchase entry ──
+  Future<void> _deleteEntry(int index) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Karein?'),
+        content: Text(
+            'Kya aap "${_history[index]['qty']} ${_history[index]['unit'] ?? widget.unit}" '
+            'wali purchase entry delete karna chahte hain?\n\n'
+            '⚠️ Isse stock quantity bhi update hogi.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Yes, Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final String? stockJson =
+        await CompanyStore.instance.getString('medicineStockList');
+    if (stockJson == null) return;
+    List<dynamic> all = json.decode(stockJson);
+
+    for (int i = 0; i < all.length; i++) {
+      if (all[i]['id']?.toString() == widget.medicineId) {
+        List<dynamic> hist = all[i]['purchaseHistory'] ?? [];
+        if (index < 0 || index >= hist.length) break;
+
+        final double removedBase =
+            (hist[index]['qtyInBaseUnit'] as num?)?.toDouble() ??
+            (hist[index]['qty'] as num?)?.toDouble() ?? 0.0;
+        final double removedActual =
+            (hist[index]['actualPrice'] as num?)?.toDouble() ?? 0.0;
+        hist.removeAt(index);
+        all[i]['purchaseHistory'] = hist;
+
+        // Recalculate totalBaseQty and weightedAvgCost from remaining entries
+        double newTotalBase = 0;
+        double newTotalCost = 0;
+        for (final h in hist) {
+          final double hBase = (h['qtyInBaseUnit'] as num?)?.toDouble() ??
+              (h['qty'] as num?)?.toDouble() ?? 0.0;
+          final double hActual = (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
+          final double hCostPB = hBase > 0 ? hActual / hBase : 0;
+          newTotalBase += hBase;
+          newTotalCost += hBase * hCostPB;
+        }
+        all[i]['totalBaseQty']    = newTotalBase;
+        all[i]['weightedAvgCost'] = newTotalBase > 0
+            ? newTotalCost / newTotalBase
+            : 0.0;
+        break;
+      }
+    }
+
+    await CompanyStore.instance.setString('medicineStockList', json.encode(all));
+    Get.snackbar('Deleted 🗑️', 'Purchase entry delete ho gaya',
+        backgroundColor: Colors.red, colorText: Colors.white);
+    _load();
+  }
+
+  // ── Edit ek purchase entry ──
+  Future<void> _editEntry(int index) async {
+    final h = _history[index];
+    final qtyCtrl = TextEditingController(
+        text: (h['qty'] as num?)?.toStringAsFixed(2) ?? '');
+    final aCtrl = TextEditingController(
+        text: (h['actualPrice'] as num?)?.toStringAsFixed(2) ?? '');
+    final fCtrl = TextEditingController(
+        text: (h['farmerPrice'] as num?)?.toStringAsFixed(2) ?? '');
+    final String entryUnit = h['unit']?.toString() ?? widget.unit;
+
+    final bool? saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text('✏️ Edit Purchase Entry'),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Unit: $entryUnit',
+                style: TextStyle(
+                    fontSize: 12, color: Colors.grey.shade600)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: qtyCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Quantity ($entryUnit)',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: aCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Actual Price (₹)',
+                helperText: 'Company ne jis rate pe kharida (total)',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: fCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Farmer Price (₹)',
+                helperText: 'Jo rate farmer ko charge hoga (total)',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal.shade700),
+            child: const Text('Save',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (saved != true) return;
+
+    final double qty2 = double.tryParse(qtyCtrl.text) ?? 0;
+    final double act  = double.tryParse(aCtrl.text)   ?? 0;
+    final double frm  = double.tryParse(fCtrl.text)   ?? 0;
+    if (qty2 <= 0 || act <= 0) {
+      Get.snackbar('Error', 'Quantity aur actual price zaroori hai',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      return;
+    }
+
+    final double qBase =
+        convertToBase(qty2, entryUnit, widget.unit) ?? qty2;
+    final double cPB = qBase > 0 ? act / qBase : 0;
+    final double fPB = qBase > 0 ? frm / qBase : 0;
+
+    final String? stockJson =
+        await CompanyStore.instance.getString('medicineStockList');
+    if (stockJson == null) return;
+    List<dynamic> all = json.decode(stockJson);
+
+    for (int i = 0; i < all.length; i++) {
+      if (all[i]['id']?.toString() == widget.medicineId) {
+        List<dynamic> hist = all[i]['purchaseHistory'] ?? [];
+        if (index >= 0 && index < hist.length) {
+          hist[index] = {
+            ...Map<String, dynamic>.from(hist[index]),
+            'qty'           : qty2,
+            'qtyInBaseUnit' : qBase,
+            'actualPrice'   : act,
+            'farmerPrice'   : frm,
+            'perBaseActualCost': cPB,
+            'perBaseFarmerRate': fPB,
+            'editedOn'      : DateTime.now().toIso8601String(),
+          };
+        }
+        all[i]['purchaseHistory'] = hist;
+
+        // Recalculate totalBaseQty and weightedAvgCost
+        double newTotalBase = 0, newTotalCost = 0;
+        for (final hEntry in hist) {
+          final double hBase = (hEntry['qtyInBaseUnit'] as num?)?.toDouble() ?? 0;
+          final double hAct  = (hEntry['actualPrice']   as num?)?.toDouble() ?? 0;
+          final double hCPB  = hBase > 0 ? hAct / hBase : 0;
+          newTotalBase += hBase;
+          newTotalCost += hBase * hCPB;
+        }
+        all[i]['totalBaseQty']    = newTotalBase;
+        all[i]['weightedAvgCost'] = newTotalBase > 0
+            ? newTotalCost / newTotalBase : 0.0;
+        // Update farmer rate from latest entry
+        if (hist.isNotEmpty) {
+          final lastFPB = (hist.last['perBaseFarmerRate'] as num?)?.toDouble() ?? fPB;
+          all[i]['currentFarmerRate'] = lastFPB;
+        }
+        break;
+      }
+    }
+
+    await CompanyStore.instance.setString(
+        'medicineStockList', json.encode(all));
+    Get.snackbar('Updated ✅', 'Purchase entry update ho gaya',
+        backgroundColor: Colors.green, colorText: Colors.white);
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -5250,10 +5514,8 @@ class _MedicinePurchaseHistoryScreenState
                         (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
                     final double farmerPrice =
                         (h['farmerPrice'] as num?)?.toDouble() ?? 0.0;
-                    final String perUnit =
-                        (h['perBaseActualCost'] as num?) != null
-                            ? '₹${(h['perBaseActualCost'] as num).toDouble().toStringAsFixed(2)} / ${widget.unit}'
-                            : '';
+                    final double cPB =
+                        (h['perBaseActualCost'] as num?)?.toDouble() ?? 0;
                     final String date =
                         formatHistoryDateTime(h['date']?.toString());
                     final String addedBy =
@@ -5267,12 +5529,12 @@ class _MedicinePurchaseHistoryScreenState
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border:
-                            Border.all(color: Colors.teal.shade100),
+                        border: Border.all(color: Colors.teal.shade100),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // ── Header: qty + price + edit/delete ──
                           Row(
                             mainAxisAlignment:
                                 MainAxisAlignment.spaceBetween,
@@ -5284,13 +5546,49 @@ class _MedicinePurchaseHistoryScreenState
                                     fontSize: 15,
                                     color: Colors.teal.shade900),
                               ),
-                              Text(
-                                '₹${actualPrice.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                    color: Colors.teal.shade900),
-                              ),
+                              Row(children: [
+                                Text(
+                                  '₹${actualPrice.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                      color: Colors.teal.shade900),
+                                ),
+                                const SizedBox(width: 8),
+                                // Edit button
+                                InkWell(
+                                  onTap: () => _editEntry(i),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: BoxDecoration(
+                                        color: Colors.blue.shade50,
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                            color: Colors.blue.shade200)),
+                                    child: Icon(Icons.edit_rounded,
+                                        size: 14,
+                                        color: Colors.blue.shade700),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                // Delete button
+                                InkWell(
+                                  onTap: () => _deleteEntry(i),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: BoxDecoration(
+                                        color: Colors.red.shade50,
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                            color: Colors.red.shade200)),
+                                    child: Icon(Icons.delete_rounded,
+                                        size: 14,
+                                        color: Colors.red.shade700),
+                                  ),
+                                ),
+                              ]),
                             ],
                           ),
                           if (hUnit != widget.unit)
@@ -5306,11 +5604,12 @@ class _MedicinePurchaseHistoryScreenState
                             style: const TextStyle(
                                 fontSize: 12, color: Colors.black54),
                           ),
-                          if (perUnit.isNotEmpty)
-                            Text('Per unit cost: $perUnit',
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.teal.shade700)),
+                          if (cPB > 0)
+                            Text(
+                              'Per unit cost: ₹${cPB.toStringAsFixed(2)} / ${widget.unit}',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.teal.shade700)),
                           const SizedBox(height: 6),
                           Row(
                             mainAxisAlignment:
@@ -5407,6 +5706,8 @@ Future<void> _showMedicineAllocationDialog(
   bool dropdownVisible = false;
   String selectedUnit = baseUnit;
   final qtyCtrl = TextEditingController();
+  // Rate pre-fill: currentFarmerRate is Rs/baseUnit → convert to Rs/selectedUnit
+  // Initially selectedUnit == baseUnit so no conversion needed yet
   final rateCtrl = TextEditingController(
     text: currentFarmerRate > 0
         ? currentFarmerRate.toStringAsFixed(2)
@@ -5422,19 +5723,17 @@ Future<void> _showMedicineAllocationDialog(
           final double qty = double.tryParse(qtyCtrl.text) ?? 0.0;
           final double qtyBase =
               convertToBase(qty, selectedUnit, baseUnit) ?? qty;
-          // saleRate is Rs per selectedUnit — convert to Rs per baseUnit for calc
           final double saleRate =
               double.tryParse(rateCtrl.text) ?? 0.0;
+          // saleRate is Rs/selectedUnit → convert to Rs/baseUnit for calc
           final double saleRatePerBase =
               priceToBase(saleRate, selectedUnit, baseUnit) ?? saleRate;
           final bool isOver = qtyBase > availBase;
           final double availInSelected =
-              convertFromBase(availBase, baseUnit, selectedUnit) ??
-                  availBase;
-          // Cost display in selectedUnit (CORRECT: divide, not multiply)
+              convertFromBase(availBase, baseUnit, selectedUnit) ?? availBase;
+          // Cost display in selectedUnit (CORRECT: divide)
           final double costInSelected =
-              pricePerUnit(weightedAvgCost, baseUnit, selectedUnit) ??
-                  weightedAvgCost;
+              pricePerUnit(weightedAvgCost, baseUnit, selectedUnit) ?? weightedAvgCost;
           final double totalCost = qtyBase * weightedAvgCost;
           final double totalBill = qtyBase * saleRatePerBase;
           final double profit = totalBill - totalCost;
@@ -5589,24 +5888,23 @@ Future<void> _showMedicineAllocationDialog(
                                   ? (v) {
                                       if (v) {
                                         setDlg(() {
+                                          final String oldUnit = selectedUnit;
                                           selectedUnit = u;
-                                          // Rate update: Rs/base -> Rs/new unit (PRICE conversion)
+                                          // Rate convert: Rs/oldUnit → Rs/base → Rs/newUnit
                                           final double curRate =
                                               double.tryParse(rateCtrl.text) ?? 0.0;
                                           if (curRate > 0) {
-                                            // First convert current display rate -> base
-                                            // Then convert base -> new unit
-                                            final double rInBase =
-                                                priceToBase(curRate, selectedUnit, baseUnit) ??
-                                                    curRate;
-                                            final double rInNew =
-                                                pricePerUnit(rInBase, baseUnit, u) ?? rInBase;
-                                            rateCtrl.text = rInNew.toStringAsFixed(2);
+                                            final double rBase =
+                                                priceToBase(curRate, oldUnit, baseUnit) ?? curRate;
+                                            final double rNew =
+                                                pricePerUnit(rBase, baseUnit, u) ?? rBase;
+                                            rateCtrl.text = rNew.toStringAsFixed(2);
                                           } else if (currentFarmerRate > 0) {
-                                            final double perNew =
+                                            // Fallback: use farmer rate from purchase
+                                            final double rNew =
                                                 pricePerUnit(currentFarmerRate, baseUnit, u) ??
                                                     currentFarmerRate;
-                                            rateCtrl.text = perNew.toStringAsFixed(2);
+                                            rateCtrl.text = rNew.toStringAsFixed(2);
                                           }
                                         });
                                       }
@@ -6108,15 +6406,9 @@ class _MedicineAllocationDetailScreenState
     final double qtyBase =
         convertToBase(qty, _selectedUnit, baseUnit) ?? qty;
     final double rate = double.tryParse(_rateCtrl.text) ?? 0.0;
-    // Rate is Rs per _selectedUnit — convert to Rs per base for calculation
-    final double ratePerBase =
-        priceToBase(rate, _selectedUnit, baseUnit) ?? rate;
-    // Cost in selected unit for display (CORRECT: divide not multiply)
-    final double costInSelected =
-        pricePerUnit(weightedAvgCost, baseUnit, _selectedUnit) ?? weightedAvgCost;
     final bool isOver = _isEditMode && qty > _availForEdit();
     final double totalCost = qtyBase * weightedAvgCost;
-    final double totalBilling = qtyBase * ratePerBase;
+    final double totalBilling = qtyBase * rate;
     final double profit = totalBilling - totalCost;
     final bool hasCalc = qty > 0 && rate > 0;
 
@@ -6250,7 +6542,7 @@ class _MedicineAllocationDetailScreenState
                     Padding(
                       padding: const EdgeInsets.only(top: 3, bottom: 3),
                       child: Text(
-                          'Cost: ₹${costInSelected.toStringAsFixed(2)} / $_selectedUnit',
+                          'Avg Cost: ₹${weightedAvgCost.toStringAsFixed(2)} / $baseUnit',
                           style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade600)),
