@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../utils/pdf_download.dart' as pdf_web;
 import '../../../utils/feed_consumption_rule_engine.dart';
+import 'daily_update_list_screen.dart';
 
 // =============================================================================
 // BATCH DETAIL & DAILY DATA ENTRY SCREEN
@@ -4088,6 +4089,41 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               ),
             ),
           ),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: primaryGreen,
+                  side: BorderSide(color: primaryGreen.withOpacity(0.6)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                icon: const Icon(Icons.calendar_view_day_rounded, size: 20),
+                label: const Text(
+                  'Daily Update List Dekho',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DailyUpdateListScreen(
+                        batchData: _liveBatchData,
+                        dailyEntries: _dailyEntries,
+                        feedRuleConfig: _feedRuleConfig,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
 
           // ── DATA LIST ─────────────────────────────────────────────────
           Expanded(
