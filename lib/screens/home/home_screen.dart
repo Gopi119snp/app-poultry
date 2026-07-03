@@ -14,6 +14,7 @@ import '../../services/session_service.dart';
 import '../../services/auth_service.dart';
 import 'purchase_expense_screen.dart';
 import 'sales_screen.dart';
+import 'feed_consumption_rule_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String ownerName;
@@ -4614,6 +4615,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 onTap: () {
                   Navigator.pop(context);
                   _showLiftingSettingsDialog();
+                },
+              ),
+              const SizedBox(height: 12),
+              _premiumSheetTile(
+                icon: Icons.grass_rounded,
+                iconBg: const Color(0xFFFFF3E0),
+                iconColor: Colors.orange.shade800,
+                title: 'Feed Consumption Rule',
+                subtitle: 'Daily feed formula apni company ke hisaab se set karo',
+                badgeText: 'Configure',
+                badgeColor: Colors.orange.shade50,
+                badgeTextColor: Colors.orange.shade800,
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const FeedConsumptionRuleScreen(),
+                    ),
+                  );
                 },
               ),
               const SizedBox(height: 24),
