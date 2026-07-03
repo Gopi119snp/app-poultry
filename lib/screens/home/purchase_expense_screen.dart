@@ -4129,6 +4129,23 @@ bool canConvert(String unit1, String unit2) {
   return false;
 }
 
+/// Rs per BASE unit -> Rs per TARGET unit
+/// e.g. Rs2000/liter -> Rs2/ml  (DIVIDE, not multiply)
+double? pricePerUnit(double pricePerBase, String baseUnit, String targetUnit) {
+  final String b = baseUnit.toLowerCase().trim();
+  final String t = targetUnit.toLowerCase().trim();
+  if (b == t) return pricePerBase;
+  if (_unitToMl.containsKey(b) && _unitToMl.containsKey(t))
+    return pricePerBase * _unitToMl[b]! / _unitToMl[t]!;
+  if (_unitToGram.containsKey(b) && _unitToGram.containsKey(t))
+    return pricePerBase * _unitToGram[b]! / _unitToGram[t]!;
+  return null;
+}
+
+/// Rs per TARGET unit -> Rs per BASE unit
+double? priceToBase(double pricePerTarget, String targetUnit, String baseUnit) =>
+    pricePerUnit(pricePerTarget, targetUnit, baseUnit);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 💊 MEDICINE HISTORY SCREEN — Running lot per medicine type
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5405,14 +5422,21 @@ Future<void> _showMedicineAllocationDialog(
           final double qty = double.tryParse(qtyCtrl.text) ?? 0.0;
           final double qtyBase =
               convertToBase(qty, selectedUnit, baseUnit) ?? qty;
+          // saleRate is Rs per selectedUnit — convert to Rs per baseUnit for calc
           final double saleRate =
               double.tryParse(rateCtrl.text) ?? 0.0;
+          final double saleRatePerBase =
+              priceToBase(saleRate, selectedUnit, baseUnit) ?? saleRate;
           final bool isOver = qtyBase > availBase;
           final double availInSelected =
               convertFromBase(availBase, baseUnit, selectedUnit) ??
                   availBase;
+          // Cost display in selectedUnit (CORRECT: divide, not multiply)
+          final double costInSelected =
+              pricePerUnit(weightedAvgCost, baseUnit, selectedUnit) ??
+                  weightedAvgCost;
           final double totalCost = qtyBase * weightedAvgCost;
-          final double totalBill = qtyBase * saleRate;
+          final double totalBill = qtyBase * saleRatePerBase;
           final double profit = totalBill - totalCost;
           final bool hasCalc = qty > 0 && saleRate > 0;
 
@@ -5566,18 +5590,23 @@ Future<void> _showMedicineAllocationDialog(
                                       if (v) {
                                         setDlg(() {
                                           selectedUnit = u;
-                                          // Rate update — convert per base to per selected
-                                          if (currentFarmerRate > 0) {
-                                            final double perSelected =
-                                                convertFromBase(
-                                                        currentFarmerRate,
-                                                        baseUnit,
-                                                        u) ??
+                                          // Rate update: Rs/base -> Rs/new unit (PRICE conversion)
+                                          final double curRate =
+                                              double.tryParse(rateCtrl.text) ?? 0.0;
+                                          if (curRate > 0) {
+                                            // First convert current display rate -> base
+                                            // Then convert base -> new unit
+                                            final double rInBase =
+                                                priceToBase(curRate, selectedUnit, baseUnit) ??
+                                                    curRate;
+                                            final double rInNew =
+                                                pricePerUnit(rInBase, baseUnit, u) ?? rInBase;
+                                            rateCtrl.text = rInNew.toStringAsFixed(2);
+                                          } else if (currentFarmerRate > 0) {
+                                            final double perNew =
+                                                pricePerUnit(currentFarmerRate, baseUnit, u) ??
                                                     currentFarmerRate;
-                                            rateCtrl.text =
-                                                perSelected
-                                                    .toStringAsFixed(
-                                                        2);
+                                            rateCtrl.text = perNew.toStringAsFixed(2);
                                           }
                                         });
                                       }
@@ -5638,7 +5667,7 @@ Future<void> _showMedicineAllocationDialog(
                                   padding: const EdgeInsets.only(
                                       top: 3, bottom: 3),
                                   child: Text(
-                                    'Auto Cost: ₹${weightedAvgCost.toStringAsFixed(2)} / $baseUnit',
+                                    'Cost: ₹${costInSelected.toStringAsFixed(2)} / $selectedUnit',
                                     style: TextStyle(
                                         fontSize: 11,
                                         color: Colors.grey.shade600),
@@ -6079,9 +6108,15 @@ class _MedicineAllocationDetailScreenState
     final double qtyBase =
         convertToBase(qty, _selectedUnit, baseUnit) ?? qty;
     final double rate = double.tryParse(_rateCtrl.text) ?? 0.0;
+    // Rate is Rs per _selectedUnit — convert to Rs per base for calculation
+    final double ratePerBase =
+        priceToBase(rate, _selectedUnit, baseUnit) ?? rate;
+    // Cost in selected unit for display (CORRECT: divide not multiply)
+    final double costInSelected =
+        pricePerUnit(weightedAvgCost, baseUnit, _selectedUnit) ?? weightedAvgCost;
     final bool isOver = _isEditMode && qty > _availForEdit();
     final double totalCost = qtyBase * weightedAvgCost;
-    final double totalBilling = qtyBase * rate;
+    final double totalBilling = qtyBase * ratePerBase;
     final double profit = totalBilling - totalCost;
     final bool hasCalc = qty > 0 && rate > 0;
 
@@ -6215,7 +6250,7 @@ class _MedicineAllocationDetailScreenState
                     Padding(
                       padding: const EdgeInsets.only(top: 3, bottom: 3),
                       child: Text(
-                          'Avg Cost: ₹${weightedAvgCost.toStringAsFixed(2)} / $baseUnit',
+                          'Cost: ₹${costInSelected.toStringAsFixed(2)} / $_selectedUnit',
                           style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade600)),
