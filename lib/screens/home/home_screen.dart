@@ -15,6 +15,7 @@ import '../../services/auth_service.dart';
 import 'purchase_expense_screen.dart';
 import 'sales_screen.dart';
 import 'feed_consumption_rule_screen.dart';
+import 'weight_growth_rule_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String ownerName;
@@ -4633,6 +4634,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     context,
                     MaterialPageRoute(
                       builder: (context) => const FeedConsumptionRuleScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _premiumSheetTile(
+                icon: Icons.monitor_weight_rounded,
+                iconBg: const Color(0xFFE3F2FD),
+                iconColor: Colors.blue.shade800,
+                title: 'Weight Growth Rule',
+                subtitle: 'Automatic body weight ka growth curve set karo',
+                badgeText: 'Configure',
+                badgeColor: Colors.blue.shade50,
+                badgeTextColor: Colors.blue.shade800,
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const WeightGrowthRuleScreen(),
                     ),
                   );
                 },
