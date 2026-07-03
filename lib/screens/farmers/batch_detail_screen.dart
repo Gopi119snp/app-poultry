@@ -12,6 +12,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../utils/pdf_download.dart' as pdf_web;
+import '../../../utils/feed_consumption_rule_engine.dart';
 
 // =============================================================================
 // BATCH DETAIL & DAILY DATA ENTRY SCREEN
@@ -89,6 +90,13 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
   // ── Settlement Rule State ─────────────────────────────────────────────────
   int? _appliedRuleId;
+
+  // ── Feed Consumption Rule (company-configurable) ────────────────────────
+  // Default = standardAgeChart taaki jab tak company khud koi rule set na
+  // kare, purana wala fixed gram/day chart hi chalta rahe (backward-compatible).
+  FeedConsumptionRuleConfig _feedRuleConfig = FeedConsumptionRuleConfig(
+    ruleType: FeedRuleType.standardAgeChart,
+  );
 
   // Rule 1 — Big Size params
   double _r1BigFeedRate = 42.0;
@@ -170,9 +178,20 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     final savedRuleId = prefs.getInt('appliedCompanyRuleId');
     final String? rule1Json = prefs.getString('rule1SettlementConfig');
     final String? rule2Json = prefs.getString('rule2SettlementConfig');
+    final String? feedRuleJson = prefs.getString('feedConsumptionRuleConfig');
 
     setState(() {
       _appliedRuleId = savedRuleId;
+
+      if (feedRuleJson != null && feedRuleJson.isNotEmpty) {
+        try {
+          _feedRuleConfig = FeedConsumptionRuleConfig.fromJson(
+            json.decode(feedRuleJson),
+          );
+        } catch (_) {
+          // corrupt data mile toh purana default (standardAgeChart) hi rahega
+        }
+      }
 
       if (rule1Json != null) {
         final Map<String, dynamic> r1 = json.decode(rule1Json);
@@ -3608,63 +3627,34 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     );
     int idealTargetWeight = _getAppStandardTargetWeight(chicksAgeDays);
 
-    double expectedCumulativeGramsPerBird = 0;
-    final List<double> dailyFeedStandardChart = [
-      0,
-      13,
-      16,
-      19,
-      22,
-      25,
-      28,
-      32,
-      36,
-      41,
-      46,
-      51,
-      57,
-      63,
-      69,
-      75,
-      82,
-      89,
-      96,
-      103,
-      110,
-      118,
-      125,
-      132,
-      139,
-      146,
-      153,
-      160,
-      166,
-      172,
-      178,
-      184,
-      190,
-      195,
-      200,
-      204,
-      208,
-      212,
-      215,
-      218,
-      220,
-      222,
-      224,
-      225,
-      226,
-      226,
-    ];
-    for (int i = 1; i <= chicksAgeDays; i++) {
-      expectedCumulativeGramsPerBird += i < dailyFeedStandardChart.length
-          ? dailyFeedStandardChart[i]
-          : 226;
+    // ── Expected Consumed — company ke configured Feed Consumption Rule
+    // (_feedRuleConfig) ke hisaab se calculate hota hai. Standard Age Chart
+    // mode mein purana fixed gram/day table use hota hai; Linear Multiplier
+    // mode mein Live×Multiplier×Day÷1000 formula (season-aware) use hota hai.
+    DateTime batchStartDate;
+    try {
+      final parts = (_liveBatchData['startDate'] ?? '').toString().split('/');
+      batchStartDate = parts.length == 3
+          ? DateTime(
+              int.parse(parts[2]),
+              int.parse(parts[1]),
+              int.parse(parts[0]),
+            )
+          : DateTime.now();
+    } catch (_) {
+      batchStartDate = DateTime.now();
     }
 
-    double totalExpectedConsumedKg =
-        (expectedCumulativeGramsPerBird * initialChicks) / 1000;
+    double totalExpectedConsumedKg = 0.0;
+    for (int day = 1; day <= chicksAgeDays; day++) {
+      totalExpectedConsumedKg += FeedConsumptionEngine.calculateDayFeedKg(
+        config: _feedRuleConfig,
+        liveChicks: initialChicks,
+        dayNumber: day,
+        entryDate: batchStartDate.add(Duration(days: day - 1)),
+      );
+    }
+
     double expectedConsumedBags = totalExpectedConsumedKg / 50.0;
     double expectedRemainingBags = totalFeedBags - expectedConsumedBags;
     if (expectedRemainingBags < 0) expectedRemainingBags = 0;
