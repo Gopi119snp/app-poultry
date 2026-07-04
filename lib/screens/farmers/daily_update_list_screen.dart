@@ -474,10 +474,13 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   // ── Row Tap → Us din ke liye naya Flock Record ('cost') entry add karo ───
+  // NOTE: Feed Bags (delivered) field yahan JAAN-BOOJH KAR nahi hai — woh
+  // Office Manager "+Flock Record" (Cost Entry) se seedha batch_detail_screen
+  // se bharte hain. Yeh dialog sirf Field-level entries (Mortality, Weight,
+  // Remaining Feed) ke liye hai.
   void _showEditDayDialog(_DayRow row) {
     final mortalityCtrl = TextEditingController();
     final weightCtrl = TextEditingController();
-    final feedCtrl = TextEditingController();
     final remainingFeedCtrl = TextEditingController();
     final String dateStr = _fmtDate(row.date);
 
@@ -525,15 +528,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: feedCtrl,
-                keyboardType: const TextInputType.numberWithOptions(signed: true),
-                decoration: InputDecoration(
-                  labelText: 'Feed Bags (delivered is din)',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
                 controller: remainingFeedCtrl,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
@@ -544,7 +538,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
               const SizedBox(height: 8),
               const Text(
                 'Yeh ek NAYI entry add karega (Flock Record jaisa) — is din '
-                'ke pehle se maujood data mein add hoga, overwrite nahi.',
+                'ke pehle se maujood data mein add hoga, overwrite nahi. Feed '
+                'Bags delivery Office Manager "+Flock Record" se alag bharte hain.',
                 style: TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ],
@@ -562,7 +557,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
               dateStr: dateStr,
               weightInput: weightCtrl.text.trim(),
               mortalityInput: mortalityCtrl.text.trim(),
-              feedInput: feedCtrl.text.trim(),
+              feedInput: '',
               remainingFeedInput: remainingFeedCtrl.text.trim(),
             ),
             child: const Text(
@@ -813,7 +808,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                             borderRadius: BorderRadius.circular(8),
                             onTap: () {
                               setState(() {
-                                _tableScale = (_tableScale - 0.1).clamp(0.7, 1.6);
+                                _tableScale = (_tableScale - 0.1).clamp(0.5, 1.8);
                               });
                             },
                             child: Container(
@@ -840,7 +835,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                             borderRadius: BorderRadius.circular(8),
                             onTap: () {
                               setState(() {
-                                _tableScale = (_tableScale + 0.1).clamp(0.7, 1.6);
+                                _tableScale = (_tableScale + 0.1).clamp(0.5, 1.8);
                               });
                             },
                             child: Container(
@@ -895,6 +890,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                               dataRowMinHeight: 40 * _tableScale,
                               dataRowMaxHeight: 56 * _tableScale,
                               columns: const [
+                                DataColumn(label: Text('Edit')),
                                 DataColumn(label: Text('Date')),
                                 DataColumn(label: Text('Din')),
                                 DataColumn(label: Text('Live Chicks')),
@@ -916,6 +912,18 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                       onSelectChanged: (_) =>
                                           _showEditDayDialog(r),
                                       cells: [
+                                        DataCell(
+                                          IconButton(
+                                            icon: Icon(
+                                              Icons.edit_note_rounded,
+                                              color: primaryGreen,
+                                              size: 20 * _tableScale,
+                                            ),
+                                            tooltip: 'Entry Add/Edit Karo',
+                                            onPressed: () =>
+                                                _showEditDayDialog(r),
+                                          ),
+                                        ),
                                         DataCell(Text(_fmtDate(r.date))),
                                         DataCell(Text('${r.day}')),
                                         DataCell(Text('${r.liveChicks}')),
