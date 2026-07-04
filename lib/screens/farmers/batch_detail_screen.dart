@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../utils/pdf_download.dart' as pdf_web;
 import '../../../utils/feed_consumption_rule_engine.dart';
+import '../../../utils/fraud_risk_engine.dart';
 import 'daily_update_list_screen.dart';
 
 // =============================================================================
@@ -148,6 +149,117 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
   String _formatDate(DateTime dt) {
     return "${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}";
+  }
+
+  // ── 🚨 Fraud Risk Indicator Card ───────────────────────────────────────
+  Widget _buildFraudRiskCard(FraudRiskAssessment a) {
+    Color bgColor;
+    Color borderColor;
+    Color textColor;
+    String headline;
+    IconData icon;
+
+    switch (a.riskLevel) {
+      case 'high':
+        bgColor = Colors.red.shade50;
+        borderColor = Colors.red.shade300;
+        textColor = Colors.red.shade900;
+        headline = '🚨 High Risk — Dono checks flag ho rahe hain';
+        icon = Icons.report_problem_rounded;
+        break;
+      case 'watch':
+        bgColor = Colors.amber.shade50;
+        borderColor = Colors.amber.shade400;
+        textColor = Colors.orange.shade900;
+        headline = '⚠️ Watch — Ek check flag ho raha hai';
+        icon = Icons.warning_amber_rounded;
+        break;
+      default:
+        bgColor = const Color(0xFFE8F5E9);
+        borderColor = primaryGreen.withOpacity(0.4);
+        textColor = primaryGreen;
+        headline = '✅ Sab Normal — Koi risk signal nahi';
+        icon = Icons.verified_rounded;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor, width: 1.4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: textColor, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  headline,
+                  style: TextStyle(
+                    color: textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _fraudCheckRow(
+            label: 'Feed-per-Bird',
+            detail:
+                'Actual ${a.feedPerBird.actualConsumedKg.toStringAsFixed(1)} kg / '
+                'Expected ${a.feedPerBird.expectedConsumedKg.toStringAsFixed(1)} kg '
+                '(${a.feedPerBird.ratioPercent.toStringAsFixed(1)}%)',
+            isFlagged: a.feedPerBird.isFlagged,
+          ),
+          const SizedBox(height: 6),
+          _fraudCheckRow(
+            label: 'Purchase Reconciliation',
+            detail: 'Expected Stock ${a.purchaseReconciliation.expectedRemainingKg.toStringAsFixed(1)} kg '
+                'vs Actual ${a.purchaseReconciliation.actualRemainingKg.toStringAsFixed(1)} kg '
+                '(Gap ${a.purchaseReconciliation.gapPercent.toStringAsFixed(1)}%)',
+            isFlagged: a.purchaseReconciliation.isFlagged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fraudCheckRow({
+    required String label,
+    required String detail,
+    required bool isFlagged,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          isFlagged ? Icons.cancel_rounded : Icons.check_circle_rounded,
+          size: 15,
+          color: isFlagged ? Colors.red.shade700 : Colors.green.shade700,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(fontSize: 11.5, color: Colors.black87),
+              children: [
+                TextSpan(
+                  text: '$label: ',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                TextSpan(text: detail),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -3676,6 +3788,17 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         ? (actualFeedConsumedKg / totalBiomassProducedKg)
         : 0.0;
 
+    // ── 🚨 Fraud Risk Assessment — Feed-per-Bird + Purchase Reconciliation ──
+    // Dono checks pehle se computed values reuse karte hain, koi naya loop
+    // nahi lagta. Sirf tab meaningful hai jab kabhi "Actual Remaining Feed"
+    // report hui ho (warna hasData=false rahega aur card kuch nahi dikhayega).
+    final FraudRiskAssessment fraudAssessment = FraudRiskEngine.assess(
+      feedDeliveredKg: totalFeedBags * 50.0,
+      expectedConsumedKg: totalExpectedConsumedKg,
+      actualRemainingKg: actualRemainingBagsNum * 50.0,
+      remainingFeedEverReported: hasRemainingFeedLogged,
+    );
+
     String dynamicStatus = _liveBatchData['status'].toString().toUpperCase();
     if (dynamicStatus == 'CLOSED') dynamicStatus = 'COMPLETED';
     if (dynamicStatus == 'ACTIVE' &&
@@ -3894,6 +4017,40 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               ],
             ),
           ),
+
+          const SizedBox(height: 16),
+
+          // ── 🚨 FRAUD RISK INDICATOR ───────────────────────────────────
+          if (fraudAssessment.hasAnyData)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: _buildFraudRiskCard(fraudAssessment),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, color: Colors.grey.shade600, size: 18),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Fraud Risk check tab shuru hoga jab kabhi "Actual Remaining Feed" '
+                        '(Flock Record mein) report hui ho.',
+                        style: TextStyle(fontSize: 11.5, color: Colors.black54),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           const SizedBox(height: 16),
 
