@@ -4108,17 +4108,22 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   'Daily Update List Dekho',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-                onPressed: () {
-                  Navigator.push(
+                onPressed: () async {
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => DailyUpdateListScreen(
                         batchData: _liveBatchData,
                         dailyEntries: _dailyEntries,
                         feedRuleConfig: _feedRuleConfig,
+                        farmerId: widget.farmerId,
+                        userRole: widget.userRole,
                       ),
                     ),
                   );
+                  // Wapas aane par fresh data reload karo, kyunki Daily
+                  // Update List se seedha naye entries save hue ho sakte hain
+                  await _loadFreshBatchData();
                 },
               ),
             ),
