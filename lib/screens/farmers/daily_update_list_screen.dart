@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/company_store.dart';
 import '../../../utils/feed_consumption_rule_engine.dart';
 import '../../../utils/weight_growth_rule_engine.dart';
@@ -17,17 +18,27 @@ import '../../../utils/weight_growth_rule_engine.dart';
 // (FeedConsumptionRuleConfig / WeightGrowthRuleConfig) se aate hain.
 // Manual Body Weight wahi hai jo Flock Record ('cost' type entry) mein
 // us din ke liye actual mein daala gaya tha.
+//
+// Row par TAP karke us din ke liye seedha ek naya Flock Record ('cost' type)
+// entry add ki ja sakti hai — bilkul "+Flock Record" button jaisa hi, bas
+// date pehle se fix hoti hai. Yeh CompanyFarmers/SharedPreferences mein
+// waisa hi save hota hai jaisa Batch Detail Screen karta hai, isliye dono
+// jagah data hamesha sync rehta hai.
 // =============================================================================
 class DailyUpdateListScreen extends StatefulWidget {
   final Map<String, dynamic> batchData;
   final List<dynamic> dailyEntries;
   final FeedConsumptionRuleConfig feedRuleConfig;
+  final String farmerId;
+  final String userRole;
 
   const DailyUpdateListScreen({
     super.key,
     required this.batchData,
     required this.dailyEntries,
     required this.feedRuleConfig,
+    required this.farmerId,
+    required this.userRole,
   });
 
   @override
@@ -73,6 +84,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
   static const Color primaryGreen = Color(0xFF1B5E20);
 
   bool _loading = true;
+  double _tableScale = 1.0;
   FeedConsumptionRuleConfig get _feedConfig => widget.feedRuleConfig;
   WeightGrowthRuleConfig _weightConfig = WeightGrowthRuleConfig();
 
@@ -90,10 +102,12 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
   double _fallbackKgPerBag = 50.0;
 
   List<_DayRow> _rows = [];
+  late List<dynamic> _localDailyEntries;
 
   @override
   void initState() {
     super.initState();
+    _localDailyEntries = List<dynamic>.from(widget.dailyEntries);
     _loadAndCompute();
   }
 
@@ -198,7 +212,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
 
     // Cost-type entries pehle se parse kar lo (date ke saath)
     final List<Map<String, dynamic>> costEntries = [];
-    for (final e in widget.dailyEntries) {
+    for (final e in _localDailyEntries) {
       if (e['type'].toString().toLowerCase() != 'cost') continue;
       final d = _parseDdMmYyyy(e['date']);
       if (d == null) continue;
@@ -459,6 +473,284 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
+  // ── Row Tap → Us din ke liye naya Flock Record ('cost') entry add karo ───
+  void _showEditDayDialog(_DayRow row) {
+    final mortalityCtrl = TextEditingController();
+    final weightCtrl = TextEditingController();
+    final feedCtrl = TextEditingController();
+    final remainingFeedCtrl = TextEditingController();
+    final String dateStr = _fmtDate(row.date);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Entry — $dateStr (Din ${row.day})',
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Live Chicks (is din tak): ${row.liveChicks}',
+                  style: const TextStyle(fontSize: 11.5, color: Colors.black87),
+                ),
+              ),
+              TextField(
+                controller: mortalityCtrl,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Mortality (is din ki nayi entry)',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: weightCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Avg Weight (kg)',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: feedCtrl,
+                keyboardType: const TextInputType.numberWithOptions(signed: true),
+                decoration: InputDecoration(
+                  labelText: 'Feed Bags (delivered is din)',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: remainingFeedCtrl,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Remaining Feed Bags (optional)',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Yeh ek NAYI entry add karega (Flock Record jaisa) — is din '
+                'ke pehle se maujood data mein add hoga, overwrite nahi.',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: primaryGreen),
+            onPressed: () => _saveDayEntry(
+              dialogContext: context,
+              dateStr: dateStr,
+              weightInput: weightCtrl.text.trim(),
+              mortalityInput: mortalityCtrl.text.trim(),
+              feedInput: feedCtrl.text.trim(),
+              remainingFeedInput: remainingFeedCtrl.text.trim(),
+            ),
+            child: const Text(
+              'Save Karo',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveDayEntry({
+    required BuildContext dialogContext,
+    required String dateStr,
+    required String weightInput,
+    required String mortalityInput,
+    required String feedInput,
+    required String remainingFeedInput,
+  }) async {
+    if (weightInput.isEmpty &&
+        mortalityInput.isEmpty &&
+        feedInput.isEmpty &&
+        remainingFeedInput.isEmpty) {
+      Get.snackbar(
+        'Validation Error ⚠️',
+        'Kripya kam se kam ek entry bharein!',
+        backgroundColor: Colors.red.shade600,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      return;
+    }
+
+    final double? weightVal = double.tryParse(weightInput);
+    final int? mortalityVal = int.tryParse(mortalityInput);
+    final int? feedVal = int.tryParse(feedInput);
+    final int? remainingVal = int.tryParse(remainingFeedInput);
+
+    if ((weightVal != null && weightVal < 0) ||
+        (mortalityVal != null && mortalityVal < 0) ||
+        (remainingVal != null && remainingVal < 0)) {
+      Get.snackbar(
+        'Invalid Value ⚠️',
+        'Weight, Mortality aur Remaining Feed negative nahi ho sakti!',
+        backgroundColor: Colors.red.shade600,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      return;
+    }
+
+    int currentTotalFeed = 0;
+    int totalMortalitySoFar = 0;
+    int totalChicksSoldSoFar = 0;
+    for (final e in _localDailyEntries) {
+      final type = e['type'].toString().toLowerCase();
+      if (type == 'cost') {
+        currentTotalFeed += int.tryParse(e['feed'].toString()) ?? 0;
+        totalMortalitySoFar += int.tryParse(e['mortality'].toString()) ?? 0;
+      } else if (type == 'sale') {
+        totalChicksSoldSoFar += int.tryParse(e['chicksSold'].toString()) ?? 0;
+      }
+    }
+
+    if (feedVal != null && feedVal < 0 && (currentTotalFeed + feedVal) < 0) {
+      Get.snackbar(
+        'Invalid Correction ⚠️',
+        'Total Feed Bags $currentTotalFeed hain. Itna minus nahi kar sakte!',
+        backgroundColor: Colors.red.shade600,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      return;
+    }
+
+    if (mortalityVal != null && mortalityVal > 0) {
+      final int initialChicks = widget.batchData['chicksCount'] ?? 0;
+      final int currentLiveChicks =
+          initialChicks - totalMortalitySoFar - totalChicksSoldSoFar;
+      if (mortalityVal > currentLiveChicks) {
+        Get.snackbar(
+          'Invalid Mortality ⚠️',
+          'Mortality ($mortalityVal) live chicks ($currentLiveChicks) se jyada nahi ho sakti!',
+          backgroundColor: Colors.red.shade600,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(15),
+        );
+        return;
+      }
+    }
+
+    final int sameDateCostCount = _localDailyEntries
+        .where(
+          (e) =>
+              e['type'].toString().toLowerCase() == 'cost' &&
+              e['date'].toString() == dateStr,
+        )
+        .length;
+    if (sameDateCostCount >= 3) {
+      Get.snackbar(
+        'Limit Reached ⚠️',
+        '$dateStr ko 3 cost entries pehle se save hain. Max 3 allowed!',
+        backgroundColor: Colors.orange.shade700,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      return;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? farmersJson = prefs.getString('companyFarmers');
+      if (farmersJson == null) return;
+
+      List<dynamic> farmersList = jsonDecode(farmersJson);
+      final Map<String, dynamic> logEntry = {
+        'type': 'cost',
+        'date': dateStr,
+        'weight': weightInput.isEmpty ? '0' : weightInput,
+        'mortality': mortalityInput.isEmpty ? '0' : mortalityInput,
+        'feed': feedInput.isEmpty ? '0' : feedInput,
+        'remainingFeed': remainingFeedInput.isEmpty ? '0' : remainingFeedInput,
+        'enteredBy': widget.userRole,
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+
+      List<dynamic>? updatedDailyEntries;
+      for (var farmerItem in farmersList) {
+        if (farmerItem['id'] == widget.farmerId) {
+          for (var batchItem in (farmerItem['batches'] ?? [])) {
+            if (batchItem['id'] == widget.batchData['id']) {
+              batchItem['dailyEntries'] ??= [];
+              batchItem['dailyEntries'].add(logEntry);
+              updatedDailyEntries = batchItem['dailyEntries'];
+              break;
+            }
+          }
+          break;
+        }
+      }
+
+      if (updatedDailyEntries == null) {
+        Get.snackbar(
+          'Error ⚠️',
+          'Batch nahi mila, entry save nahi ho payi.',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(15),
+        );
+        return;
+      }
+
+      await prefs.setString('companyFarmers', jsonEncode(farmersList));
+
+      setState(() {
+        _localDailyEntries = List<dynamic>.from(updatedDailyEntries!);
+        _computeRows();
+      });
+
+      if (!mounted) return;
+      Navigator.pop(dialogContext);
+      Get.snackbar(
+        'Saved ✅',
+        '$dateStr ki entry save ho gayi — table update ho gayi hai.',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+    } catch (e) {
+      Get.snackbar(
+        'Error ⚠️',
+        'Save nahi ho paya: $e',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -502,12 +794,81 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                   color: Colors.grey.shade100,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'List Zoom',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              setState(() {
+                                _tableScale = (_tableScale - 0.1).clamp(0.7, 1.6);
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: const Icon(Icons.remove_rounded, size: 18),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            child: Text(
+                              '${(_tableScale * 100).round()}%',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              setState(() {
+                                _tableScale = (_tableScale + 0.1).clamp(0.7, 1.6);
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: const Icon(Icons.add_rounded, size: 18),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  color: Colors.grey.shade100,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
                     vertical: 10,
                   ),
-                  child: const Text(
-                    '👉 Table ko side mein scroll karke saare columns dekhein. '
-                    'FCR/Weight dono Automatic (rule-based) aur Manual (entered) hain.',
-                    style: TextStyle(fontSize: 11.5, color: Colors.black87),
+                  child: Text(
+                    '👉 Kisi bhi din ki ROW par TAP karke Mortality/Weight/Feed add karo. '
+                    'Side mein scroll karke saare columns bhi dekh sakte ho.',
+                    style: const TextStyle(fontSize: 11.5, color: Colors.black87),
                   ),
                 ),
                 Expanded(
@@ -517,16 +878,22 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                           scrollDirection: Axis.horizontal,
                           child: SingleChildScrollView(
                             child: DataTable(
+                              showCheckboxColumn: false,
                               headingRowColor: WidgetStateProperty.all(
                                 primaryGreen,
                               ),
-                              headingTextStyle: const TextStyle(
+                              headingTextStyle: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 11.5,
+                                fontSize: 11.5 * _tableScale,
                               ),
-                              dataTextStyle: const TextStyle(fontSize: 11.5),
-                              columnSpacing: 18,
+                              dataTextStyle: TextStyle(
+                                fontSize: 11.5 * _tableScale,
+                              ),
+                              columnSpacing: 18 * _tableScale,
+                              horizontalMargin: 12 * _tableScale,
+                              dataRowMinHeight: 40 * _tableScale,
+                              dataRowMaxHeight: 56 * _tableScale,
                               columns: const [
                                 DataColumn(label: Text('Date')),
                                 DataColumn(label: Text('Din')),
@@ -546,6 +913,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                               rows: _rows
                                   .map(
                                     (r) => DataRow(
+                                      onSelectChanged: (_) =>
+                                          _showEditDayDialog(r),
                                       cells: [
                                         DataCell(Text(_fmtDate(r.date))),
                                         DataCell(Text('${r.day}')),
