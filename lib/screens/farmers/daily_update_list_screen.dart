@@ -517,7 +517,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         color = Colors.red.shade700;
         break;
       case AlertLevel.yellow:
-        color = Colors.amber.shade800;
+        color = Colors.amber.shade700;
         break;
       case AlertLevel.green:
         color = Colors.green.shade700;
@@ -525,13 +525,26 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       default:
         color = Colors.black87;
     }
-    return Text(
-      text,
-      style: TextStyle(
-        color: color,
-        fontWeight: level != null ? FontWeight.bold : FontWeight.normal,
-        fontSize: 11.5 * _tableScale,
-      ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (level != null) ...[
+          Container(
+            width: 8 * _tableScale,
+            height: 8 * _tableScale,
+            margin: EdgeInsets.only(right: 5 * _tableScale),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+        ],
+        Text(
+          text,
+          style: TextStyle(
+            color: color,
+            fontWeight: level != null ? FontWeight.bold : FontWeight.normal,
+            fontSize: 11.5 * _tableScale,
+          ),
+        ),
+      ],
     );
   }
 
