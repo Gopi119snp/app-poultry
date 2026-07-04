@@ -36,6 +36,7 @@ class CompanyStore {
     'feedConsumptionRuleConfig',
     'weightGrowthRuleConfig',
     'runningCostConfig',
+    'performanceAlertConfig',
     'personalFarmers',
     'password', // legacy owner password — Firebase Auth primary hai
   };
