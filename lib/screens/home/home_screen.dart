@@ -16,6 +16,7 @@ import 'purchase_expense_screen.dart';
 import 'sales_screen.dart';
 import 'feed_consumption_rule_screen.dart';
 import 'weight_growth_rule_screen.dart';
+import 'performance_alert_rule_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String ownerName;
@@ -4774,6 +4775,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     context,
                     MaterialPageRoute(
                       builder: (context) => const WeightGrowthRuleScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              _premiumSheetTile(
+                icon: Icons.traffic_rounded,
+                iconBg: const Color(0xFFFFEBEE),
+                iconColor: Colors.red.shade700,
+                title: 'Performance Alert Rule',
+                subtitle: 'FCR aur Mortality ke Red/Green/Yellow limits set karo',
+                badgeText: 'Configure',
+                badgeColor: Colors.red.shade50,
+                badgeTextColor: Colors.red.shade700,
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const PerformanceAlertRuleScreen(),
                     ),
                   );
                 },
