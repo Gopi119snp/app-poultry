@@ -4801,132 +4801,94 @@ class _MedicineRunningLotCard extends StatelessWidget {
               ),
             ),
 
-          // ── FARMER ALLOCATIONS ──
+          // ── FARMER ALLOCATIONS BUTTON ──
           if (allocs.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('🧑 Farmer Allocations:',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade700)),
-                  const SizedBox(height: 6),
-                  ...allocs.asMap().entries.map((e) {
-                    final i = e.key;
-                    final a = e.value;
-                    final double aBaseQty =
-                        (a['qtyInBaseUnit'] as num?)?.toDouble() ??
-                            (a['qty'] as num?)?.toDouble() ??
-                            0.0;
-                    final String aDisplayUnit =
-                        a['unit']?.toString() ?? unit;
-                    final double aDisplayQty =
-                        convertFromBase(aBaseQty, unit, aDisplayUnit) ??
-                            aBaseQty;
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () async {
-                        final result = await Get.to(
-                          () => MedicineAllocationDetailScreen(
-                            medicineId: mId,
-                            allocIndex: i,
-                          ),
-                        );
-                        if (result == true) onRefresh();
-                      },
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 6),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.teal.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border:
-                              Border.all(color: Colors.teal.shade200),
+            InkWell(
+              onTap: () async {
+                final result = await Get.to(
+                  () => MedicineFarmerAllocationsListScreen(
+                    medicineId: mId,
+                    medicineName: name,
+                    unit: unit,
+                  ),
+                );
+                if (result == true) onRefresh();
+              },
+              child: Container(
+                margin:
+                    const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.teal.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.teal.shade200),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.people_alt_rounded,
+                            size: 15, color: Colors.teal.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Farmer Allocations (${allocs.length})',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.teal.shade800,
+                              fontWeight: FontWeight.w500),
                         ),
-                        child: Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '🧑 ${a['farmerName'] ?? '-'}',
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            Text(
-                              '${aDisplayQty.toStringAsFixed(2)} $aDisplayUnit',
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(width: 6),
-                            Icon(Icons.chevron_right_rounded,
-                                size: 16, color: Colors.grey.shade500),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                ],
+                      ],
+                    ),
+                    Icon(Icons.chevron_right_rounded,
+                        size: 16, color: Colors.teal.shade700),
+                  ],
+                ),
               ),
             ),
 
-          // ── PRIVATE BUYERS (medicine sold directly, not via farmer) ──
+          // ── PRIVATE BUYERS BUTTON (medicine sold directly, not via farmer) ──
           if (privateSales.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('🛒 Private Buyers:',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade700)),
-                  const SizedBox(height: 6),
-                  ...privateSales.map((s) {
-                    final double sQty = (s['qty'] as num?)?.toDouble() ?? 0.0;
-                    final String sUnit = s['unit']?.toString() ?? unit;
-                    final String buyer = s['buyerName']?.toString() ?? '-';
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue.shade200),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '🛒 $buyer',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          Text(
-                            '${sQty.toStringAsFixed(2)} $sUnit',
-                            style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
+            InkWell(
+              onTap: () => Get.to(
+                () => MedicinePrivateBuyersListScreen(
+                  medicineId: mId,
+                  medicineName: name,
+                  unit: unit,
+                ),
+              ),
+              child: Container(
+                margin:
+                    const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.shopping_cart_rounded,
+                            size: 15, color: Colors.blue.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Private Buyers (${privateSales.length})',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue.shade800,
+                              fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                    Icon(Icons.chevron_right_rounded,
+                        size: 16, color: Colors.blue.shade700),
+                  ],
+                ),
               ),
             ),
 
@@ -4960,6 +4922,489 @@ class _MedicineRunningLotCard extends StatelessWidget {
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🧑 FARMER ALLOCATIONS — LIST SCREEN (medicine ke saare farmer allocation)
+// Tap on any farmer -> MedicineAllocationDetailScreen (edit/delete already hai)
+// ═══════════════════════════════════════════════════════════════════════════
+class MedicineFarmerAllocationsListScreen extends StatefulWidget {
+  final String medicineId;
+  final String medicineName;
+  final String unit;
+
+  const MedicineFarmerAllocationsListScreen({
+    super.key,
+    required this.medicineId,
+    required this.medicineName,
+    required this.unit,
+  });
+
+  @override
+  State<MedicineFarmerAllocationsListScreen> createState() =>
+      _MedicineFarmerAllocationsListScreenState();
+}
+
+class _MedicineFarmerAllocationsListScreenState
+    extends State<MedicineFarmerAllocationsListScreen> {
+  List<Map<String, dynamic>> _allocs = [];
+  bool _isLoading = true;
+  bool _changed = false; // detail screen se koi edit/delete hua ho to
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _isLoading = true);
+    final String? stockJson =
+        await CompanyStore.instance.getString('medicineStockList');
+    List<Map<String, dynamic>> allocs = [];
+    if (stockJson != null) {
+      try {
+        final List<dynamic> all = json.decode(stockJson);
+        for (final m in all) {
+          if (m['id']?.toString() == widget.medicineId) {
+            final List<dynamic> raw = m['allocations'] as List<dynamic>? ?? [];
+            allocs =
+                raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _allocs = allocs;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pop(context, _changed);
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.teal.shade700,
+          leading: IconButton(
+            icon: const Icon(
+                Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            onPressed: () => Navigator.pop(context, _changed),
+          ),
+          title: Text('🧑 ${widget.medicineName} — Farmer Allocations',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14),
+              overflow: TextOverflow.ellipsis),
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _allocs.isEmpty
+                ? const Center(child: Text('Koi farmer allocation nahi.'))
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _allocs.length,
+                    itemBuilder: (ctx, i) {
+                      final a = _allocs[i];
+                      final double aBaseQty =
+                          (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+                              (a['qty'] as num?)?.toDouble() ??
+                              0.0;
+                      final String aDisplayUnit =
+                          a['unit']?.toString() ?? widget.unit;
+                      final double aDisplayQty = convertFromBase(
+                              aBaseQty, widget.unit, aDisplayUnit) ??
+                          aBaseQty;
+                      final String date =
+                          formatHistoryDateTime(a['date']?.toString());
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () async {
+                          final result = await Get.to(
+                            () => MedicineAllocationDetailScreen(
+                              medicineId: widget.medicineId,
+                              allocIndex: i,
+                            ),
+                          );
+                          if (result == true) {
+                            _changed = true;
+                            _load();
+                          }
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.teal.shade100),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text('🧑 ${a['farmerName'] ?? '-'}',
+                                        style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold)),
+                                    if (date.isNotEmpty)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(top: 3),
+                                        child: Text(date,
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                color:
+                                                    Colors.grey.shade500)),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                '${aDisplayQty.toStringAsFixed(2)} $aDisplayUnit',
+                                style: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(Icons.chevron_right_rounded,
+                                  size: 18, color: Colors.grey.shade500),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🛒 PRIVATE BUYERS — LIST SCREEN (medicine ke saare private sale buyers)
+// Tap on any buyer -> MedicinePrivateSaleDetailScreen (read-only, no edit/delete
+// — wo Sales section mein already available hai)
+// ═══════════════════════════════════════════════════════════════════════════
+class MedicinePrivateBuyersListScreen extends StatefulWidget {
+  final String medicineId;
+  final String medicineName;
+  final String unit;
+
+  const MedicinePrivateBuyersListScreen({
+    super.key,
+    required this.medicineId,
+    required this.medicineName,
+    required this.unit,
+  });
+
+  @override
+  State<MedicinePrivateBuyersListScreen> createState() =>
+      _MedicinePrivateBuyersListScreenState();
+}
+
+class _MedicinePrivateBuyersListScreenState
+    extends State<MedicinePrivateBuyersListScreen> {
+  List<Map<String, dynamic>> _rows = []; // {saleId, buyerName, mobile, date, qty, unit, rate}
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _isLoading = true);
+    final String? salesJson =
+        await CompanyStore.instance.getString('medicineSalesHistory');
+    List<Map<String, dynamic>> rows = [];
+    if (salesJson != null) {
+      try {
+        final List<dynamic> rawSales = json.decode(salesJson);
+        for (final sale in rawSales) {
+          final List<dynamic> items = sale['items'] as List<dynamic>? ?? [];
+          for (final item in items) {
+            if (item['medicineId']?.toString() != widget.medicineId) continue;
+            rows.add({
+              'saleId'   : sale['id']?.toString() ?? '',
+              'buyerName': sale['buyerName']?.toString() ?? '-',
+              'mobile'   : sale['mobile']?.toString() ?? '',
+              'date'     : sale['date']?.toString() ?? '',
+              'qty'      : (item['qty'] as num?)?.toDouble() ?? 0.0,
+              'unit'     : item['saleUnit']?.toString() ??
+                           item['unit']?.toString() ?? widget.unit,
+            });
+          }
+        }
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _rows = rows;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.teal.shade700,
+        leading: IconButton(
+          icon: const Icon(
+              Icons.arrow_back_ios_new_rounded, color: Colors.white),
+          onPressed: () => Get.back(),
+        ),
+        title: Text('🛒 ${widget.medicineName} — Private Buyers',
+            style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14),
+            overflow: TextOverflow.ellipsis),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _rows.isEmpty
+              ? const Center(child: Text('Koi private buyer nahi.'))
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _rows.length,
+                  itemBuilder: (ctx, i) {
+                    final r = _rows[i];
+                    final double qty = (r['qty'] as num?)?.toDouble() ?? 0.0;
+                    final String unit = r['unit']?.toString() ?? widget.unit;
+                    final String date =
+                        formatHistoryDateTime(r['date']?.toString());
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => Get.to(
+                        () => MedicinePrivateSaleDetailScreen(
+                          saleId: r['saleId']?.toString() ?? '',
+                          medicineId: widget.medicineId,
+                        ),
+                      ),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.shade100),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('🛒 ${r['buyerName'] ?? '-'}',
+                                      style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold)),
+                                  if (date.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 3),
+                                      child: Text(date,
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade500)),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              '${qty.toStringAsFixed(2)} $unit',
+                              style: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 6),
+                            Icon(Icons.chevron_right_rounded,
+                                size: 18, color: Colors.grey.shade500),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🛒 PRIVATE SALE — DETAIL SCREEN (READ-ONLY — koi edit/delete nahi)
+// Edit/Delete Sales section (Medicine Sales History) mein already available hai
+// ═══════════════════════════════════════════════════════════════════════════
+class MedicinePrivateSaleDetailScreen extends StatefulWidget {
+  final String saleId;
+  final String medicineId;
+
+  const MedicinePrivateSaleDetailScreen({
+    super.key,
+    required this.saleId,
+    required this.medicineId,
+  });
+
+  @override
+  State<MedicinePrivateSaleDetailScreen> createState() =>
+      _MedicinePrivateSaleDetailScreenState();
+}
+
+class _MedicinePrivateSaleDetailScreenState
+    extends State<MedicinePrivateSaleDetailScreen> {
+  Map<String, dynamic>? _sale;
+  Map<String, dynamic>? _item;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final String? salesJson =
+        await CompanyStore.instance.getString('medicineSalesHistory');
+    Map<String, dynamic>? foundSale;
+    Map<String, dynamic>? foundItem;
+    if (salesJson != null) {
+      try {
+        final List<dynamic> rawSales = json.decode(salesJson);
+        for (final sale in rawSales) {
+          if (sale['id']?.toString() != widget.saleId) continue;
+          foundSale = Map<String, dynamic>.from(sale);
+          final List<dynamic> items = sale['items'] as List<dynamic>? ?? [];
+          for (final item in items) {
+            if (item['medicineId']?.toString() == widget.medicineId) {
+              foundItem = Map<String, dynamic>.from(item);
+              break;
+            }
+          }
+          break;
+        }
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _sale = foundSale;
+        _item = foundItem;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Widget _row(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 130,
+              child: Text(label,
+                  style: TextStyle(
+                      fontSize: 13, color: Colors.grey.shade600)),
+            ),
+            Expanded(
+              child: Text(value,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final sale = _sale;
+    final item = _item;
+
+    final String buyer = sale?['buyerName']?.toString() ?? '-';
+    final String mobile = sale?['mobile']?.toString() ?? '';
+    final String date = formatHistoryDateTime(sale?['date']?.toString());
+    final String medicineName = item?['medicineName']?.toString() ?? '-';
+    final String nickName = item?['nickName']?.toString() ?? '';
+    final double qty = (item?['qty'] as num?)?.toDouble() ?? 0.0;
+    final String saleUnit = item?['saleUnit']?.toString() ?? '';
+    final double saleRate = (item?['saleRate'] as num?)?.toDouble() ?? 0.0;
+    final double totalSale = (item?['totalSale'] as num?)?.toDouble() ?? 0.0;
+    final double totalCost = (item?['totalCost'] as num?)?.toDouble() ?? 0.0;
+    final double profit = totalSale - totalCost;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.blue.shade700,
+        leading: IconButton(
+          icon: const Icon(
+              Icons.arrow_back_ios_new_rounded, color: Colors.white),
+          onPressed: () => Get.back(),
+        ),
+        title: const Text('🛒 Private Sale Detail',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : (sale == null || item == null)
+              ? const Center(child: Text('Sale record nahi mila.'))
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.blue.shade100),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('🛒 $buyer',
+                            style: const TextStyle(
+                                fontSize: 17, fontWeight: FontWeight.bold)),
+                        const Divider(height: 22),
+                        if (mobile.isNotEmpty) _row('📞 Mobile', mobile),
+                        _row('🕒 Date', date),
+                        _row('💊 Medicine',
+                            nickName.isNotEmpty
+                                ? '$medicineName ("$nickName")'
+                                : medicineName),
+                        _row('📦 Quantity', '${qty.toStringAsFixed(2)} $saleUnit'),
+                        _row('💰 Rate',
+                            '₹${saleRate.toStringAsFixed(2)} / $saleUnit'),
+                        _row('🧾 Total Sale', '₹${totalSale.toStringAsFixed(2)}'),
+                        _row('📊 Profit/Loss', '₹${profit.toStringAsFixed(2)}'),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'ℹ️ Is sale ko edit ya delete karne ke liye Sales → Medicine Sales section mein jaayein.',
+                            style: TextStyle(
+                                fontSize: 11.5, color: Colors.blue.shade800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+    );
+  }
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 💊 ADD MORE STOCK DIALOG — Same medicine mein add karo (Running lot)
