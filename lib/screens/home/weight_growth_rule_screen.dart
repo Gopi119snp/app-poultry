@@ -47,9 +47,13 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
           _customChart
             ..clear()
             ..addAll(config.customBodyWeightGramPerDay ?? {});
+          // Storage mein pehle se valid rule mila — matlab yeh CURRENTLY
+          // active/saved rule hai. Isliye banner turant dikhao, chahe abhi
+          // Save button dabaya ho ya screen dobara khol ke aaye ho.
+          _showSavedBanner = true;
         });
       } catch (_) {
-        // corrupt data mile toh default hi rahega
+        // corrupt data mile toh default hi rahega, banner nahi dikhega
       }
     }
     setState(() => _loading = false);
@@ -200,18 +204,49 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: primaryGreen.withOpacity(0.4)),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        Icon(Icons.check_circle_rounded, color: primaryGreen, size: 20),
-                        SizedBox(width: 8),
+                        const Icon(Icons.check_circle_rounded, color: primaryGreen, size: 20),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Yeh rule save ho chuka hai — "Automatic Body Weight" '
-                            'isi ke hisaab se calculate hoga.',
-                            style: TextStyle(
+                            _ruleType == WeightRuleType.standardFormula
+                                ? 'Abhi ACTIVE hai: Standard (App Default) — yeh rule save ho '
+                                  'chuka hai aur "Automatic Body Weight" isi se calculate ho raha hai.'
+                                : 'Abhi ACTIVE hai: Custom Chart (${_customChart.length} din diye '
+                                  'gaye) — yeh rule save ho chuka hai.',
+                            style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
                               color: primaryGreen,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ] else if (!_loading) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline_rounded, color: Colors.orange, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Abhi kuch bhi SAVE nahi hua hai — neeche se rule chunke '
+                            '"Rule Save Karo" dabao.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.deepOrange,
                             ),
                           ),
                         ),
