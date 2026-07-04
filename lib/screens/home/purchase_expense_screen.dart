@@ -4134,15 +4134,182 @@ double? pricePerUnit(double pricePerBase, String base, String target) {
   final b = base.toLowerCase().trim(), t = target.toLowerCase().trim();
   if (b == t) return pricePerBase;
   if (_unitToMl.containsKey(b) && _unitToMl.containsKey(t))
-    return pricePerBase * _unitToMl[b]! / _unitToMl[t]!;
+    return pricePerBase * _unitToMl[t]! / _unitToMl[b]!;
   if (_unitToGram.containsKey(b) && _unitToGram.containsKey(t))
-    return pricePerBase * _unitToGram[b]! / _unitToGram[t]!;
+    return pricePerBase * _unitToGram[t]! / _unitToGram[b]!;
   return null;
 }
 
 /// Rs/target → Rs/base  e.g. Rs2/ml → Rs2000/liter
 double? priceToBase(double pricePerTarget, String target, String base) =>
     pricePerUnit(pricePerTarget, target, base);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 💊 SHARED MEDICINE PURCHASE LOGIC
+// Ye 2 functions hi "Naya Medicine Add Karo" aur "Add Stock" dono jagah se
+// use hote hain — taaki dono jagah SAME rule follow ho (koi mismatch na ho).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Ek medicine ka abhi "bacha hua" (remaining) base qty nikalta hai:
+/// total purchase − farmer allocations − private sales
+Future<double> computeMedicineRemainingBaseQty(
+  Map<String, dynamic> med,
+) async {
+  final String mId = med['id']?.toString() ?? '';
+  final double totalBase = (med['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
+
+  double allocBase = 0;
+  for (final a in (med['allocations'] as List<dynamic>? ?? [])) {
+    allocBase += (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+        (a['qty'] as num?)?.toDouble() ??
+        0.0;
+  }
+
+  double soldBase = 0;
+  final String? salesJson =
+      await CompanyStore.instance.getString('medicineSalesHistory');
+  if (salesJson != null) {
+    try {
+      final List<dynamic> rawSales = json.decode(salesJson);
+      for (final sale in rawSales) {
+        final List<dynamic> items = sale['items'] as List<dynamic>? ?? [];
+        for (final item in items) {
+          if (item['medicineId']?.toString() != mId) continue;
+          soldBase += (item['qtyInBaseUnit'] as num?)?.toDouble() ??
+              (item['qty'] as num?)?.toDouble() ??
+              0.0;
+        }
+      }
+    } catch (_) {}
+  }
+
+  return (totalBase - allocBase - soldBase).clamp(0.0, double.infinity);
+}
+
+/// Medicine purchase add karo (naya lot ho ya purane mein aur stock jode).
+///
+/// RULE (Gopi ke confirm kiye hue anusaar):
+/// - Agar ye medicine PEHLI BAAR add ho rahi hai → seedha naya record banega
+///   (avg cost / farmer rate = isi purchase ke values, kyunki bacha hua = 0).
+/// - Agar SAME NAAM ki medicine PEHLE SE hai → purane "BACHE HUE" stock ka
+///   cost/rate aur is naye purchase ka cost/rate — dono ko unki quantity ke
+///   weight se AVERAGE kiya jayega (na ki ab tak total kharide hue ke hisaab se).
+Future<void> addOrUpdateMedicinePurchase({
+  required String name,
+  required double qty,
+  required String unit,
+  required double actualPrice,
+  required double farmerPrice,
+  String nickName = '',
+  String addedByName = '',
+  String addedByRole = '',
+}) async {
+  final String? stockJson =
+      await CompanyStore.instance.getString('medicineStockList');
+  List<dynamic> all = [];
+  if (stockJson != null) {
+    try {
+      all = json.decode(stockJson);
+    } catch (_) {}
+  }
+
+  final int idx = all.indexWhere(
+    (m) =>
+        m['name']?.toString().toLowerCase().trim() ==
+        name.toLowerCase().trim(),
+  );
+
+  final String newHistId = DateTime.now().millisecondsSinceEpoch.toString();
+
+  if (idx == -1) {
+    // ── PEHLI BAAR — naya medicine lot banao ──
+    final double qtyBase = qty; // base unit = jo unit select kiya
+    final double perBaseActual = qtyBase > 0 ? actualPrice / qtyBase : 0;
+    final double perBaseFarmer = qtyBase > 0 ? farmerPrice / qtyBase : 0;
+
+    final Map<String, dynamic> newMed = {
+      'id': newHistId,
+      'name': name,
+      'nickName': nickName,
+      'unit': unit,
+      'totalBaseQty': qtyBase,
+      'weightedAvgCost': perBaseActual,
+      'currentFarmerRate': perBaseFarmer,
+      'addedByName': addedByName,
+      'addedByRole': addedByRole,
+      'createdOn': DateTime.now().toIso8601String(),
+      'allocations': [],
+      'purchaseHistory': [
+        {
+          'id': newHistId,
+          'qty': qty,
+          'unit': unit,
+          'qtyInBaseUnit': qtyBase,
+          'actualPrice': actualPrice,
+          'farmerPrice': farmerPrice,
+          'perBaseActualCost': perBaseActual,
+          'perBaseFarmerRate': perBaseFarmer,
+          'date': DateTime.now().toIso8601String(),
+          'addedByName': addedByName,
+          'addedByRole': addedByRole,
+        }
+      ],
+    };
+    all.insert(0, newMed);
+  } else {
+    // ── SAME medicine pehle se hai — bache hue stock ke saath average karo ──
+    final Map<String, dynamic> med = Map<String, dynamic>.from(
+      all[idx] as Map,
+    );
+    final String baseUnit = med['unit']?.toString() ?? unit;
+
+    final double remainingBase = await computeMedicineRemainingBaseQty(med);
+    final double oldAvgCost =
+        (med['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+    final double oldFarmerRate =
+        (med['currentFarmerRate'] as num?)?.toDouble() ?? 0.0;
+    final double oldTotalBase =
+        (med['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
+
+    final double qtyBase = convertToBase(qty, unit, baseUnit) ?? qty;
+    final double perBaseActual = qtyBase > 0 ? actualPrice / qtyBase : 0;
+    final double perBaseFarmer = qtyBase > 0 ? farmerPrice / qtyBase : 0;
+
+    final double newRemainingTotal = remainingBase + qtyBase;
+    final double newAvgCost = newRemainingTotal > 0
+        ? ((remainingBase * oldAvgCost) + (qtyBase * perBaseActual)) /
+            newRemainingTotal
+        : perBaseActual;
+    final double newFarmerRate = newRemainingTotal > 0
+        ? ((remainingBase * oldFarmerRate) + (qtyBase * perBaseFarmer)) /
+            newRemainingTotal
+        : perBaseFarmer;
+
+    med['totalBaseQty'] = oldTotalBase + qtyBase; // record ke liye cumulative
+    med['weightedAvgCost'] = newAvgCost; // bache hue ke hisaab se average
+    med['currentFarmerRate'] = newFarmerRate; // bache hue ke hisaab se average
+
+    final List<dynamic> hist = med['purchaseHistory'] as List<dynamic>? ?? [];
+    hist.add({
+      'id': newHistId,
+      'qty': qty,
+      'unit': unit,
+      'qtyInBaseUnit': qtyBase,
+      'actualPrice': actualPrice,
+      'farmerPrice': farmerPrice,
+      'perBaseActualCost': perBaseActual,
+      'perBaseFarmerRate': perBaseFarmer,
+      'date': DateTime.now().toIso8601String(),
+      'addedByName': addedByName,
+      'addedByRole': addedByRole,
+    });
+    med['purchaseHistory'] = hist;
+
+    all[idx] = med;
+  }
+
+  await CompanyStore.instance.setString('medicineStockList', json.encode(all));
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 💊 MEDICINE HISTORY SCREEN — Running lot per medicine type
@@ -4871,19 +5038,11 @@ Future<void> _showAddMoreStockDialog(
                   return;
                 }
 
-                final double qtyBase =
-                    convertToBase(qty2, selectedUnit, baseUnit) ?? qty2;
-                final double perBaseActual =
-                    qtyBase > 0 ? actualPrice / qtyBase : 0;
-
-                // Stock load
-                final String? stockJson = await CompanyStore.instance
-                    .getString('medicineStockList');
-                List<dynamic> all = [];
-                if (stockJson != null) {
-                  try {
-                    all = json.decode(stockJson);
-                  } catch (_) {}
+                if (farmerPrice <= 0) {
+                  Get.snackbar('Error', 'Farmer price dalein',
+                      backgroundColor: Colors.red,
+                      colorText: Colors.white);
+                  return;
                 }
 
                 final String addedByName =
@@ -4891,57 +5050,17 @@ Future<void> _showAddMoreStockDialog(
                 final String addedByRole =
                     await SessionService.currentRole ?? '';
 
-                for (int i = 0; i < all.length; i++) {
-                  if (all[i]['id']?.toString() == mId) {
-                    final double oldBase =
-                        (all[i]['totalBaseQty'] as num?)?.toDouble() ??
-                            0.0;
-                    final double oldAvgCost =
-                        (all[i]['weightedAvgCost'] as num?)?.toDouble() ??
-                            0.0;
-                    final double newTotalBase = oldBase + qtyBase;
-
-                    // Weighted average cost
-                    final double newAvgCost = newTotalBase > 0
-                        ? ((oldBase * oldAvgCost) +
-                                (qtyBase * perBaseActual)) /
-                            newTotalBase
-                        : perBaseActual;
-
-                    // Current farmer rate = per base unit farmer price (naya wala)
-                    final double perBaseFarmer =
-                        qtyBase > 0 ? farmerPrice / qtyBase : 0;
-
-                    all[i]['totalBaseQty'] = newTotalBase;
-                    all[i]['weightedAvgCost'] = newAvgCost;
-                    all[i]['currentFarmerRate'] = perBaseFarmer;
-
-                    // Purchase history mein add karo
-                    List<dynamic> hist =
-                        all[i]['purchaseHistory'] as List<dynamic>? ??
-                            [];
-                    hist.add({
-                      'id': DateTime.now()
-                          .millisecondsSinceEpoch
-                          .toString(),
-                      'qty': qty2,
-                      'unit': selectedUnit,
-                      'qtyInBaseUnit': qtyBase,
-                      'actualPrice': actualPrice,
-                      'farmerPrice': farmerPrice,
-                      'perBaseActualCost': perBaseActual,
-                      'perBaseFarmerRate': perBaseFarmer,
-                      'date': DateTime.now().toIso8601String(),
-                      'addedByName': addedByName,
-                      'addedByRole': addedByRole,
-                    });
-                    all[i]['purchaseHistory'] = hist;
-                    break;
-                  }
-                }
-
-                await CompanyStore.instance.setString(
-                    'medicineStockList', json.encode(all));
+                // Shared function — bache hue stock ke saath cost/rate
+                // ko weighted-average karega (name se match karke)
+                await addOrUpdateMedicinePurchase(
+                  name: name,
+                  qty: qty2,
+                  unit: selectedUnit,
+                  actualPrice: actualPrice,
+                  farmerPrice: farmerPrice,
+                  addedByName: addedByName,
+                  addedByRole: addedByRole,
+                );
 
                 Navigator.pop(ctx);
                 Get.snackbar('Added ✅', '${qty2.toStringAsFixed(2)} $selectedUnit add ho gaya!',
@@ -5155,80 +5274,25 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                           return;
                         }
 
-                        // qty is already in selected unit = base unit on first creation
-                        // base unit = selectedUnit
-                        final double qtyBase = qty2; // first purchase = base qty
-                        final double perBaseActual =
-                            qtyBase > 0 ? actualPrice / qtyBase : 0;
-                        final double perBaseFarmer =
-                            qtyBase > 0 ? farmerPrice / qtyBase : 0;
-
                         final String addedByName =
                             await SessionService.currentName ?? '';
                         final String addedByRole =
                             await SessionService.currentRole ?? '';
-                        final String newId = DateTime.now()
-                            .millisecondsSinceEpoch
-                            .toString();
 
-                        final Map<String, dynamic> newMed = {
-                          'id': newId,
-                          'name': name,
-                          'nickName': nickCtrl.text.trim(),
-                          'unit': selectedUnit, // base unit
-                          'totalBaseQty': qtyBase,
-                          'weightedAvgCost': perBaseActual,
-                          'currentFarmerRate': perBaseFarmer,
-                          'addedByName': addedByName,
-                          'addedByRole': addedByRole,
-                          'createdOn': DateTime.now().toIso8601String(),
-                          'allocations': [],
-                          'purchaseHistory': [
-                            {
-                              'id': newId,
-                              'qty': qty2,
-                              'unit': selectedUnit,
-                              'qtyInBaseUnit': qtyBase,
-                              'actualPrice': actualPrice,
-                              'farmerPrice': farmerPrice,
-                              'perBaseActualCost': perBaseActual,
-                              'perBaseFarmerRate': perBaseFarmer,
-                              'date': DateTime.now().toIso8601String(),
-                              'addedByName': addedByName,
-                              'addedByRole': addedByRole,
-                            }
-                          ],
-                        };
-
-                        // Existing stock load karo
-                        final String? stockJson = await CompanyStore.instance
-                            .getString('medicineStockList');
-                        List<dynamic> all = [];
-                        if (stockJson != null) {
-                          try {
-                            all = json.decode(stockJson);
-                          } catch (_) {}
-                        }
-                        // Same name ki medicine already hai?
-                        final bool exists = all.any(
-                          (m) =>
-                              m['name']
-                                  ?.toString()
-                                  .toLowerCase()
-                                  .trim() ==
-                              name.toLowerCase().trim(),
+                        // Naya ho ya same naam ki medicine pehle se ho —
+                        // dono cases isi shared function se handle honge
+                        // (agar pehle se hai, to bache hue stock ke saath
+                        // average ho jayega; naya hai to seedha save hoga).
+                        await addOrUpdateMedicinePurchase(
+                          name: name,
+                          qty: qty2,
+                          unit: selectedUnit,
+                          actualPrice: actualPrice,
+                          farmerPrice: farmerPrice,
+                          nickName: nickCtrl.text.trim(),
+                          addedByName: addedByName,
+                          addedByRole: addedByRole,
                         );
-                        if (exists) {
-                          Get.snackbar('Already Exists',
-                              '"$name" pehle se hai. Usi card mein "Add" button se stock add karo.',
-                              backgroundColor: Colors.orange,
-                              colorText: Colors.white);
-                          return;
-                        }
-
-                        all.insert(0, newMed);
-                        await CompanyStore.instance.setString(
-                            'medicineStockList', json.encode(all));
 
                         Navigator.pop(ctx);
                         Get.snackbar('Saved ✅', '$name add ho gaya!',
