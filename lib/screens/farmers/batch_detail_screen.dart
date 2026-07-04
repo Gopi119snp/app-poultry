@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../utils/pdf_download.dart' as pdf_web;
 import '../../../utils/feed_consumption_rule_engine.dart';
 import '../../../utils/fraud_risk_engine.dart';
+import '../../../utils/performance_alert_engine.dart';
 import 'daily_update_list_screen.dart';
 
 // =============================================================================
@@ -99,6 +100,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   FeedConsumptionRuleConfig _feedRuleConfig = FeedConsumptionRuleConfig(
     ruleType: FeedRuleType.standardAgeChart,
   );
+
+  // ── Performance Alert Rule (company-configurable Red/Green/Yellow) ──────
+  PerformanceAlertConfig _performanceConfig = PerformanceAlertConfig();
 
   // Rule 1 — Big Size params
   double _r1BigFeedRate = 42.0;
@@ -292,6 +296,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     final String? rule1Json = prefs.getString('rule1SettlementConfig');
     final String? rule2Json = prefs.getString('rule2SettlementConfig');
     final String? feedRuleJson = prefs.getString('feedConsumptionRuleConfig');
+    final String? perfAlertJson = prefs.getString('performanceAlertConfig');
 
     setState(() {
       _appliedRuleId = savedRuleId;
@@ -303,6 +308,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           );
         } catch (_) {
           // corrupt data mile toh purana default (standardAgeChart) hi rahega
+        }
+      }
+
+      if (perfAlertJson != null && perfAlertJson.isNotEmpty) {
+        try {
+          _performanceConfig = PerformanceAlertConfig.fromJson(
+            json.decode(perfAlertJson),
+          );
+        } catch (_) {
+          // corrupt data mile toh default thresholds hi rahenge
         }
       }
 
@@ -3951,6 +3966,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     _buildStatBlock(
                       'Mortality',
                       '$totalMortality (${mortalityPercent.toStringAsFixed(2)}%) 💀',
+                      alert: PerformanceAlertEngine.evaluateMortality(
+                        mortalityPercent,
+                        _performanceConfig,
+                      ),
                     ),
                     _buildStatBlock(
                       'Start Date',
@@ -3973,6 +3992,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     _buildStatBlock(
                       'Live FCR Index',
                       '${fcr > 0 ? fcr.toStringAsFixed(2) : "0.00"} 📊',
+                      alert: fcr > 0
+                          ? PerformanceAlertEngine.evaluateFcr(
+                              fcr,
+                              _performanceConfig,
+                            )
+                          : null,
                     ),
                   ],
                 ),
@@ -4654,7 +4679,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     );
   }
 
-  Widget _buildStatBlock(String headerTitle, String metricValue) {
+  Widget _buildStatBlock(
+    String headerTitle,
+    String metricValue, {
+    AlertLevel? alert,
+  }) {
     return Column(
       children: [
         Text(
@@ -4674,6 +4703,32 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             fontSize: 14,
           ),
         ),
+        if (alert != null) ...[
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: alert == AlertLevel.red
+                  ? Colors.red.shade600
+                  : alert == AlertLevel.yellow
+                  ? Colors.amber.shade600
+                  : Colors.green.shade600,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              alert == AlertLevel.red
+                  ? '🔴 Kharab'
+                  : alert == AlertLevel.yellow
+                  ? '🟡 Badiya'
+                  : '🟢 Normal',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 9.5,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
