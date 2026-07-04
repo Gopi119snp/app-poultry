@@ -12,6 +12,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../utils/pdf_download.dart' as pdf_web;
+import '../../../services/company_store.dart';
 import '../../../utils/feed_consumption_rule_engine.dart';
 import '../../../utils/fraud_risk_engine.dart';
 import '../../../utils/performance_alert_engine.dart';
@@ -2488,7 +2489,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             break;
           }
         }
-        await prefs.setString('companyFarmers', json.encode(farmersList));
+        await CompanyStore.instance.setString('companyFarmers', json.encode(farmersList)); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -3398,7 +3399,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             break;
           }
         }
-        await prefs.setString('companyFarmers', json.encode(farmersList));
+        await CompanyStore.instance.setString('companyFarmers', json.encode(farmersList)); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
         _weightController.clear();
         _mortalityController.clear();
         _feedController.clear();
@@ -3514,7 +3515,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             break;
           }
         }
-        await prefs.setString('companyFarmers', json.encode(farmersList));
+        await CompanyStore.instance.setString('companyFarmers', json.encode(farmersList)); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
         _buyerNameController.clear();
         _soldChicksController.clear();
         _totalWeightSoldController.clear();
@@ -3627,7 +3628,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             break;
           }
         }
-        await prefs.setString('companyFarmers', json.encode(farmersList));
+        await CompanyStore.instance.setString('companyFarmers', json.encode(farmersList)); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
         _medicineNameController.clear();
         _medicineQuantityController.clear();
         _medicinePriceController.clear();
