@@ -6,6 +6,7 @@ import '../../../services/company_store.dart';
 import '../../../utils/feed_consumption_rule_engine.dart';
 import '../../../utils/weight_growth_rule_engine.dart';
 import '../../../utils/fraud_risk_engine.dart';
+import '../../../utils/performance_alert_engine.dart';
 
 // =============================================================================
 // 📅 DAILY UPDATE LIST SCREEN
@@ -90,6 +91,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
   double _tableScale = 1.0;
   FeedConsumptionRuleConfig get _feedConfig => widget.feedRuleConfig;
   WeightGrowthRuleConfig _weightConfig = WeightGrowthRuleConfig();
+  PerformanceAlertConfig _performanceConfig = PerformanceAlertConfig();
 
   // ── Cost Rates for "Per Kg Rate" column ─────────────────────────────────
   // Priority: Rule 1 (Big/Small Auto Size) ka saved config > fallback
@@ -122,6 +124,18 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     if (weightRaw != null && weightRaw.isNotEmpty) {
       try {
         _weightConfig = WeightGrowthRuleConfig.fromJson(jsonDecode(weightRaw));
+      } catch (_) {}
+    }
+
+    // Performance Alert Rule load (FCR + Mortality Red/Green/Yellow)
+    final perfAlertRaw = await CompanyStore.instance.getString(
+      'performanceAlertConfig',
+    );
+    if (perfAlertRaw != null && perfAlertRaw.isNotEmpty) {
+      try {
+        _performanceConfig = PerformanceAlertConfig.fromJson(
+          jsonDecode(perfAlertRaw),
+        );
       } catch (_) {}
     }
 
@@ -495,6 +509,31 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
 
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  Widget _alertText(String text, AlertLevel? level) {
+    Color color;
+    switch (level) {
+      case AlertLevel.red:
+        color = Colors.red.shade700;
+        break;
+      case AlertLevel.yellow:
+        color = Colors.amber.shade800;
+        break;
+      case AlertLevel.green:
+        color = Colors.green.shade700;
+        break;
+      default:
+        color = Colors.black87;
+    }
+    return Text(
+      text,
+      style: TextStyle(
+        color: color,
+        fontWeight: level != null ? FontWeight.bold : FontWeight.normal,
+        fontSize: 11.5 * _tableScale,
+      ),
+    );
+  }
 
   Widget _riskBadge(FraudRiskAssessment fraud) {
     late Color color;
@@ -1004,8 +1043,12 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                         ),
                                         DataCell(Text('${r.totalMortality}')),
                                         DataCell(
-                                          Text(
+                                          _alertText(
                                             '${r.mortalityPercent.toStringAsFixed(2)}%',
+                                            PerformanceAlertEngine.evaluateMortality(
+                                              r.mortalityPercent,
+                                              _performanceConfig,
+                                            ),
                                           ),
                                         ),
                                         DataCell(
@@ -1029,14 +1072,26 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                           ),
                                         ),
                                         DataCell(
-                                          Text(r.autoFcr.toStringAsFixed(3)),
+                                          _alertText(
+                                            r.autoFcr.toStringAsFixed(3),
+                                            r.autoFcr > 0
+                                                ? PerformanceAlertEngine.evaluateFcr(
+                                                    r.autoFcr,
+                                                    _performanceConfig,
+                                                  )
+                                                : null,
+                                          ),
                                         ),
                                         DataCell(
-                                          Text(
-                                            r.manualFcr != null
-                                                ? r.manualFcr!.toStringAsFixed(3)
-                                                : '—',
-                                          ),
+                                          r.manualFcr != null
+                                              ? _alertText(
+                                                  r.manualFcr!.toStringAsFixed(3),
+                                                  PerformanceAlertEngine.evaluateFcr(
+                                                    r.manualFcr!,
+                                                    _performanceConfig,
+                                                  ),
+                                                )
+                                              : const Text('—'),
                                         ),
                                         DataCell(
                                           Text(
