@@ -4326,6 +4326,8 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
   List<Map<String, dynamic>> _medicines = [];
   Map<String, double> _soldBaseQty  = {};
   Map<String, double> _availBaseQty = {}; // mId → available base qty
+  // mId → list of {buyerName, qty, unit, saleId, mobile, date}
+  Map<String, List<Map<String, dynamic>>> _privateSalesByMed = {};
   bool _isLoading = true;
 
   @override
@@ -4348,10 +4350,11 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
       } catch (_) {}
     }
 
-    // 2. Private sales — sold qty per medicine
+    // 2. Private sales — sold qty per medicine + buyer-wise breakdown
     final String? salesJson =
         await CompanyStore.instance.getString('medicineSalesHistory');
     Map<String, double> soldMap = {};
+    Map<String, List<Map<String, dynamic>>> privateSalesMap = {};
     if (salesJson != null) {
       try {
         final List<dynamic> rawSales = json.decode(salesJson);
@@ -4364,6 +4367,16 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
                 (item['qtyInBaseUnit'] as num?)?.toDouble() ??
                 (item['qty']           as num?)?.toDouble() ?? 0.0;
             soldMap[mId] = (soldMap[mId] ?? 0.0) + qBase;
+
+            (privateSalesMap[mId] ??= []).add({
+              'saleId'    : sale['id']?.toString() ?? '',
+              'buyerName' : sale['buyerName']?.toString() ?? '-',
+              'mobile'    : sale['mobile']?.toString() ?? '',
+              'qty'       : (item['qty'] as num?)?.toDouble() ?? 0.0,
+              'unit'      : item['saleUnit']?.toString() ??
+                            item['unit']?.toString() ?? '',
+              'date'      : sale['date']?.toString() ?? '',
+            });
           }
         }
       } catch (_) {}
@@ -4391,6 +4404,7 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
         _medicines    = meds;
         _soldBaseQty  = soldMap;
         _availBaseQty = availMap;
+        _privateSalesByMed = privateSalesMap;
         _isLoading    = false;
       });
     }
@@ -4504,12 +4518,12 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
                         itemCount: _medicines.length,
                         itemBuilder: (ctx, index) {
                           final med = _medicines[index];
+                          final String mId = med['id']?.toString() ?? '';
                           return _MedicineRunningLotCard(
                             med: med,
-                            soldBaseQty:
-                                _soldBaseQty[med['id']?.toString() ?? ''] ??
-                                    0.0,
+                            soldBaseQty: _soldBaseQty[mId] ?? 0.0,
                             allocatedBaseQty: _allocatedBaseQty(med),
+                            privateSales: _privateSalesByMed[mId] ?? const [],
                             onRefresh: _loadData,
                           );
                         },
@@ -4528,12 +4542,14 @@ class _MedicineRunningLotCard extends StatelessWidget {
   final Map<String, dynamic> med;
   final double soldBaseQty;
   final double allocatedBaseQty;
+  final List<Map<String, dynamic>> privateSales;
   final VoidCallback onRefresh;
 
   const _MedicineRunningLotCard({
     required this.med,
     required this.soldBaseQty,
     required this.allocatedBaseQty,
+    this.privateSales = const [],
     required this.onRefresh,
   });
 
@@ -4855,6 +4871,58 @@ class _MedicineRunningLotCard extends StatelessWidget {
                                 size: 16, color: Colors.grey.shade500),
                           ],
                         ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+
+          // ── PRIVATE BUYERS (medicine sold directly, not via farmer) ──
+          if (privateSales.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('🛒 Private Buyers:',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade700)),
+                  const SizedBox(height: 6),
+                  ...privateSales.map((s) {
+                    final double sQty = (s['qty'] as num?)?.toDouble() ?? 0.0;
+                    final String sUnit = s['unit']?.toString() ?? unit;
+                    final String buyer = s['buyerName']?.toString() ?? '-';
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '🛒 $buyer',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          Text(
+                            '${sQty.toStringAsFixed(2)} $sUnit',
+                            style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ],
                       ),
                     );
                   }),
