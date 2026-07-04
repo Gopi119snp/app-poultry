@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/company_store.dart';
 import '../../../utils/feed_consumption_rule_engine.dart';
 import '../../../utils/weight_growth_rule_engine.dart';
+import '../../../utils/fraud_risk_engine.dart';
 
 // =============================================================================
 // 📅 DAILY UPDATE LIST SCREEN
@@ -61,6 +62,7 @@ class _DayRow {
   final double autoFcr;
   final double? manualFcr;
   final double costPerKg;
+  final FraudRiskAssessment fraud;
 
   _DayRow({
     required this.date,
@@ -77,6 +79,7 @@ class _DayRow {
     required this.autoFcr,
     required this.manualFcr,
     required this.costPerKg,
+    required this.fraud,
   });
 }
 
@@ -221,6 +224,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         'mortality': int.tryParse(e['mortality'].toString()) ?? 0,
         'feedBags': int.tryParse(e['feed'].toString()) ?? 0,
         'weightKg': double.tryParse(e['weight'].toString()) ?? 0.0,
+        'remainingFeedBags': int.tryParse(e['remainingFeed'].toString()) ?? 0,
       });
     }
 
@@ -228,6 +232,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     double cumulativeFeedConsumedKg = 0.0;
     double cumulativeFeedDeliveredKg = 0.0;
     double? lastManualWeightKg;
+    double lastActualRemainingFeedKg = 0.0;
+    bool remainingFeedEverReported = false;
     final List<_DayRow> rows = [];
 
     for (int day = 1; day <= chicksAgeDays; day++) {
@@ -236,6 +242,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       int mortalityToday = 0;
       int feedBagsDeliveredToday = 0;
       double? weightEnteredToday;
+      int? remainingFeedBagsToday;
 
       for (final entry in costEntries) {
         if (_sameDay(entry['date'] as DateTime, date)) {
@@ -243,6 +250,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           feedBagsDeliveredToday += entry['feedBags'] as int;
           final w = entry['weightKg'] as double;
           if (w > 0) weightEnteredToday = w;
+          final rf = entry['remainingFeedBags'] as int;
+          if (rf > 0) remainingFeedBagsToday = rf;
         }
       }
 
@@ -281,6 +290,11 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       // fallback) — size-check ke liye manual weight ko priority, warna auto ──
       final ratesToday = _resolveCostRates(manualWeightKg ?? autoWeightKg);
 
+      if (remainingFeedBagsToday != null) {
+        lastActualRemainingFeedKg = remainingFeedBagsToday * ratesToday.kgPerBag;
+        remainingFeedEverReported = true;
+      }
+
       // ── Feed Stock in Farm (kg) — deliveries (jitni baar bhi aayi) minus
       // ab tak consume hua feed ─────────────────────────────────────────
       cumulativeFeedDeliveredKg +=
@@ -316,6 +330,14 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       final double costPerKg =
           autoBiomassKg > 0 ? cumulativeProductionCost / autoBiomassKg : 0.0;
 
+      // ── 🚨 Fraud Risk Assessment (Feed-per-Bird + Purchase Reconciliation) ──
+      final FraudRiskAssessment fraud = FraudRiskEngine.assess(
+        feedDeliveredKg: cumulativeFeedDeliveredKg,
+        expectedConsumedKg: cumulativeFeedConsumedKg,
+        actualRemainingKg: lastActualRemainingFeedKg,
+        remainingFeedEverReported: remainingFeedEverReported,
+      );
+
       rows.add(
         _DayRow(
           date: date,
@@ -332,6 +354,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           autoFcr: autoFcr,
           manualFcr: manualFcr,
           costPerKg: costPerKg,
+          fraud: fraud,
         ),
       );
     }
@@ -472,6 +495,43 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
 
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  Widget _riskBadge(FraudRiskAssessment fraud) {
+    late Color color;
+    late String label;
+    switch (fraud.riskLevel) {
+      case 'high':
+        color = Colors.red.shade700;
+        label = '🚨 High';
+        break;
+      case 'watch':
+        color = Colors.orange.shade700;
+        label = '⚠️ Watch';
+        break;
+      case 'safe':
+        color = Colors.green.shade700;
+        label = '✅ OK';
+        break;
+      default:
+        color = Colors.grey;
+        label = '—';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.bold,
+          fontSize: 10.5 * _tableScale,
+        ),
+      ),
+    );
+  }
 
   // ── Row Tap → Us din ke liye naya Flock Record ('cost') entry add karo ───
   // NOTE: Feed Bags (delivered) field yahan JAAN-BOOJH KAR nahi hai — woh
@@ -891,6 +951,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                               dataRowMaxHeight: 56 * _tableScale,
                               columns: const [
                                 DataColumn(label: Text('Edit')),
+                                DataColumn(label: Text('Risk')),
                                 DataColumn(label: Text('Date')),
                                 DataColumn(label: Text('Din')),
                                 DataColumn(label: Text('Live Chicks')),
@@ -924,6 +985,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                                 _showEditDayDialog(r),
                                           ),
                                         ),
+                                        DataCell(_riskBadge(r.fraud)),
                                         DataCell(Text(_fmtDate(r.date))),
                                         DataCell(Text('${r.day}')),
                                         DataCell(Text('${r.liveChicks}')),
