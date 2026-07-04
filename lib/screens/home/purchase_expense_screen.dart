@@ -6737,9 +6737,15 @@ class _AllocateMedicineToFarmerScreenState
   bool _dropdownVisible = false;
   List<String> _farmerOptions = [];
 
-  // Per-medicine qty/unit — only medicines with available qty shown
+  // Medicine search — poore lots ki list yahin available rehti hai,
+  // lekin form sirf usi medicine ka dikhta hai jise search karke choose kiya ho
   // [{med, saleUnit, qtyCtrl}]
   List<Map<String, dynamic>> _medicineRows = [];
+  final _medicineSearchCtrl = TextEditingController();
+  bool _medicineDropdownVisible = false;
+  // Indices (in _medicineRows) jo user ne search karke select kiye hain —
+  // ek se zyada medicine bhi ek hi farmer ko diya ja sakta hai, isliye List hai
+  List<int> _selectedIndices = [];
 
   bool _isLoading = true;
 
@@ -6750,6 +6756,9 @@ class _AllocateMedicineToFarmerScreenState
     _farmerSearchCtrl.addListener(() => setState(() {
       _dropdownVisible = _farmerSearchCtrl.text.isNotEmpty;
       _selectedFarmer = null;
+    }));
+    _medicineSearchCtrl.addListener(() => setState(() {
+      _medicineDropdownVisible = _medicineSearchCtrl.text.isNotEmpty;
     }));
   }
 
@@ -6788,16 +6797,18 @@ class _AllocateMedicineToFarmerScreenState
   @override
   void dispose() {
     _farmerSearchCtrl.dispose();
+    _medicineSearchCtrl.dispose();
     for (final row in _medicineRows) {
       (row['qtyCtrl'] as TextEditingController).dispose();
     }
     super.dispose();
   }
 
-  // Total bill preview
+  // Total bill preview — sirf selected (search se chuni gayi) medicines ka
   double _totalBill() {
     double total = 0;
-    for (final row in _medicineRows) {
+    for (final idx in _selectedIndices) {
+      final row        = _medicineRows[idx];
       final med        = row['med'] as Map<String, dynamic>;
       final String bu  = med['unit']?.toString() ?? '';
       final String su  = row['saleUnit']?.toString() ?? bu;
@@ -6820,8 +6831,16 @@ class _AllocateMedicineToFarmerScreenState
       return;
     }
 
-    // Check at least one qty entered
-    final hasAny = _medicineRows.any((row) {
+    // Check at least one medicine search karke select ki gayi hai
+    if (_selectedIndices.isEmpty) {
+      Get.snackbar('Error', 'Kam se kam ek medicine search karke select karein',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      return;
+    }
+
+    // Check at least one qty entered (selected medicines mein se)
+    final hasAny = _selectedIndices.any((idx) {
+      final row = _medicineRows[idx];
       final double qty = double.tryParse(
           (row['qtyCtrl'] as TextEditingController).text) ?? 0;
       return qty > 0;
@@ -6832,8 +6851,9 @@ class _AllocateMedicineToFarmerScreenState
       return;
     }
 
-    // Validate each row
-    for (final row in _medicineRows) {
+    // Validate each selected row
+    for (final idx in _selectedIndices) {
+      final row       = _medicineRows[idx];
       final med       = row['med'] as Map<String, dynamic>;
       final String mId= row['mId']?.toString() ?? '';
       final String bu = med['unit']?.toString() ?? '';
@@ -6863,8 +6883,9 @@ class _AllocateMedicineToFarmerScreenState
         await CompanyStore.instance.getString('medicineStockList');
     List<dynamic> all = sj != null ? json.decode(sj) : [];
 
-    // Add allocation entry to each medicine that has qty > 0
-    for (final row in _medicineRows) {
+    // Add allocation entry to each selected medicine that has qty > 0
+    for (final idx in _selectedIndices) {
+      final row       = _medicineRows[idx];
       final med       = row['med'] as Map<String, dynamic>;
       final String mId= row['mId']?.toString() ?? '';
       final String bu = med['unit']?.toString() ?? '';
@@ -7027,7 +7048,7 @@ class _AllocateMedicineToFarmerScreenState
 
                   const SizedBox(height: 24),
 
-                  // ── Medicine rows ──
+                  // ── Medicine search + selected rows ──
                   if (!hasAvail)
                     Container(
                       padding: const EdgeInsets.all(20),
@@ -7046,13 +7067,144 @@ class _AllocateMedicineToFarmerScreenState
                       ),
                     )
                   else ...[
-                    const Text('💊 Medicines (qty dalein)',
+                    const Text('💊 Medicine Select Karein',
                         style: TextStyle(
                             fontSize: 14, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    ...List.generate(
-                        _medicineRows.length,
-                        (i) => _medicineRow(i)),
+                    TextField(
+                      controller: _medicineSearchCtrl,
+                      decoration: InputDecoration(
+                        hintText: 'Naam ya nickname se search karein...',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.orange.shade200),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                              color: Colors.orange.shade600, width: 2),
+                        ),
+                      ),
+                    ),
+
+                    // Search dropdown — sirf abhi tak select na ki gayi medicines
+                    if (_medicineDropdownVisible &&
+                        _medicineSearchCtrl.text.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 200),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.orange.shade200),
+                          boxShadow: [
+                            BoxShadow(
+                                color: Colors.black.withOpacity(0.07),
+                                blurRadius: 6,
+                                offset: const Offset(0, 3))
+                          ],
+                        ),
+                        child: Builder(builder: (cx) {
+                          final q = _medicineSearchCtrl.text.toLowerCase();
+                          final List<int> filtered = [];
+                          for (int i = 0; i < _medicineRows.length; i++) {
+                            if (_selectedIndices.contains(i)) continue;
+                            final med = _medicineRows[i]['med']
+                                as Map<String, dynamic>;
+                            final String name =
+                                (med['name']?.toString() ?? '').toLowerCase();
+                            final String nick =
+                                (med['nickName']?.toString() ?? '')
+                                    .toLowerCase();
+                            if (name.contains(q) || nick.contains(q)) {
+                              filtered.add(i);
+                            }
+                          }
+                          if (filtered.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Text('Koi medicine nahi mili',
+                                  style: TextStyle(color: Colors.grey)),
+                            );
+                          }
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: filtered.length,
+                            itemBuilder: (cx2, fi) {
+                              final idx = filtered[fi];
+                              final med = _medicineRows[idx]['med']
+                                  as Map<String, dynamic>;
+                              final String name =
+                                  med['name']?.toString() ?? '-';
+                              final String nick =
+                                  med['nickName']?.toString() ?? '';
+                              return InkWell(
+                                onTap: () => setState(() {
+                                  _selectedIndices.add(idx);
+                                  _medicineSearchCtrl.clear();
+                                  _medicineDropdownVisible = false;
+                                }),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 10),
+                                  child: Row(children: [
+                                    const Text('💊',
+                                        style: TextStyle(fontSize: 14)),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(name,
+                                              style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight:
+                                                      FontWeight.w600)),
+                                          if (nick.isNotEmpty)
+                                            Text('"$nick"',
+                                                style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors
+                                                        .grey.shade600)),
+                                        ],
+                                      ),
+                                    ),
+                                  ]),
+                                ),
+                              );
+                            },
+                          );
+                        }),
+                      ),
+                    ],
+
+                    const SizedBox(height: 16),
+
+                    // ── Selected medicines ke fill-forms ──
+                    if (_selectedIndices.isEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Upar search karke medicine choose karein — usi ka fill karne ka form yahan aayega.',
+                          textAlign: TextAlign.center,
+                          style:
+                              TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                        ),
+                      )
+                    else
+                      ..._selectedIndices
+                          .map((idx) => _medicineRow(idx))
+                          .toList(),
                   ],
 
                   const SizedBox(height: 16),
@@ -7211,6 +7363,17 @@ class _AllocateMedicineToFarmerScreenState
                     fontWeight: FontWeight.bold,
                     color: Colors.green.shade700),
               ),
+            ),
+            // Remove — galti se select ho gayi ho to hata sakein
+            IconButton(
+              icon: Icon(Icons.close_rounded,
+                  size: 18, color: Colors.grey.shade500),
+              tooltip: 'Hatayein',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => setState(() {
+                qCtrl.clear();
+                _selectedIndices.remove(index);
+              }),
             ),
           ]),
         ),
