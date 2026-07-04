@@ -486,24 +486,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     String addedByRole = 'Owner',
     String addedByName = '',
   }) async {
-    final newEntry = {
-      'id': _generateStockId(),
-      'name': name,
-      'nickName': nickName,
-      'unit': unit,
-      'totalQuantity': quantity,
-      'actualPrice': actualPrice,
-      'farmerPrice': farmerPrice,
-      'totalPrice': actualPrice,
-      'remainingQuantity': quantity,
-      'addedByRole': addedByRole,
-      'addedByName': addedByName.isEmpty ? widget.ownerName : addedByName,
-      'createdOn': DateTime.now().toIso8601String(),
-    };
-    setState(() {
-      _medicineStock.insert(0, newEntry);
-    });
-    await _saveMedicineStock();
+    // NOTE: Ab ye "Medicine Purchase" (Running Lot) screen wale hi
+    // 'totalBaseQty' / 'weightedAvgCost' / 'currentFarmerRate' schema mein
+    // save karta hai — taaki dono jagah (yahan se aur "Add" button se)
+    // ka data match ho aur "Fully Used/Sold" jaisa galat status na dikhe.
+    // Agar same naam ki medicine pehle se hai, to bache hue stock ke
+    // saath cost/rate weighted-average ho jayega (purani list ki jagah).
+    await addOrUpdateMedicinePurchase(
+      name: name,
+      qty: quantity,
+      unit: unit,
+      actualPrice: actualPrice,
+      farmerPrice: farmerPrice,
+      nickName: nickName,
+      addedByName: addedByName.isEmpty ? widget.ownerName : addedByName,
+      addedByRole: addedByRole,
+    );
+    await _loadStockData();
   }
 
   Future<Map<String, dynamic>> _useMedicineStock({
