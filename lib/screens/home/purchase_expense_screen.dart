@@ -4157,8 +4157,8 @@ class MedicineHistoryScreen extends StatefulWidget {
 
 class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
   List<Map<String, dynamic>> _medicines = [];
-  // medicineId -> totalSoldInBaseUnit from private sales (sales_screen)
-  Map<String, double> _soldBaseQty = {};
+  Map<String, double> _soldBaseQty  = {};
+  Map<String, double> _availBaseQty = {}; // mId → available base qty
   bool _isLoading = true;
 
   @override
@@ -4170,7 +4170,7 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
-    // 1. Medicine stock load
+    // 1. Medicine stock
     final String? stockJson =
         await CompanyStore.instance.getString('medicineStockList');
     List<Map<String, dynamic>> meds = [];
@@ -4181,7 +4181,7 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
       } catch (_) {}
     }
 
-    // 2. Private sales — sold qty in base unit per medicine
+    // 2. Private sales — sold qty per medicine
     final String? salesJson =
         await CompanyStore.instance.getString('medicineSalesHistory');
     Map<String, double> soldMap = {};
@@ -4193,22 +4193,38 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
           for (final item in items) {
             final String mId = item['medicineId']?.toString() ?? '';
             if (mId.isEmpty) continue;
-            // item mein qtyInBaseUnit stored hai
             final double qBase =
                 (item['qtyInBaseUnit'] as num?)?.toDouble() ??
-                (item['qty'] as num?)?.toDouble() ??
-                0.0;
+                (item['qty']           as num?)?.toDouble() ?? 0.0;
             soldMap[mId] = (soldMap[mId] ?? 0.0) + qBase;
           }
         }
       } catch (_) {}
     }
 
+    // 3. Available = total − allocated − sold
+    Map<String, double> availMap = {};
+    for (final med in meds) {
+      final String mId = med['id']?.toString() ?? '';
+      if (mId.isEmpty) continue;
+      final double total =
+          (med['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
+      double allocBase = 0;
+      for (final a in (med['allocations'] as List<dynamic>? ?? [])) {
+        allocBase += (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+                     (a['qty']           as num?)?.toDouble() ?? 0.0;
+      }
+      availMap[mId] =
+          (total - allocBase - (soldMap[mId] ?? 0.0))
+              .clamp(0.0, double.infinity);
+    }
+
     if (mounted) {
       setState(() {
-        _medicines = meds;
-        _soldBaseQty = soldMap;
-        _isLoading = false;
+        _medicines    = meds;
+        _soldBaseQty  = soldMap;
+        _availBaseQty = availMap;
+        _isLoading    = false;
       });
     }
   }
@@ -4253,7 +4269,7 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: SizedBox(
               width: double.infinity,
               height: 50,
@@ -4267,6 +4283,33 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
                 icon: const Icon(Icons.add, color: Colors.white),
                 label: const Text('Naya Medicine Add Karo',
                     style: TextStyle(color: Colors.white)),
+              ),
+            ),
+          ),
+          // ── Allocate to Farmer button ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: _medicines.isEmpty
+                    ? null
+                    : () async {
+                        await Get.to(() => AllocateMedicineToFarmerScreen(
+                          medicines: _medicines,
+                          availBaseQty: _availBaseQty,
+                        ));
+                        _loadData();
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade700,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                ),
+                icon: const Icon(Icons.person_add_rounded, color: Colors.white),
+                label: const Text('Allocate to Farmer',
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ),
           ),
@@ -4440,10 +4483,11 @@ class _MedicineRunningLotCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Add more stock button + Delete lot button
+                // Add + Delete lot buttons
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Add more stock
                     GestureDetector(
                       onTap: () async {
                         await _showAddMoreStockDialog(context, med);
@@ -4479,15 +4523,17 @@ class _MedicineRunningLotCard extends StatelessWidget {
                           builder: (ctx) => AlertDialog(
                             title: const Text('Pura Lot Delete Karein?'),
                             content: Text(
-                              'Kya aap "$name" ka poora lot delete karna chahte hain?\n\n'
-                              '⚠️ Isse is medicine ki saari purchase history, '
-                              'farmer allocations sab delete ho jayenge.\n\n'
-                              'Yeh permanent hai.',
+                              'Kya aap "$name" ka poora lot delete karna '
+                              'chahte hain?\n\n'
+                              '⚠️ Isse is medicine ki saari purchase '
+                              'history aur allocations bhi delete ho '
+                              'jayenge. Yeh permanent hai.',
                             ),
                             actions: [
                               TextButton(
-                                  onPressed: () => Navigator.pop(ctx, false),
-                                  child: const Text('Cancel')),
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Cancel'),
+                              ),
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, true),
                                 style: TextButton.styleFrom(
@@ -4498,7 +4544,6 @@ class _MedicineRunningLotCard extends StatelessWidget {
                           ),
                         );
                         if (confirm != true) return;
-
                         final String? sj = await CompanyStore.instance
                             .getString('medicineStockList');
                         if (sj == null) return;
@@ -4514,12 +4559,12 @@ class _MedicineRunningLotCard extends StatelessWidget {
                         onRefresh();
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 6),
+                        padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
                           color: Colors.red.shade50,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.red.shade300),
+                          border:
+                              Border.all(color: Colors.red.shade300),
                         ),
                         child: Icon(Icons.delete_rounded,
                             color: Colors.red.shade700, size: 16),
@@ -4650,36 +4695,31 @@ class _MedicineRunningLotCard extends StatelessWidget {
               ),
             ),
 
-          // ── ALLOCATE BUTTON ──
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: anyLeft
-                    ? () async {
-                        await _showMedicineAllocationDialog(
-                            context, med, mId, unit);
-                        onRefresh();
-                      }
-                    : null,
-                icon: const Icon(Icons.call_split_rounded, size: 18),
-                label: Text(
-                  anyLeft
-                      ? 'Allocate Medicine to Farmer'
-                      : 'Fully Used / Sold',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+          // ── Stock status indicator (no per-lot allocate button) ──
+          if (!anyLeft)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      anyLeft ? Colors.teal.shade700 : Colors.grey.shade400,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                child: Text(
+                  '✅ Fully Used / Sold',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500),
                 ),
               ),
-            ),
-          ),
+            )
+          else
+            const SizedBox(height: 14),
         ],
       ),
     );
@@ -5243,10 +5283,7 @@ class _MedicinePurchaseHistoryScreenState
   bool _isLoading = true;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-  }
+  void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
     setState(() => _isLoading = true);
@@ -5259,8 +5296,9 @@ class _MedicinePurchaseHistoryScreenState
           if (m['id']?.toString() == widget.medicineId) {
             final List<dynamic> hist =
                 m['purchaseHistory'] as List<dynamic>? ?? [];
-            _history =
-                hist.map((e) => Map<String, dynamic>.from(e)).toList();
+            _history = hist
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
             break;
           }
         }
@@ -5269,16 +5307,38 @@ class _MedicinePurchaseHistoryScreenState
     if (mounted) setState(() => _isLoading = false);
   }
 
-  // ── Delete ek purchase entry ──
+  // ── Recalculate stock totals from remaining history ──
+  Future<void> _recalcAndSave(List<dynamic> hist, List<dynamic> all, int medIdx) async {
+    double newTotalBase = 0, newTotalCost = 0;
+    double lastFPB = 0;
+    for (final h in hist) {
+      final double hBase = (h['qtyInBaseUnit'] as num?)?.toDouble() ?? 0;
+      final double hAct  = (h['actualPrice']   as num?)?.toDouble() ?? 0;
+      final double hFPB  = (h['perBaseFarmerRate'] as num?)?.toDouble() ?? 0;
+      final double hCPB  = hBase > 0 ? hAct / hBase : 0;
+      newTotalBase += hBase;
+      newTotalCost += hBase * hCPB;
+      lastFPB = hFPB;
+    }
+    all[medIdx]['totalBaseQty']     = newTotalBase;
+    all[medIdx]['weightedAvgCost']  =
+        newTotalBase > 0 ? newTotalCost / newTotalBase : 0.0;
+    if (lastFPB > 0) all[medIdx]['currentFarmerRate'] = lastFPB;
+    await CompanyStore.instance.setString('medicineStockList', json.encode(all));
+  }
+
   Future<void> _deleteEntry(int index) async {
+    final h = _history[index];
+    final String hUnit = h['unit']?.toString() ?? widget.unit;
+    final double qty = (h['qty'] as num?)?.toDouble() ?? 0;
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Karein?'),
         content: Text(
-            'Kya aap "${_history[index]['qty']} ${_history[index]['unit'] ?? widget.unit}" '
-            'wali purchase entry delete karna chahte hain?\n\n'
-            '⚠️ Isse stock quantity bhi update hogi.'),
+            'Kya aap "${qty.toStringAsFixed(2)} $hUnit" wali purchase '
+            'entry delete karna chahte hain?\n\n'
+            '⚠️ Stock quantity bhi update hogi.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -5293,103 +5353,69 @@ class _MedicinePurchaseHistoryScreenState
     );
     if (confirm != true) return;
 
-    final String? stockJson =
-        await CompanyStore.instance.getString('medicineStockList');
-    if (stockJson == null) return;
-    List<dynamic> all = json.decode(stockJson);
-
+    final String? sj = await CompanyStore.instance.getString('medicineStockList');
+    if (sj == null) return;
+    List<dynamic> all = json.decode(sj);
     for (int i = 0; i < all.length; i++) {
       if (all[i]['id']?.toString() == widget.medicineId) {
         List<dynamic> hist = all[i]['purchaseHistory'] ?? [];
-        if (index < 0 || index >= hist.length) break;
-
-        final double removedBase =
-            (hist[index]['qtyInBaseUnit'] as num?)?.toDouble() ??
-            (hist[index]['qty'] as num?)?.toDouble() ?? 0.0;
-        final double removedActual =
-            (hist[index]['actualPrice'] as num?)?.toDouble() ?? 0.0;
-        hist.removeAt(index);
+        if (index >= 0 && index < hist.length) hist.removeAt(index);
         all[i]['purchaseHistory'] = hist;
-
-        // Recalculate totalBaseQty and weightedAvgCost from remaining entries
-        double newTotalBase = 0;
-        double newTotalCost = 0;
-        for (final h in hist) {
-          final double hBase = (h['qtyInBaseUnit'] as num?)?.toDouble() ??
-              (h['qty'] as num?)?.toDouble() ?? 0.0;
-          final double hActual = (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
-          final double hCostPB = hBase > 0 ? hActual / hBase : 0;
-          newTotalBase += hBase;
-          newTotalCost += hBase * hCostPB;
-        }
-        all[i]['totalBaseQty']    = newTotalBase;
-        all[i]['weightedAvgCost'] = newTotalBase > 0
-            ? newTotalCost / newTotalBase
-            : 0.0;
+        await _recalcAndSave(hist, all, i);
         break;
       }
     }
-
-    await CompanyStore.instance.setString('medicineStockList', json.encode(all));
-    Get.snackbar('Deleted 🗑️', 'Purchase entry delete ho gaya',
+    Get.snackbar('Deleted 🗑️', 'Entry delete ho gaya',
         backgroundColor: Colors.red, colorText: Colors.white);
     _load();
   }
 
-  // ── Edit ek purchase entry ──
   Future<void> _editEntry(int index) async {
     final h = _history[index];
+    final String entryUnit = h['unit']?.toString() ?? widget.unit;
     final qtyCtrl = TextEditingController(
         text: (h['qty'] as num?)?.toStringAsFixed(2) ?? '');
     final aCtrl = TextEditingController(
         text: (h['actualPrice'] as num?)?.toStringAsFixed(2) ?? '');
     final fCtrl = TextEditingController(
         text: (h['farmerPrice'] as num?)?.toStringAsFixed(2) ?? '');
-    final String entryUnit = h['unit']?.toString() ?? widget.unit;
 
     final bool? saved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: Text('✏️ Edit Purchase Entry'),
+        title: const Text('✏️ Edit Purchase Entry'),
         content: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Text('Unit: $entryUnit',
-                style: TextStyle(
-                    fontSize: 12, color: Colors.grey.shade600)),
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
             const SizedBox(height: 12),
             TextField(
               controller: qtyCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
                 labelText: 'Quantity ($entryUnit)',
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: aCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
-                labelText: 'Actual Price (₹)',
-                helperText: 'Company ne jis rate pe kharida (total)',
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                labelText: 'Actual Price (₹ total)',
+                helperText: 'Company ne jis rate pe kharida',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: fCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
-                labelText: 'Farmer Price (₹)',
-                helperText: 'Jo rate farmer ko charge hoga (total)',
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                labelText: 'Farmer Price (₹ total)',
+                helperText: 'Jo rate farmer ko charge hoga',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ]),
@@ -5402,13 +5428,11 @@ class _MedicinePurchaseHistoryScreenState
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.teal.shade700),
-            child: const Text('Save',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Save', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
-
     if (saved != true) return;
 
     final double qty2 = double.tryParse(qtyCtrl.text) ?? 0;
@@ -5420,57 +5444,34 @@ class _MedicinePurchaseHistoryScreenState
       return;
     }
 
-    final double qBase =
-        convertToBase(qty2, entryUnit, widget.unit) ?? qty2;
-    final double cPB = qBase > 0 ? act / qBase : 0;
-    final double fPB = qBase > 0 ? frm / qBase : 0;
+    final double qBase = convertToBase(qty2, entryUnit, widget.unit) ?? qty2;
+    final double cPB   = qBase > 0 ? act / qBase : 0;
+    final double fPB   = qBase > 0 ? frm / qBase : 0;
 
-    final String? stockJson =
-        await CompanyStore.instance.getString('medicineStockList');
-    if (stockJson == null) return;
-    List<dynamic> all = json.decode(stockJson);
-
+    final String? sj = await CompanyStore.instance.getString('medicineStockList');
+    if (sj == null) return;
+    List<dynamic> all = json.decode(sj);
     for (int i = 0; i < all.length; i++) {
       if (all[i]['id']?.toString() == widget.medicineId) {
         List<dynamic> hist = all[i]['purchaseHistory'] ?? [];
         if (index >= 0 && index < hist.length) {
           hist[index] = {
             ...Map<String, dynamic>.from(hist[index]),
-            'qty'           : qty2,
-            'qtyInBaseUnit' : qBase,
-            'actualPrice'   : act,
-            'farmerPrice'   : frm,
-            'perBaseActualCost': cPB,
-            'perBaseFarmerRate': fPB,
-            'editedOn'      : DateTime.now().toIso8601String(),
+            'qty'               : qty2,
+            'qtyInBaseUnit'     : qBase,
+            'actualPrice'       : act,
+            'farmerPrice'       : frm,
+            'perBaseActualCost' : cPB,
+            'perBaseFarmerRate' : fPB,
+            'editedOn'          : DateTime.now().toIso8601String(),
           };
         }
         all[i]['purchaseHistory'] = hist;
-
-        // Recalculate totalBaseQty and weightedAvgCost
-        double newTotalBase = 0, newTotalCost = 0;
-        for (final hEntry in hist) {
-          final double hBase = (hEntry['qtyInBaseUnit'] as num?)?.toDouble() ?? 0;
-          final double hAct  = (hEntry['actualPrice']   as num?)?.toDouble() ?? 0;
-          final double hCPB  = hBase > 0 ? hAct / hBase : 0;
-          newTotalBase += hBase;
-          newTotalCost += hBase * hCPB;
-        }
-        all[i]['totalBaseQty']    = newTotalBase;
-        all[i]['weightedAvgCost'] = newTotalBase > 0
-            ? newTotalCost / newTotalBase : 0.0;
-        // Update farmer rate from latest entry
-        if (hist.isNotEmpty) {
-          final lastFPB = (hist.last['perBaseFarmerRate'] as num?)?.toDouble() ?? fPB;
-          all[i]['currentFarmerRate'] = lastFPB;
-        }
+        await _recalcAndSave(hist, all, i);
         break;
       }
     }
-
-    await CompanyStore.instance.setString(
-        'medicineStockList', json.encode(all));
-    Get.snackbar('Updated ✅', 'Purchase entry update ho gaya',
+    Get.snackbar('Updated ✅', 'Entry update ho gaya',
         backgroundColor: Colors.green, colorText: Colors.white);
     _load();
   }
@@ -5486,14 +5487,10 @@ class _MedicinePurchaseHistoryScreenState
               Icons.arrow_back_ios_new_rounded, color: Colors.white),
           onPressed: () => Get.back(),
         ),
-        title: Text(
-          '💊 ${widget.medicineName} — History',
-          style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 15),
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text('💊 ${widget.medicineName} — History',
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+            overflow: TextOverflow.ellipsis),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -5503,25 +5500,16 @@ class _MedicinePurchaseHistoryScreenState
                   padding: const EdgeInsets.all(16),
                   itemCount: _history.length,
                   itemBuilder: (ctx, i) {
-                    final h = _history[i];
-                    final double qty =
-                        (h['qty'] as num?)?.toDouble() ?? 0.0;
-                    final String hUnit =
-                        h['unit']?.toString() ?? widget.unit;
-                    final double qtyBase =
-                        (h['qtyInBaseUnit'] as num?)?.toDouble() ?? qty;
-                    final double actualPrice =
-                        (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
-                    final double farmerPrice =
-                        (h['farmerPrice'] as num?)?.toDouble() ?? 0.0;
-                    final double cPB =
-                        (h['perBaseActualCost'] as num?)?.toDouble() ?? 0;
-                    final String date =
-                        formatHistoryDateTime(h['date']?.toString());
-                    final String addedBy =
-                        h['addedByName']?.toString() ?? '';
-                    final String addedByRole =
-                        h['addedByRole']?.toString() ?? '';
+                    final h        = _history[i];
+                    final double qty  = (h['qty'] as num?)?.toDouble() ?? 0;
+                    final String hUnit= h['unit']?.toString() ?? widget.unit;
+                    final double qb   = (h['qtyInBaseUnit'] as num?)?.toDouble() ?? qty;
+                    final double act  = (h['actualPrice']   as num?)?.toDouble() ?? 0;
+                    final double frm  = (h['farmerPrice']   as num?)?.toDouble() ?? 0;
+                    final double cPB  = (h['perBaseActualCost'] as num?)?.toDouble() ?? 0;
+                    final String date = formatHistoryDateTime(h['date']?.toString());
+                    final String by   = h['addedByName']?.toString() ?? '';
+                    final String byR  = h['addedByRole']?.toString() ?? '';
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -5532,106 +5520,90 @@ class _MedicinePurchaseHistoryScreenState
                         border: Border.all(color: Colors.teal.shade100),
                       ),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // ── Header: qty + price + edit/delete ──
-                          Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        // Header: qty + price + Edit + Delete
+                        Row(
                             mainAxisAlignment:
                                 MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                '${qty.toStringAsFixed(2)} $hUnit',
+                          Text('${qty.toStringAsFixed(2)} $hUnit',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: Colors.teal.shade900)),
+                          Row(children: [
+                            Text('₹${act.toStringAsFixed(2)}',
                                 style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,
-                                    color: Colors.teal.shade900),
+                                    color: Colors.teal.shade900)),
+                            const SizedBox(width: 8),
+                            // Edit
+                            InkWell(
+                              onTap: () => _editEntry(i),
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: Colors.blue.shade200)),
+                                child: Icon(Icons.edit_rounded,
+                                    size: 14,
+                                    color: Colors.blue.shade700),
                               ),
-                              Row(children: [
-                                Text(
-                                  '₹${actualPrice.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15,
-                                      color: Colors.teal.shade900),
-                                ),
-                                const SizedBox(width: 8),
-                                // Edit button
-                                InkWell(
-                                  onTap: () => _editEntry(i),
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(5),
-                                    decoration: BoxDecoration(
-                                        color: Colors.blue.shade50,
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                            color: Colors.blue.shade200)),
-                                    child: Icon(Icons.edit_rounded,
-                                        size: 14,
-                                        color: Colors.blue.shade700),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                // Delete button
-                                InkWell(
-                                  onTap: () => _deleteEntry(i),
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(5),
-                                    decoration: BoxDecoration(
-                                        color: Colors.red.shade50,
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                            color: Colors.red.shade200)),
-                                    child: Icon(Icons.delete_rounded,
-                                        size: 14,
-                                        color: Colors.red.shade700),
-                                  ),
-                                ),
-                              ]),
-                            ],
-                          ),
-                          if (hUnit != widget.unit)
-                            Text(
-                              '(= ${qtyBase.toStringAsFixed(3)} ${widget.unit})',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade500),
                             ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Actual: ₹${actualPrice.toStringAsFixed(2)}  •  Farmer: ₹${farmerPrice.toStringAsFixed(2)}',
+                            const SizedBox(width: 6),
+                            // Delete
+                            InkWell(
+                              onTap: () => _deleteEntry(i),
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: Colors.red.shade200)),
+                                child: Icon(Icons.delete_rounded,
+                                    size: 14,
+                                    color: Colors.red.shade700),
+                              ),
+                            ),
+                          ]),
+                        ]),
+                        if (hUnit != widget.unit)
+                          Text('(= ${qb.toStringAsFixed(3)} ${widget.unit})',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey.shade500)),
+                        const SizedBox(height: 4),
+                        Text(
+                            'Actual: ₹${act.toStringAsFixed(2)}  •  Farmer: ₹${frm.toStringAsFixed(2)}',
                             style: const TextStyle(
-                                fontSize: 12, color: Colors.black54),
-                          ),
-                          if (cPB > 0)
-                            Text(
+                                fontSize: 12, color: Colors.black54)),
+                        if (cPB > 0)
+                          Text(
                               'Per unit cost: ₹${cPB.toStringAsFixed(2)} / ${widget.unit}',
                               style: TextStyle(
                                   fontSize: 11,
                                   color: Colors.teal.shade700)),
-                          const SizedBox(height: 6),
-                          Row(
+                        const SizedBox(height: 6),
+                        Row(
                             mainAxisAlignment:
                                 MainAxisAlignment.spaceBetween,
                             children: [
-                              if (addedBy.isNotEmpty)
-                                Text(
-                                  '👤 ${addedByRole.isNotEmpty ? "$addedByRole: " : ""}$addedBy',
-                                  style: const TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.black45),
-                                ),
-                              Text(
-                                '🕒 $date',
+                          if (by.isNotEmpty)
+                            Text(
+                                '👤 ${byR.isNotEmpty ? "$byR: " : ""}$by',
                                 style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.black45),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                                    fontSize: 11, color: Colors.black45)),
+                          Text('🕒 $date',
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.black45)),
+                        ]),
+                      ]),
                     );
                   },
                 ),
@@ -5706,8 +5678,6 @@ Future<void> _showMedicineAllocationDialog(
   bool dropdownVisible = false;
   String selectedUnit = baseUnit;
   final qtyCtrl = TextEditingController();
-  // Rate pre-fill: currentFarmerRate is Rs/baseUnit → convert to Rs/selectedUnit
-  // Initially selectedUnit == baseUnit so no conversion needed yet
   final rateCtrl = TextEditingController(
     text: currentFarmerRate > 0
         ? currentFarmerRate.toStringAsFixed(2)
@@ -5725,17 +5695,12 @@ Future<void> _showMedicineAllocationDialog(
               convertToBase(qty, selectedUnit, baseUnit) ?? qty;
           final double saleRate =
               double.tryParse(rateCtrl.text) ?? 0.0;
-          // saleRate is Rs/selectedUnit → convert to Rs/baseUnit for calc
-          final double saleRatePerBase =
-              priceToBase(saleRate, selectedUnit, baseUnit) ?? saleRate;
           final bool isOver = qtyBase > availBase;
           final double availInSelected =
-              convertFromBase(availBase, baseUnit, selectedUnit) ?? availBase;
-          // Cost display in selectedUnit (CORRECT: divide)
-          final double costInSelected =
-              pricePerUnit(weightedAvgCost, baseUnit, selectedUnit) ?? weightedAvgCost;
+              convertFromBase(availBase, baseUnit, selectedUnit) ??
+                  availBase;
           final double totalCost = qtyBase * weightedAvgCost;
-          final double totalBill = qtyBase * saleRatePerBase;
+          final double totalBill = qtyBase * saleRate;
           final double profit = totalBill - totalCost;
           final bool hasCalc = qty > 0 && saleRate > 0;
 
@@ -5888,23 +5853,19 @@ Future<void> _showMedicineAllocationDialog(
                                   ? (v) {
                                       if (v) {
                                         setDlg(() {
-                                          final String oldUnit = selectedUnit;
                                           selectedUnit = u;
-                                          // Rate convert: Rs/oldUnit → Rs/base → Rs/newUnit
-                                          final double curRate =
-                                              double.tryParse(rateCtrl.text) ?? 0.0;
-                                          if (curRate > 0) {
-                                            final double rBase =
-                                                priceToBase(curRate, oldUnit, baseUnit) ?? curRate;
-                                            final double rNew =
-                                                pricePerUnit(rBase, baseUnit, u) ?? rBase;
-                                            rateCtrl.text = rNew.toStringAsFixed(2);
-                                          } else if (currentFarmerRate > 0) {
-                                            // Fallback: use farmer rate from purchase
-                                            final double rNew =
-                                                pricePerUnit(currentFarmerRate, baseUnit, u) ??
+                                          // Rate update — convert per base to per selected
+                                          if (currentFarmerRate > 0) {
+                                            final double perSelected =
+                                                convertFromBase(
+                                                        currentFarmerRate,
+                                                        baseUnit,
+                                                        u) ??
                                                     currentFarmerRate;
-                                            rateCtrl.text = rNew.toStringAsFixed(2);
+                                            rateCtrl.text =
+                                                perSelected
+                                                    .toStringAsFixed(
+                                                        2);
                                           }
                                         });
                                       }
@@ -5965,7 +5926,7 @@ Future<void> _showMedicineAllocationDialog(
                                   padding: const EdgeInsets.only(
                                       top: 3, bottom: 3),
                                   child: Text(
-                                    'Cost: ₹${costInSelected.toStringAsFixed(2)} / $selectedUnit',
+                                    'Auto Cost: ₹${weightedAvgCost.toStringAsFixed(2)} / $baseUnit',
                                     style: TextStyle(
                                         fontSize: 11,
                                         color: Colors.grey.shade600),
@@ -6680,6 +6641,659 @@ class _MedicineAllocationDetailScreenState
           ],
         ),
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 👨‍🌾 CENTRAL ALLOCATE MEDICINE TO FARMER SCREEN
+// Ek farmer ko ek baar mein multiple medicines allocate karo
+// ═══════════════════════════════════════════════════════════════════════════
+class AllocateMedicineToFarmerScreen extends StatefulWidget {
+  final List<Map<String, dynamic>> medicines;
+  final Map<String, double> availBaseQty; // mId → available base qty
+
+  const AllocateMedicineToFarmerScreen({
+    super.key,
+    required this.medicines,
+    required this.availBaseQty,
+  });
+
+  @override
+  State<AllocateMedicineToFarmerScreen> createState() =>
+      _AllocateMedicineToFarmerScreenState();
+}
+
+class _AllocateMedicineToFarmerScreenState
+    extends State<AllocateMedicineToFarmerScreen> {
+
+  // Farmer search
+  final _farmerSearchCtrl = TextEditingController();
+  String? _selectedFarmer;
+  bool _dropdownVisible = false;
+  List<String> _farmerOptions = [];
+
+  // Per-medicine qty/unit — only medicines with available qty shown
+  // [{med, saleUnit, qtyCtrl}]
+  List<Map<String, dynamic>> _medicineRows = [];
+
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+    _farmerSearchCtrl.addListener(() => setState(() {
+      _dropdownVisible = _farmerSearchCtrl.text.isNotEmpty;
+      _selectedFarmer = null;
+    }));
+  }
+
+  Future<void> _init() async {
+    // Load farmers
+    List<dynamic> rawFarmers =
+        await CompanyStore.instance.getJsonList('companyFarmers');
+    final farmers = rawFarmers.map((f) {
+      return '${f['name'] ?? 'Unknown'} - ${f['phone'] ?? ''} - ${f['district'] ?? ''}';
+    }).toList();
+
+    // Build medicine rows — only those with available qty > 0
+    final rows = <Map<String, dynamic>>[];
+    for (final med in widget.medicines) {
+      final String mId = med['id']?.toString() ?? '';
+      final double avail = widget.availBaseQty[mId] ?? 0.0;
+      if (avail <= 0) continue;
+      final String bu = med['unit']?.toString() ?? 'unit';
+      rows.add({
+        'med'     : med,
+        'mId'     : mId,
+        'saleUnit': bu, // default = base unit
+        'qtyCtrl' : TextEditingController(),
+      });
+    }
+
+    if (mounted) {
+      setState(() {
+        _farmerOptions = farmers;
+        _medicineRows  = rows;
+        _isLoading     = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _farmerSearchCtrl.dispose();
+    for (final row in _medicineRows) {
+      (row['qtyCtrl'] as TextEditingController).dispose();
+    }
+    super.dispose();
+  }
+
+  // Total bill preview
+  double _totalBill() {
+    double total = 0;
+    for (final row in _medicineRows) {
+      final med        = row['med'] as Map<String, dynamic>;
+      final String bu  = med['unit']?.toString() ?? '';
+      final String su  = row['saleUnit']?.toString() ?? bu;
+      final double qty = double.tryParse(
+          (row['qtyCtrl'] as TextEditingController).text) ?? 0;
+      final double qb  = convertToBase(qty, su, bu) ?? qty;
+      final double fRatePB =
+          (med['currentFarmerRate'] as num?)?.toDouble() ?? 0;
+      total += qb * fRatePB;
+    }
+    return total;
+  }
+
+  Future<void> _save() async {
+    final String farmerName =
+        (_selectedFarmer ?? _farmerSearchCtrl.text).trim();
+    if (farmerName.isEmpty) {
+      Get.snackbar('Error', 'Farmer select karein',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      return;
+    }
+
+    // Check at least one qty entered
+    final hasAny = _medicineRows.any((row) {
+      final double qty = double.tryParse(
+          (row['qtyCtrl'] as TextEditingController).text) ?? 0;
+      return qty > 0;
+    });
+    if (!hasAny) {
+      Get.snackbar('Error', 'Kam se kam ek medicine ki qty dalein',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      return;
+    }
+
+    // Validate each row
+    for (final row in _medicineRows) {
+      final med       = row['med'] as Map<String, dynamic>;
+      final String mId= row['mId']?.toString() ?? '';
+      final String bu = med['unit']?.toString() ?? '';
+      final String su = row['saleUnit']?.toString() ?? bu;
+      final double qty= double.tryParse(
+          (row['qtyCtrl'] as TextEditingController).text) ?? 0;
+      if (qty <= 0) continue; // skip empty rows
+      final double qb = convertToBase(qty, su, bu) ?? qty;
+      final double avail = widget.availBaseQty[mId] ?? 0;
+      if (qb > avail) {
+        final double av = convertFromBase(avail, bu, su) ?? avail;
+        Get.snackbar('Error',
+            '${med['name']}: sirf ${av.toStringAsFixed(2)} $su available hai',
+            backgroundColor: Colors.red, colorText: Colors.white);
+        return;
+      }
+    }
+
+    final String byName = await SessionService.currentName ?? '';
+    final String byRole = await SessionService.currentRole ?? '';
+    final String allocId =
+        DateTime.now().millisecondsSinceEpoch.toString();
+    final String allocDate = DateTime.now().toIso8601String();
+
+    // Load stock
+    final String? sj =
+        await CompanyStore.instance.getString('medicineStockList');
+    List<dynamic> all = sj != null ? json.decode(sj) : [];
+
+    // Add allocation entry to each medicine that has qty > 0
+    for (final row in _medicineRows) {
+      final med       = row['med'] as Map<String, dynamic>;
+      final String mId= row['mId']?.toString() ?? '';
+      final String bu = med['unit']?.toString() ?? '';
+      final String su = row['saleUnit']?.toString() ?? bu;
+      final double qty= double.tryParse(
+          (row['qtyCtrl'] as TextEditingController).text) ?? 0;
+      if (qty <= 0) continue;
+      final double qb    = convertToBase(qty, su, bu) ?? qty;
+      final double fRatePB =
+          (med['currentFarmerRate'] as num?)?.toDouble() ?? 0;
+      final double fRateSu =
+          pricePerUnit(fRatePB, bu, su) ?? fRatePB;
+
+      for (int i = 0; i < all.length; i++) {
+        if (all[i]['id']?.toString() == mId) {
+          List<dynamic> allocs = all[i]['allocations'] ?? [];
+          allocs.add({
+            'id'             : '$allocId-$mId',
+            'groupId'        : allocId, // same group = same allocation session
+            'farmerName'     : farmerName,
+            'qty'            : qty,
+            'unit'           : su,
+            'qtyInBaseUnit'  : qb,
+            'rate'           : fRateSu,
+            'ratePerBase'    : fRatePB,
+            'allocatedOn'    : allocDate,
+            'allocatedByName': byName,
+            'allocatedByRole': byRole,
+          });
+          all[i]['allocations'] = allocs;
+          break;
+        }
+      }
+    }
+
+    await CompanyStore.instance.setString('medicineStockList', json.encode(all));
+    Get.back(result: true);
+    Get.snackbar('Allocated ✅', '$farmerName ko medicines allocate ho gayi',
+        backgroundColor: Colors.green, colorText: Colors.white);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final double bill = _totalBill();
+    final bool hasAvail = _medicineRows.isNotEmpty;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.orange.shade700,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+          onPressed: () => Get.back(),
+        ),
+        title: const Row(children: [
+          Text('👨‍🌾', style: TextStyle(fontSize: 18)),
+          SizedBox(width: 8),
+          Text('Allocate to Farmer',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ]),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+
+                  // ── Farmer search ──
+                  const Text('👨‍🌾 Farmer Select Karein',
+                      style: TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _farmerSearchCtrl,
+                    decoration: InputDecoration(
+                      hintText: 'Naam, Mobile ya Jagah se search karein...',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _selectedFarmer != null
+                          ? const Icon(Icons.check_circle_rounded,
+                              color: Colors.green)
+                          : null,
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide:
+                            BorderSide(color: Colors.orange.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                            color: Colors.orange.shade600, width: 2),
+                      ),
+                      helperText: _selectedFarmer != null
+                          ? '✅ $_selectedFarmer'
+                          : null,
+                      helperMaxLines: 2,
+                    ),
+                  ),
+
+                  // Dropdown
+                  if (_dropdownVisible &&
+                      _farmerSearchCtrl.text.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 160),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border:
+                            Border.all(color: Colors.orange.shade200),
+                        boxShadow: [
+                          BoxShadow(
+                              color: Colors.black.withOpacity(0.07),
+                              blurRadius: 6,
+                              offset: const Offset(0, 3))
+                        ],
+                      ),
+                      child: Builder(builder: (cx) {
+                        final q =
+                            _farmerSearchCtrl.text.toLowerCase();
+                        final filtered = _farmerOptions
+                            .where(
+                                (f) => f.toLowerCase().contains(q))
+                            .toList();
+                        if (filtered.isEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Text('Koi farmer nahi mila',
+                                style: TextStyle(color: Colors.grey)),
+                          );
+                        }
+                        return ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: filtered.length,
+                          itemBuilder: (cx2, fi) => InkWell(
+                            onTap: () => setState(() {
+                              _selectedFarmer = filtered[fi];
+                              _farmerSearchCtrl.text = filtered[fi];
+                              _dropdownVisible = false;
+                            }),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
+                              child: Text(filtered[fi],
+                                  style: const TextStyle(fontSize: 13)),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ],
+
+                  const SizedBox(height: 24),
+
+                  // ── Medicine rows ──
+                  if (!hasAvail)
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Center(
+                        child: Text(
+                          '⚠️ Koi medicine available nahi hai.\nPehle purchase karein.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: Colors.orange.shade800, fontSize: 13),
+                        ),
+                      ),
+                    )
+                  else ...[
+                    const Text('💊 Medicines (qty dalein)',
+                        style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ...List.generate(
+                        _medicineRows.length,
+                        (i) => _medicineRow(i)),
+                  ],
+
+                  const SizedBox(height: 16),
+
+                  // ── Bill preview ──
+                  if (bill > 0)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        mainAxisAlignment:
+                            MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Total Farmer Bill:',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14)),
+                          Text('₹${bill.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.black87)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Save button ──
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+            color: Colors.white,
+            child: SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: hasAvail ? _save : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade700,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Save Allocation',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _medicineRow(int index) {
+    final row     = _medicineRows[index];
+    final med     = row['med'] as Map<String, dynamic>;
+    final String mId  = row['mId']?.toString() ?? '';
+    final String bu   = med['unit']?.toString() ?? 'unit';
+    final String su   = row['saleUnit']?.toString() ?? bu;
+    final String name = med['name']?.toString() ?? '-';
+    final String nick = med['nickName']?.toString() ?? '';
+    final double fRatePB =
+        (med['currentFarmerRate'] as num?)?.toDouble() ?? 0;
+    final double avgCostPB =
+        (med['weightedAvgCost'] as num?)?.toDouble() ?? 0;
+    final double availBase = widget.availBaseQty[mId] ?? 0;
+    final double availSu   = convertFromBase(availBase, bu, su) ?? availBase;
+
+    final qCtrl = row['qtyCtrl'] as TextEditingController;
+    final double qty  = double.tryParse(qCtrl.text) ?? 0;
+    final double qb   = convertToBase(qty, su, bu) ?? qty;
+    final bool isOver = qb > availBase && availBase >= 0;
+
+    // Rate in sale unit (CORRECT price conversion)
+    final double fRateSu  = pricePerUnit(fRatePB,   bu, su) ?? fRatePB;
+    final double costSu   = pricePerUnit(avgCostPB,  bu, su) ?? avgCostPB;
+    final double itemBill = qb * fRatePB;
+    final double itemCost = qb * avgCostPB;
+    final double itemProf = itemBill - itemCost;
+    final bool hasCalc    = qty > 0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: qty > 0 ? Colors.white : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: isOver
+                ? Colors.red.shade300
+                : qty > 0
+                    ? Colors.orange.shade300
+                    : Colors.grey.shade300,
+            width: qty > 0 ? 1.5 : 1),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+        // Header
+        Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: qty > 0
+                ? Colors.orange.shade50
+                : Colors.grey.shade100,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(12),
+              topRight: Radius.circular(12),
+            ),
+          ),
+          child: Row(children: [
+            const Text('💊', style: TextStyle(fontSize: 16)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name,
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: qty > 0
+                                ? Colors.orange.shade900
+                                : Colors.grey.shade600)),
+                    if (nick.isNotEmpty)
+                      Text('"$nick"',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: qty > 0
+                                  ? Colors.orange.shade700
+                                  : Colors.grey.shade500)),
+                  ]),
+            ),
+            // Available badge
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Text(
+                '${availSu.toStringAsFixed(2)} $su left',
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green.shade700),
+              ),
+            ),
+          ]),
+        ),
+
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+
+            // Unit chips
+            Wrap(
+              spacing: 6, runSpacing: 4,
+              children: kMedicineUnits.map((u) {
+                final bool enabled = canConvert(u, bu);
+                return ChoiceChip(
+                  label: Text(u, style: const TextStyle(fontSize: 11)),
+                  selected: su == u,
+                  onSelected: enabled ? (v) {
+                    if (!v) return;
+                    setState(() {
+                      _medicineRows[index]['saleUnit'] = u;
+                      // Reset qty on unit change to avoid confusion
+                      qCtrl.clear();
+                    });
+                  } : null,
+                  selectedColor: Colors.orange.shade700,
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 0),
+                  labelStyle: TextStyle(
+                    color: !enabled
+                        ? Colors.grey.shade400
+                        : su == u
+                            ? Colors.white
+                            : Colors.black87,
+                  ),
+                );
+              }).toList(),
+            ),
+
+            const SizedBox(height: 10),
+
+            // Qty + farmer rate info
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: qCtrl,
+                  onChanged: (_) => setState(() {}),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Qty ($su)',
+                    isDense: true,
+                    errorText: isOver
+                        ? 'Max ${availSu.toStringAsFixed(2)}'
+                        : null,
+                    helperText: fRateSu > 0
+                        ? 'Rate: ₹${fRateSu.toStringAsFixed(2)} / $su'
+                        : null,
+                    helperStyle: const TextStyle(
+                        fontSize: 10, color: Colors.black45),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+              // Cost per unit info
+              if (costSu > 0) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text('Cost / $su',
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600)),
+                      Text(
+                          '₹${costSu.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13)),
+                    ]),
+                  ),
+                ),
+              ],
+            ]),
+
+            // Conversion display
+            if (su != bu && qty > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('= ${qb.toStringAsFixed(3)} $bu',
+                    style: TextStyle(
+                        fontSize: 10, color: Colors.orange.shade700)),
+              ),
+
+            // Mini P&L
+            if (hasCalc) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: itemProf >= 0
+                      ? Colors.teal.shade50
+                      : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: itemProf >= 0
+                          ? Colors.teal.shade200
+                          : Colors.orange.shade200),
+                ),
+                child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                  Text('Cost: ₹${itemCost.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.black54)),
+                  Text('Bill: ₹${itemBill.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.black54)),
+                  Text(
+                    itemProf >= 0
+                        ? '📈 +₹${itemProf.toStringAsFixed(0)}'
+                        : '📉 -₹${itemProf.abs().toStringAsFixed(0)}',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: itemProf >= 0
+                            ? Colors.teal.shade800
+                            : Colors.orange.shade800),
+                  ),
+                ]),
+              ),
+            ],
+          ]),
+        ),
+      ]),
     );
   }
 }
