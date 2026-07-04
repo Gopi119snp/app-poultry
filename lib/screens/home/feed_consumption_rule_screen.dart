@@ -86,9 +86,13 @@ class _FeedConsumptionRuleScreenState
           _ruleType = config.ruleType;
           _multiplierCtrl.text = config.defaultMultiplier.toString();
           _seasons = config.seasonalOverrides;
+          // Storage mein pehle se valid rule mila — matlab yeh CURRENTLY
+          // active/saved rule hai. Banner turant dikhao, screen chahe abhi
+          // khuli ho ya pehle kabhi save kiya ho.
+          _showSavedBanner = true;
         });
       } catch (_) {
-        // corrupt/missing data → defaults hi rahenge
+        // corrupt/missing data → defaults hi rahenge, banner nahi dikhega
       }
     }
     setState(() => _loading = false);
@@ -335,6 +339,38 @@ class _FeedConsumptionRuleScreenState
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
                               color: primaryGreen,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ] else if (!_loading) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline_rounded,
+                            color: Colors.orange, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Abhi kuch bhi SAVE nahi hua hai — neeche se rule '
+                            'set karke "Rule Save Karo" dabao.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.deepOrange,
                             ),
                           ),
                         ),
