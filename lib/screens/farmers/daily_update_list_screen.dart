@@ -816,7 +816,13 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         return;
       }
 
-      await prefs.setString('companyFarmers', jsonEncode(farmersList));
+      // ✅ FIX: CompanyStore.setString use kiya (raw prefs.setString nahi) —
+      // isse yeh cloud (Firestore) pe bhi push hoga, warna app-restart pe
+      // purana data wapas load ho ke isko overwrite kar deta.
+      await CompanyStore.instance.setString(
+        'companyFarmers',
+        jsonEncode(farmersList),
+      );
 
       setState(() {
         _localDailyEntries = List<dynamic>.from(updatedDailyEntries!);
