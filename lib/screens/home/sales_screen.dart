@@ -2829,15 +2829,15 @@ double? _qtyToBase(double qty, String from, String base) {
 double? _qtyFromBase(double qty, String base, String to) =>
     _qtyToBase(qty, base, to);
 
-/// Rs per BASE unit -> Rs per TARGET unit  (DIVIDE by target factor)
-/// e.g. Rs2000/liter -> Rs2/ml
+/// Rs per BASE unit -> Rs per TARGET unit
+/// e.g. Rs2000/liter -> Rs2/ml  (multiply by target-factor / base-factor)
 double? _pricePerUnit(double pricePerBase, String base, String target) {
   final b = base.toLowerCase().trim(), t = target.toLowerCase().trim();
   if (b == t) return pricePerBase;
   if (_sMl.containsKey(b)   && _sMl.containsKey(t))
-    return pricePerBase * _sMl[b]!   / _sMl[t]!;
+    return pricePerBase * _sMl[t]!   / _sMl[b]!;
   if (_sGram.containsKey(b) && _sGram.containsKey(t))
-    return pricePerBase * _sGram[b]! / _sGram[t]!;
+    return pricePerBase * _sGram[t]! / _sGram[b]!;
   return null;
 }
 double? _priceToBase(double pricePerTarget, String target, String base) =>
