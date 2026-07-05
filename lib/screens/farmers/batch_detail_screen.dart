@@ -3970,6 +3970,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       alert: PerformanceAlertEngine.evaluateMortality(
                         mortalityPercent,
                         _performanceConfig,
+                        dayNumber: chicksAgeDays,
                       ),
                     ),
                     _buildStatBlock(
@@ -3997,6 +3998,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                           ? PerformanceAlertEngine.evaluateFcr(
                               fcr,
                               _performanceConfig,
+                              dayNumber: chicksAgeDays,
                             )
                           : null,
                     ),
