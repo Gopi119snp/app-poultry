@@ -1317,6 +1317,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                                         .evaluateMortality(
                                                       r.mortalityPercent,
                                                       _performanceConfig,
+                                                      dayNumber: r.day,
                                                     ),
                                                   ),
                                                 ),
@@ -1353,6 +1354,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                                             .evaluateFcr(
                                                             r.autoFcr,
                                                             _performanceConfig,
+                                                            dayNumber: r.day,
                                                           )
                                                         : null,
                                                   ),
@@ -1367,6 +1369,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                                               .evaluateFcr(
                                                             r.manualFcr!,
                                                             _performanceConfig,
+                                                            dayNumber: r.day,
                                                           ),
                                                         )
                                                       : const Text('—'),
