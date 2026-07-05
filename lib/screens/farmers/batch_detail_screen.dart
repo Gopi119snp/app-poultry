@@ -86,6 +86,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   String _farmerPhone = '';
   String _farmerBankName = '';
   String _farmerAccountNo = '';
+  String _farmerAccountHolder = '';
   String _farmerIfsc = '';
   String _farmerAddress = '';
 
@@ -154,6 +155,72 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
   String _formatDate(DateTime dt) {
     return "${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}";
+  }
+
+  // ── 🏦 Bank Name Formatter ────────────────────────────────────────────
+  // Chota naam (jaise "sbi", "hdfc") ko full readable naam mein badalta hai
+  // jaise "SBI (State Bank of India)". Agar map mein naam nahi mila to
+  // proper Title Case laga deta hai, aur agar short acronym lagta hai
+  // (bina space, 6 letters tak) to use uppercase kar deta hai.
+  static const Map<String, String> _bankFullNames = {
+    'sbi': 'SBI (State Bank of India)',
+    'hdfc': 'HDFC (Housing Development Finance Corporation) Bank',
+    'icici':
+        'ICICI (Industrial Credit and Investment Corporation of India) Bank',
+    'pnb': 'PNB (Punjab National Bank)',
+    'bob': 'BOB (Bank of Baroda)',
+    'boi': 'BOI (Bank of India)',
+    'canara': 'Canara Bank',
+    'union': 'Union Bank of India',
+    'ubi': 'UBI (Union Bank of India)',
+    'axis': 'Axis Bank',
+    'kotak': 'Kotak Mahindra Bank',
+    'idbi': 'IDBI (Industrial Development Bank of India)',
+    'indian': 'Indian Bank',
+    'iob': 'IOB (Indian Overseas Bank)',
+    'central': 'Central Bank of India',
+    'uco': 'UCO (United Commercial Bank)',
+    'yes': 'YES Bank',
+    'idfc': 'IDFC FIRST Bank',
+    'rbl': 'RBL (Ratnakar) Bank',
+    'federal': 'Federal Bank',
+    'karnataka': 'Karnataka Bank',
+    'maharashtra': 'BOM (Bank of Maharashtra)',
+    'bom': 'BOM (Bank of Maharashtra)',
+    'psb': 'PSB (Punjab & Sind Bank)',
+    'dcb': 'DCB (Development Credit Bank)',
+    'south indian': 'South Indian Bank',
+    'j&k': 'J&K (Jammu & Kashmir) Bank',
+    'jk': 'J&K (Jammu & Kashmir) Bank',
+    'au small finance': 'AU Small Finance Bank',
+    'equitas': 'Equitas Small Finance Bank',
+    'ujjivan': 'Ujjivan Small Finance Bank',
+    'paytm': 'Paytm Payments Bank',
+    'hsbc': 'HSBC (Hongkong and Shanghai Banking Corporation)',
+    'citi': 'Citibank',
+    'standard chartered': 'Standard Chartered Bank',
+    'deutsche': 'Deutsche Bank',
+  };
+
+  String _formatBankName(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '--';
+
+    final key = trimmed.toLowerCase();
+    if (_bankFullNames.containsKey(key)) {
+      return _bankFullNames[key]!;
+    }
+
+    final looksLikeAcronym = !trimmed.contains(' ') && trimmed.length <= 6;
+    if (looksLikeAcronym) {
+      return trimmed.toUpperCase();
+    }
+
+    return trimmed
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
+        .join(' ');
   }
 
   // ── 🚨 Fraud Risk Indicator Card ───────────────────────────────────────
@@ -377,9 +444,50 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         setState(() {
           _farmerName = currentFarmer['name'] ?? '';
           _farmerPhone = currentFarmer['phone'] ?? '';
-          _farmerBankName = currentFarmer['bankName'] ?? '';
-          _farmerAccountNo = currentFarmer['accountNo'] ?? '';
-          _farmerIfsc = currentFarmer['ifsc'] ?? '';
+
+          // ── Bank Name: raw value ko full readable naam mein format karo ──
+          final rawBankName = (currentFarmer['bankName'] ?? '').toString();
+          _farmerBankName = _formatBankName(rawBankName);
+
+          // ── Account Holder: bank account jis naam pe hai (farmer ke naam
+          // se alag ho sakta hai), agar khali ho to farmer ka naam use karo
+          final rawAccountHolder = (currentFarmer['accountHolder'] ?? '')
+              .toString()
+              .trim();
+          _farmerAccountHolder = rawAccountHolder.isNotEmpty
+              ? rawAccountHolder
+              : _farmerName;
+
+          // ── Account No.: confirmed key 'accountNumber' hai (farmer_profile
+          // _screen.dart mein yahi save hoti hai), baaki purane/alag naam
+          // fallback ke taur par check kar lete hain ─────────────────────
+          _farmerAccountNo = '';
+          for (final key in [
+            'accountNumber',
+            'accountNo',
+            'bankAccountNo',
+            'bankAccountNumber',
+            'accNo',
+            'account_no',
+            'account_number',
+          ]) {
+            final val = currentFarmer[key];
+            if (val != null && val.toString().trim().isNotEmpty) {
+              _farmerAccountNo = val.toString().trim();
+              break;
+            }
+          }
+
+          // ── IFSC Code: isi tarah alag-alag possible keys check karo ─────
+          _farmerIfsc = '';
+          for (final key in ['ifsc', 'ifscCode', 'IFSC', 'ifsc_code']) {
+            final val = currentFarmer[key];
+            if (val != null && val.toString().trim().isNotEmpty) {
+              _farmerIfsc = val.toString().trim();
+              break;
+            }
+          }
+
           _farmerAddress = currentFarmer['address'] ?? '';
         });
 
@@ -996,7 +1104,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           pdfSection('🏦  Farmer Bank Details', kIndigo, kIndigoLight, [
             pdfDataRow(
               'Account Holder',
-              _farmerName.isNotEmpty ? _farmerName : '--',
+              _farmerAccountHolder.isNotEmpty ? _farmerAccountHolder : '--',
             ),
             pdfDataRow(
               'Bank Name',
@@ -1765,7 +1873,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   rows: [
                     _rasidRow(
                       'Account Holder',
-                      _farmerName.isNotEmpty ? _farmerName : '—',
+                      _farmerAccountHolder.isNotEmpty
+                          ? _farmerAccountHolder
+                          : '—',
                     ),
                     _rasidRow(
                       'Bank Name',
