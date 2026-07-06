@@ -303,6 +303,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   String _pdfSafe(String raw) {
     return raw
         .replaceAll(_emojiPattern, '')
+        .replaceAll('₹', 'Rs.')
+        .replaceAll('−', '-') // Unicode minus (U+2212) → normal hyphen
         .replaceAll('—', '-')
         .replaceAll('–', '-')
         .replaceAll(RegExp(r'\s{2,}'), ' ')
@@ -905,7 +907,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             gradient: pw.LinearGradient(
               begin: pw.Alignment.topLeft,
               end: pw.Alignment.bottomRight,
-              colors: [PdfColors.white, PdfColor(1, 1, 1, 0.55)],
+              colors: [PdfColors.white, PdfColor.fromInt(0xFFEDEDED)],
             ),
             boxShadow: [
               pw.BoxShadow(
@@ -1020,13 +1022,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         children: [
           if (divider) pw.Divider(color: kDivider, thickness: 0.5),
           pw.Container(
-            // NOTE: PdfColor(0,0,0,0) "transparent black" trick avoid karo —
-            // kai PDF viewers alpha=0 ko sahi handle nahi karte aur ise solid
-            // BLACK box bana dete hain. Jab highlight nahi karna to color
-            // hi mat do (null), tabhi guaranteed transparent rahega.
-            color: highlight
-                ? const PdfColor(0.106, 0.369, 0.125, 0.08)
-                : null,
+            // NOTE: Translucent PdfColor (alpha < 1) container fills avoid
+            // karo — kai PDF viewers alpha ko sahi handle nahi karte:
+            // alpha=0 solid BLACK ban jaata hai, alpha=0.08 solid DARK green
+            // ban jaata hai (dono hi bugs actual devices par dekhe gaye).
+            // Isliye ab hamesha SOLID (opaque) light color use karte hain.
+            color: highlight ? kGreenLight : null,
             padding: const pw.EdgeInsets.symmetric(vertical: 3),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.end,
@@ -1181,7 +1182,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           style: pw.TextStyle(
             fontSize: 60,
             fontWeight: pw.FontWeight.bold,
-            color: const PdfColor(0, 0, 0, 0.08),
+            // NOTE: translucent black (alpha 0.08) yahan bhi wahi bug deta
+            // hai — viewer alpha ignore karke SOLID BLACK bana deta hai,
+            // jisse bade bade black diagonal marks dikhte the poore page
+            // par. Ab guaranteed-safe SOLID light-grey color use kiya hai.
+            color: PdfColor.fromInt(0xFFE2E2E2),
           ),
         ),
       ),
@@ -1233,7 +1238,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       height: 50,
                       decoration: pw.BoxDecoration(
                         shape: pw.BoxShape.circle,
-                        color: const PdfColor(0.106, 0.369, 0.125, 0.15),
+                        color: kGreenLight,
                         border: pw.Border.all(color: kGreenMid, width: 1.5),
                       ),
                       child: _farmerAvatarBytes != null
@@ -1560,7 +1565,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   '${costAdjPerKg >= 0 ? "+" : ""}Rs.${costAdjPerKg.toStringAsFixed(2)}/KG',
                   valueColor: costAdjPerKg >= 0 ? kGreen : kRed,
                 ),
-                pdfDataRow('Calculation Note', costAdjLabel),
+                pdfDataRow('Calculation Note', _pdfSafe(costAdjLabel)),
                 pdfDataRow(
                   'Rate Bonus',
                   rateBonusApplied
