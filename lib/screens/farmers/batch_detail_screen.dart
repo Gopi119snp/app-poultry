@@ -1168,13 +1168,20 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     // IMPORTANT: Watermark ko seedha content list mein daalne se crash aata
     // hai ("height Infinity exceed page height") kyunki Watermark ko poore
     // page ka bounded canvas chahiye hota hai, jo normal flow nahi de sakta.
-    // Sahi tareeka: PageTheme ka dedicated buildBackground layer, FullPage
-    // (ignoreMargins) ke andar wrap karke — ye official pdf-package pattern
-    // hai isi exact use-case ke liye.
+    // Sahi tareeka: PageTheme ka dedicated layer, FullPage (ignoreMargins)
+    // ke andar wrap karke — ye official pdf-package pattern hai isi exact
+    // use-case ke liye.
+    //
+    // IMPORTANT: buildBackground content ke PEECHE draw hota hai — isliye
+    // opaque (solid) cards uske upar paint hoke use dhak dete the, aur
+    // watermark sirf cards ke beech ke chhote gaps mein hi dikhta tha.
+    // buildForeground iska ulta hai: ye SABSE AAKHIR mein, saare content ke
+    // UPAR draw hota hai — isliye watermark ab hamesha dikhega, chahe white
+    // card ho ya colored header.
     final pw.PageTheme pageTheme = pw.PageTheme(
       pageFormat: const PdfPageFormat(595.28, 1500),
       margin: const pw.EdgeInsets.symmetric(horizontal: 22, vertical: 20),
-      buildBackground: (pw.Context context) => pw.FullPage(
+      buildForeground: (pw.Context context) => pw.FullPage(
         ignoreMargins: true,
         child: pw.Watermark.text(
           watermarkText,
