@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import 'dart:io';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:open_file/open_file.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -42,6 +44,10 @@ class _ThemeColors {
 }
 
 class _BatchDetailScreenState extends State<BatchDetailScreen> {
+  // ── Local notifications — "Download complete, tap to view" ke liye ─────
+  final FlutterLocalNotificationsPlugin _notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+  bool _notificationsReady = false;
   static const Color primaryGreen = Color(0xFF1B5E20);
 
   final _weightController = TextEditingController();
@@ -151,6 +157,67 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     _liveBatchData = Map<String, dynamic>.from(widget.batchData);
     _dateController.text = _formatDate(DateTime.now());
     _loadFreshBatchData();
+    _initDownloadNotifications();
+  }
+
+  // ── Download notification setup ─────────────────────────────────────────
+  // Ye asli Android "Download complete" jaisa notification dikhata hai —
+  // tap karne par seedha file open ho jaati hai (jaisa Download Manager
+  // karta hai). Agar kabhi init fail ho (permission na mile waghera), app
+  // crash nahi hoga — bas notification skip ho jayegi, PDF save/share
+  // phir bhi normally kaam karega.
+  Future<void> _initDownloadNotifications() async {
+    try {
+      const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const initSettings = InitializationSettings(android: androidInit);
+      await _notificationsPlugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (response) async {
+          final path = response.payload;
+          if (path != null && path.isNotEmpty) {
+            try {
+              await OpenFile.open(path);
+            } catch (_) {}
+          }
+        },
+      );
+      // Android 13+ (API 33) par notification dikhane ke liye runtime
+      // permission chahiye hoti hai — ye request kar deta hai.
+      await _notificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+      _notificationsReady = true;
+    } catch (_) {
+      _notificationsReady = false;
+    }
+  }
+
+  // ── Download-complete notification dikhao (tap = file open) ────────────
+  Future<void> _showDownloadNotification({
+    required String fileName,
+    required String filePath,
+  }) async {
+    if (!_notificationsReady) return;
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        'pdf_downloads_channel',
+        'PDF Downloads',
+        channelDescription:
+            'Batch settlement rasid PDF download complete notifications',
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      );
+      const notifDetails = NotificationDetails(android: androidDetails);
+      await _notificationsPlugin.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        fileName,
+        'Download complete. Tap to view.',
+        notifDetails,
+        payload: filePath,
+      );
+    } catch (_) {}
   }
 
   String _formatDate(DateTime dt) {
@@ -1092,14 +1159,37 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         ? _companyName.toUpperCase()
         : 'TRACKO';
 
+    // ── Page theme with background watermark ─────────────────────────────
+    // IMPORTANT: Watermark ko seedha content list mein daalne se crash aata
+    // hai ("height Infinity exceed page height") kyunki Watermark ko poore
+    // page ka bounded canvas chahiye hota hai, jo normal flow nahi de sakta.
+    // Sahi tareeka: PageTheme ka dedicated buildBackground layer, FullPage
+    // (ignoreMargins) ke andar wrap karke — ye official pdf-package pattern
+    // hai isi exact use-case ke liye.
+    final pw.PageTheme pageTheme = pw.PageTheme(
+      pageFormat: const PdfPageFormat(595.28, 1500),
+      margin: const pw.EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+      buildBackground: (pw.Context context) => pw.FullPage(
+        ignoreMargins: true,
+        child: pw.Watermark.text(
+          watermarkText,
+          angle: 35,
+          style: pw.TextStyle(
+            fontSize: 60,
+            fontWeight: pw.FontWeight.bold,
+            color: const PdfColor(0, 0, 0, 0.08),
+          ),
+        ),
+      ),
+    );
+
     pdf.addPage(
       pw.MultiPage(
-        // ── Ek hi page mein poora rasid fit karne ke liye custom tall page.
-        // Standard A4 height (842pt) ke bajaye zyada height di hai taaki
-        // farmer photo + saari sections + watermark ke saath bhi kabhi
-        // doosra page na bane.
-        pageFormat: const PdfPageFormat(595.28, 1500),
-        margin: const pw.EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+        // ── Ek hi page mein poora rasid fit karne ke liye custom tall page
+        // (pageTheme ke andar define ki gayi hai) — standard A4 height ke
+        // bajaye zyada height di hai taaki farmer photo + saari sections ke
+        // saath bhi kabhi doosra page na bane.
+        pageTheme: pageTheme,
         build: (ctx) => [
           // ── FARMER PROFILE CARD ───────────────────────────────────────────
           pw.Container(
@@ -1695,19 +1785,6 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 style: ts(size: 8, color: kGrey),
               ),
             ],
-          ),
-
-          // ── Diagonal company-name watermark — sabse aakhir mein taaki ye
-          // saare cards ke UPAR paint ho aur har jagah dikhe (pehle ye
-          // shuru mein tha isliye opaque cards ke neeche dab jaata tha) ────
-          pw.Watermark.text(
-            watermarkText,
-            angle: 45,
-            style: pw.TextStyle(
-              fontSize: 60,
-              fontWeight: pw.FontWeight.bold,
-              color: const PdfColor(0, 0, 0, 0.09),
-            ),
           ),
         ],
       ),
@@ -2977,6 +3054,13 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         final file = File('${downloadsDir.path}/$fileName');
         await file.writeAsBytes(bytes);
 
+        // ── Asli "Download complete" notification — tap karke seedha
+        // PDF open ho jayegi, jaise Android ka Download Manager karta hai
+        await _showDownloadNotification(
+          fileName: fileName,
+          filePath: file.path,
+        );
+
         if (!mounted) return;
         Get.snackbar(
           '✅ PDF Downloaded!',
@@ -2994,9 +3078,15 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           mainButton: TextButton(
             onPressed: () async {
               Get.closeAllSnackbars();
-              await Share.shareXFiles([
-                XFile(file.path, mimeType: 'application/pdf'),
-              ], subject: 'Settlement Rasid — $batchId');
+              try {
+                await OpenFile.open(file.path);
+              } catch (_) {
+                // Fallback: agar file open na ho paaye (koi PDF viewer
+                // installed na ho), to share sheet dikha do
+                await Share.shareXFiles([
+                  XFile(file.path, mimeType: 'application/pdf'),
+                ], subject: 'Settlement Rasid — $batchId');
+              }
             },
             child: const Text(
               'OPEN',
