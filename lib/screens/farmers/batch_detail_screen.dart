@@ -9,7 +9,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../../utils/pdf_download.dart' as pdf_web;
 import '../../../services/company_store.dart';
@@ -89,6 +88,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   String _farmerAccountHolder = '';
   String _farmerIfsc = '';
   String _farmerAddress = '';
+  String _companyName = '';
 
   // ── FIX 1: Farmer avatar bytes for PDF photo ─────────────────────────────
   Uint8List? _farmerAvatarBytes;
@@ -222,6 +222,26 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
         .join(' ');
   }
+
+  // ── 🧾 PDF-safe text cleaner ─────────────────────────────────────────────
+  // PDF ke default (Helvetica) fonts emoji glyphs ko support nahi karte, isse
+  // pehle jo "ὁ", "Ἶ" jaisa garbled text dikh raha tha wo isi wajah se tha.
+  // Ye function emoji/symbol characters aur em/en-dash (jo bhi base font mein
+  // missing ho sakte hain) ko PDF text se pehle hata/replace kar deta hai.
+  static final RegExp _emojiPattern = RegExp(
+    r'[\u{1F1E6}-\u{1FFFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}\u{2934}\u{2935}]',
+    unicode: true,
+  );
+
+  String _pdfSafe(String raw) {
+    return raw
+        .replaceAll(_emojiPattern, '')
+        .replaceAll('—', '-')
+        .replaceAll('–', '-')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+  }
+
 
   // ── 🚨 Fraud Risk Indicator Card ───────────────────────────────────────
   Widget _buildFraudRiskCard(FraudRiskAssessment a) {
@@ -491,20 +511,66 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           _farmerAddress = currentFarmer['address'] ?? '';
         });
 
-        // ── FIX 1: Farmer profile photo load karo (multiple keys support) ──
+        // ── Company/Business Name load karo (PDF watermark ke liye) ─────────
+        // Jis naam se account/company set hai wahi dhoondhte hain — pehle
+        // SharedPreferences ki alag-alag possible keys, fir CompanyStore.
+        _companyName = '';
         for (final key in [
-          'profileImageBase64',
-          'imageBase64',
-          'avatarBase64',
-          'photo',
-          'image',
+          'companyName',
+          'businessName',
+          'firmName',
+          'orgName',
+          'companyDisplayName',
         ]) {
-          final val = currentFarmer[key];
-          if (val != null && val.toString().isNotEmpty) {
-            try {
-              setState(() => _farmerAvatarBytes = base64Decode(val.toString()));
-            } catch (_) {}
+          final v = prefs.getString(key);
+          if (v != null && v.trim().isNotEmpty) {
+            _companyName = v.trim();
             break;
+          }
+        }
+        if (_companyName.isEmpty) {
+          try {
+            final cs = await CompanyStore.instance.getString('companyName');
+            if (cs != null && cs.trim().isNotEmpty) {
+              _companyName = cs.trim();
+            }
+          } catch (_) {}
+        }
+
+        // ── FIX 1: Farmer profile photo load karo ───────────────────────────
+        // Asli key 'photoPath' hai (farmer_profile_screen.dart mein
+        // ImagePicker se local file path save hoti hai) — base64 nahi.
+        // Pehle file-path try karo, fir purane/alag base64 keys fallback
+        // ke taur par check karo.
+        final photoPathVal = currentFarmer['photoPath']?.toString();
+        if (photoPathVal != null && photoPathVal.isNotEmpty) {
+          try {
+            final photoFile = File(photoPathVal);
+            if (await photoFile.exists()) {
+              final bytes = await photoFile.readAsBytes();
+              setState(() => _farmerAvatarBytes = bytes);
+            }
+          } catch (_) {
+            _farmerAvatarBytes = null;
+          }
+        }
+        if (_farmerAvatarBytes == null) {
+          for (final key in [
+            'profileImageBase64',
+            'imageBase64',
+            'avatarBase64',
+            'photo',
+            'image',
+          ]) {
+            final val = currentFarmer[key];
+            if (val != null && val.toString().isNotEmpty) {
+              try {
+                setState(
+                  () => _farmerAvatarBytes = base64Decode(val.toString()),
+                );
+              } catch (_) {}
+              break;
+            }
           }
         }
 
@@ -710,27 +776,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   }) async {
     final pdf = pw.Document();
 
-    // NotoEmoji font — http se load karo (koi asset file nahi chahiye)
-    // Ye font Google ke CDN se directly download hota hai at runtime.
-    pw.Font? emojiFont;
-    try {
-      final response = await http
-          .get(
-            Uri.parse(
-              'https://github.com/google/fonts/raw/main/ofl/notoemoji/NotoEmoji%5Bwght%5D.ttf',
-            ),
-          )
-          .timeout(const Duration(seconds: 8));
-      if (response.statusCode == 200) {
-        emojiFont = pw.Font.ttf(response.bodyBytes.buffer.asByteData());
-      }
-    } catch (_) {
-      emojiFont = null;
-    }
-
     // ── PDF Color Palette ───────────────────────────────────────────────────
     const PdfColor kGreen = PdfColor.fromInt(0xFF1B5E20);
     const PdfColor kGreenMid = PdfColor.fromInt(0xFF2E7D32);
+    const PdfColor kGreenDark = PdfColor.fromInt(0xFF0F3D12);
     const PdfColor kGreenLight = PdfColor.fromInt(0xFFE8F5E9);
     const PdfColor kRedLight = PdfColor.fromInt(0xFFFFEBEE);
     const PdfColor kBlueLight = PdfColor.fromInt(0xFFE3F2FD);
@@ -739,9 +788,13 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     const PdfColor kGrey = PdfColor.fromInt(0xFF757575);
     const PdfColor kDark = PdfColor.fromInt(0xFF212121);
     const PdfColor kRed = PdfColor.fromInt(0xFFC62828);
+    const PdfColor kRedDark = PdfColor.fromInt(0xFF8E0000);
     const PdfColor kBlue = PdfColor.fromInt(0xFF1565C0);
+    const PdfColor kBlueDark = PdfColor.fromInt(0xFF0D47A1);
     const PdfColor kIndigo = PdfColor.fromInt(0xFF283593);
+    const PdfColor kIndigoDark = PdfColor.fromInt(0xFF1A237E);
     const PdfColor kOrange = PdfColor.fromInt(0xFFE65100);
+    const PdfColor kGold = PdfColor.fromInt(0xFFFFC107);
     const PdfColor kWhite = PdfColors.white;
     const PdfColor kDivider = PdfColor.fromInt(0xFFE0E0E0);
 
@@ -756,34 +809,126 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       color: color,
     );
 
-    // tsEmoji — emoji support with NotoEmoji font fallback
-    pw.TextStyle tsEmoji({
-      double size = 10,
-      bool bold = false,
-      PdfColor color = kDark,
-    }) => pw.TextStyle(
-      fontSize: size,
-      fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-      color: color,
-      fontFallback: emojiFont != null ? [emojiFont!] : [],
+    // ── Layered "elevation" shadow — real raised/embossed 3D card look ───────
+    // Do shadows use karte hain (jaisa Material Design elevation karta hai):
+    // ek tight/dark shadow paas se, ek soft/halka shadow door tak — isse card
+    // "upar utha hua" (floating) jaisa dikhta hai, sirf flat blur se zyada.
+    List<pw.BoxShadow> cardShadow({double opacity = 0.14}) => [
+      pw.BoxShadow(
+        color: PdfColor(0, 0, 0, opacity * 0.6),
+        offset: const PdfPoint(0, 1),
+        blurRadius: 2,
+      ),
+      pw.BoxShadow(
+        color: PdfColor(0, 0, 0, opacity),
+        offset: const PdfPoint(0, 5),
+        blurRadius: 11,
+      ),
+    ];
+
+    // ── Round icon-badge with gradient ring — replaces emoji ─────────────────
+    // Gradient ring + white coin + colored letter = medal jaisa "3D" pop.
+    pw.Widget pdfIconBadge(String letter, PdfColor accent, PdfColor accent2) =>
+        pw.Container(
+          width: 24,
+          height: 24,
+          padding: const pw.EdgeInsets.all(2),
+          decoration: pw.BoxDecoration(
+            shape: pw.BoxShape.circle,
+            gradient: pw.LinearGradient(
+              begin: pw.Alignment.topLeft,
+              end: pw.Alignment.bottomRight,
+              colors: [PdfColors.white, PdfColor(1, 1, 1, 0.55)],
+            ),
+            boxShadow: [
+              pw.BoxShadow(
+                color: const PdfColor(0, 0, 0, 0.3),
+                offset: const PdfPoint(0, 1.5),
+                blurRadius: 2,
+              ),
+            ],
+          ),
+          child: pw.Container(
+            decoration: pw.BoxDecoration(
+              shape: pw.BoxShape.circle,
+              color: PdfColors.white,
+            ),
+            alignment: pw.Alignment.center,
+            child: pw.Text(
+              letter,
+              style: ts(size: 10.5, bold: true, color: accent),
+            ),
+          ),
+        );
+
+    // ── Small dashboard stat-chip — colorful gradient pill with big number ──
+    pw.Widget statChip(
+      String value,
+      String label,
+      PdfColor c1,
+      PdfColor c2,
+    ) => pw.Expanded(
+      child: pw.Container(
+        margin: const pw.EdgeInsets.symmetric(horizontal: 3),
+        padding: const pw.EdgeInsets.symmetric(vertical: 9),
+        decoration: pw.BoxDecoration(
+          gradient: pw.LinearGradient(
+            begin: pw.Alignment.topLeft,
+            end: pw.Alignment.bottomRight,
+            colors: [c1, c2],
+          ),
+          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+          boxShadow: cardShadow(opacity: 0.2),
+        ),
+        child: pw.Column(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: [
+            pw.Text(
+              value,
+              style: ts(size: 13, bold: true, color: PdfColors.white),
+            ),
+            pw.SizedBox(height: 2),
+            pw.Text(
+              label,
+              style: ts(size: 6.8, color: const PdfColor(1, 1, 1, 0.88)),
+            ),
+          ],
+        ),
+      ),
     );
 
-    // ── Header row inside green banner ──────────────────────────────────────
+    // ── Header row inside green banner — same tight dotted-leader style ─────
     pw.Widget pdfHeaderRow(String label, String value) => pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 2),
       child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.end,
         children: [
-          pw.Expanded(
-            flex: 4,
+          pw.Flexible(
             child: pw.Text(
               label,
+              maxLines: 1,
+              overflow: pw.TextOverflow.clip,
               style: ts(size: 9, color: const PdfColor(1, 1, 1, 0.85)),
             ),
           ),
+          pw.SizedBox(width: 4),
           pw.Expanded(
-            flex: 6,
+            child: pw.Padding(
+              padding: const pw.EdgeInsets.only(bottom: 2),
+              child: pw.Text(
+                '.' * 60,
+                maxLines: 1,
+                overflow: pw.TextOverflow.clip,
+                style: ts(size: 8, color: const PdfColor(1, 1, 1, 0.3)),
+              ),
+            ),
+          ),
+          pw.SizedBox(width: 4),
+          pw.Flexible(
             child: pw.Text(
               value,
+              maxLines: 1,
+              overflow: pw.TextOverflow.clip,
               textAlign: pw.TextAlign.right,
               style: ts(size: 9, bold: true, color: kWhite),
             ),
@@ -792,7 +937,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       ),
     );
 
-    // ── Key-value data row — flex 6:4 prevents right-side clipping ──────────
+    // ── Key-value data row — label hugs left, dotted leader fills the middle,
+    // value hugs right. Isse beech ka khaali gap kam aur receipt jaisa neat
+    // dikhta hai (pehle 50:50 flex se bahut zyada blank space dikhta tha).
     pw.Widget pdfDataRow(
       String label,
       String value, {
@@ -811,18 +958,34 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 : const PdfColor(0, 0, 0, 0),
             padding: const pw.EdgeInsets.symmetric(vertical: 3),
             child: pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
               children: [
-                // flex 5:5 — equal space for label and value, no clipping
-                pw.Expanded(
-                  flex: 5,
-                  child: pw.Text(label, style: ts(size: 8.5, color: kGrey)),
+                pw.Flexible(
+                  child: pw.Text(
+                    label,
+                    maxLines: 1,
+                    overflow: pw.TextOverflow.clip,
+                    style: ts(size: 8.5, color: kGrey),
+                  ),
                 ),
-                pw.SizedBox(width: 6),
+                pw.SizedBox(width: 4),
                 pw.Expanded(
-                  flex: 5,
+                  child: pw.Padding(
+                    padding: const pw.EdgeInsets.only(bottom: 2.5),
+                    child: pw.Text(
+                      '.' * 90,
+                      maxLines: 1,
+                      overflow: pw.TextOverflow.clip,
+                      style: ts(size: 7.5, color: kDivider),
+                    ),
+                  ),
+                ),
+                pw.SizedBox(width: 4),
+                pw.Flexible(
                   child: pw.Text(
                     value,
+                    maxLines: 1,
+                    overflow: pw.TextOverflow.clip,
                     textAlign: pw.TextAlign.right,
                     style: ts(
                       size: bold ? 9.5 : 8.5,
@@ -839,19 +1002,22 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     }
 
     // ── Section card ─────────────────────────────────────────────────────────
-    // NOTE: Emojis removed from section titles — pdf package renders them as
-    // boxes without a special emoji font. Clean text looks professional.
+    // Gradient header band + soft drop-shadow = premium "floating card" look.
+    // Icon-badge (colored circle with a letter) replaces emoji — guaranteed
+    // to render correctly since it doesn't depend on any emoji font.
     pw.Widget pdfSection(
       String title,
+      String badgeLetter,
       PdfColor titleColor,
+      PdfColor titleColorDark,
       PdfColor bgColor,
       List<pw.Widget> rows,
     ) {
       return pw.Container(
-        margin: const pw.EdgeInsets.only(bottom: 8),
+        margin: const pw.EdgeInsets.only(bottom: 10),
         decoration: pw.BoxDecoration(
           color: bgColor,
-          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
           border: pw.Border.all(
             color: PdfColor(
               titleColor.red,
@@ -861,6 +1027,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             ),
             width: 0.7,
           ),
+          boxShadow: cardShadow(),
         ),
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -872,15 +1039,28 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 vertical: 7,
               ),
               decoration: pw.BoxDecoration(
-                color: titleColor,
+                gradient: pw.LinearGradient(
+                  begin: pw.Alignment.centerLeft,
+                  end: pw.Alignment.centerRight,
+                  colors: [titleColorDark, titleColor],
+                ),
                 borderRadius: const pw.BorderRadius.only(
-                  topLeft: pw.Radius.circular(8),
-                  topRight: pw.Radius.circular(8),
+                  topLeft: pw.Radius.circular(10),
+                  topRight: pw.Radius.circular(10),
                 ),
               ),
-              child: pw.Text(
-                title,
-                style: tsEmoji(size: 10, bold: true, color: kWhite),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  pdfIconBadge(badgeLetter, titleColor, titleColorDark),
+                  pw.SizedBox(width: 8),
+                  pw.Expanded(
+                    child: pw.Text(
+                      title,
+                      style: ts(size: 10, bold: true, color: kWhite),
+                    ),
+                  ),
+                ],
               ),
             ),
             pw.Padding(
@@ -906,9 +1086,19 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         ? (totalMortality / initialChicks) * 100
         : 0.0;
 
+    // ── Watermark text — jis company/business ke naam se account hai wahi
+    // dikhega; agar company naam set nahi hai to app-brand fallback ─────────
+    final String watermarkText = _companyName.isNotEmpty
+        ? _companyName.toUpperCase()
+        : 'TRACKO';
+
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        // ── Ek hi page mein poora rasid fit karne ke liye custom tall page.
+        // Standard A4 height (842pt) ke bajaye zyada height di hai taaki
+        // farmer photo + saari sections + watermark ke saath bhi kabhi
+        // doosra page na bane.
+        pageFormat: const PdfPageFormat(595.28, 1500),
         margin: const pw.EdgeInsets.symmetric(horizontal: 22, vertical: 20),
         build: (ctx) => [
           // ── FARMER PROFILE CARD ───────────────────────────────────────────
@@ -917,41 +1107,64 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             padding: const pw.EdgeInsets.all(12),
             decoration: pw.BoxDecoration(
               color: kWhite,
-              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
               border: pw.Border.all(color: kDivider, width: 0.8),
+              boxShadow: cardShadow(),
             ),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                // Avatar — real photo OR initials
+                // Avatar — gold medal-ring + photo/initials
                 pw.Container(
-                  width: 54,
-                  height: 54,
+                  width: 60,
+                  height: 60,
+                  padding: const pw.EdgeInsets.all(3),
                   decoration: pw.BoxDecoration(
                     shape: pw.BoxShape.circle,
-                    color: const PdfColor(0.106, 0.369, 0.125, 0.15),
-                    border: pw.Border.all(
-                      color: const PdfColor(0.106, 0.369, 0.125, 0.5),
-                      width: 1.5,
+                    gradient: pw.LinearGradient(
+                      begin: pw.Alignment.topLeft,
+                      end: pw.Alignment.bottomRight,
+                      colors: [kGold, PdfColor.fromInt(0xFFB8860B)],
+                    ),
+                    boxShadow: cardShadow(opacity: 0.25),
+                  ),
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.all(2),
+                    decoration: pw.BoxDecoration(
+                      shape: pw.BoxShape.circle,
+                      color: kWhite,
+                    ),
+                    child: pw.Container(
+                      width: 50,
+                      height: 50,
+                      decoration: pw.BoxDecoration(
+                        shape: pw.BoxShape.circle,
+                        color: const PdfColor(0.106, 0.369, 0.125, 0.15),
+                        border: pw.Border.all(color: kGreenMid, width: 1.5),
+                      ),
+                      child: _farmerAvatarBytes != null
+                          ? pw.ClipOval(
+                              child: pw.Image(
+                                pw.MemoryImage(_farmerAvatarBytes!),
+                                width: 50,
+                                height: 50,
+                                fit: pw.BoxFit.cover,
+                              ),
+                            )
+                          : pw.Center(
+                              child: pw.Text(
+                                _farmerName.isNotEmpty
+                                    ? _farmerName[0].toUpperCase()
+                                    : 'F',
+                                style: ts(
+                                  size: 22,
+                                  bold: true,
+                                  color: kGreen,
+                                ),
+                              ),
+                            ),
                     ),
                   ),
-                  child: _farmerAvatarBytes != null
-                      ? pw.ClipOval(
-                          child: pw.Image(
-                            pw.MemoryImage(_farmerAvatarBytes!),
-                            width: 54,
-                            height: 54,
-                            fit: pw.BoxFit.cover,
-                          ),
-                        )
-                      : pw.Center(
-                          child: pw.Text(
-                            _farmerName.isNotEmpty
-                                ? _farmerName[0].toUpperCase()
-                                : 'F',
-                            style: ts(size: 24, bold: true, color: kGreen),
-                          ),
-                        ),
                 ),
                 pw.SizedBox(width: 12),
                 pw.Expanded(
@@ -986,10 +1199,15 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     vertical: 6,
                   ),
                   decoration: pw.BoxDecoration(
-                    color: kGreen,
+                    gradient: pw.LinearGradient(
+                      begin: pw.Alignment.topLeft,
+                      end: pw.Alignment.bottomRight,
+                      colors: [kGreenMid, kGreenDark],
+                    ),
                     borderRadius: const pw.BorderRadius.all(
                       pw.Radius.circular(6),
                     ),
+                    boxShadow: cardShadow(opacity: 0.2),
                   ),
                   child: pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -1012,26 +1230,81 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             ),
           ),
 
+          // ── STAT DASHBOARD CHIPS ───────────────────────────────────────────
+          pw.Row(
+            children: [
+              statChip('$totalDays Din', 'TOTAL DAYS', kBlueDark, kBlue),
+              statChip(
+                '${mortalityPct.toStringAsFixed(1)}%',
+                'MORTALITY',
+                kRedDark,
+                kRed,
+              ),
+              statChip(
+                'Rs.${finalCommPerKg.toStringAsFixed(2)}',
+                'FINAL COMM/KG',
+                kGreenDark,
+                kGreenMid,
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 12),
+
           // ── GREEN MAIN HEADER ─────────────────────────────────────────────
           pw.Container(
             width: double.infinity,
             margin: const pw.EdgeInsets.only(bottom: 12),
             padding: const pw.EdgeInsets.all(14),
             decoration: pw.BoxDecoration(
-              color: kGreenMid,
-              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+              gradient: pw.LinearGradient(
+                begin: pw.Alignment.topLeft,
+                end: pw.Alignment.bottomRight,
+                colors: [kGreenDark, kGreenMid],
+              ),
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+              boxShadow: cardShadow(opacity: 0.22),
             ),
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text(
-                  'Batch Settlement Rasid',
-                  style: ts(size: 16, bold: true, color: kWhite),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'Batch Settlement Rasid',
+                      style: ts(size: 16, bold: true, color: kWhite),
+                    ),
+                    pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 4,
+                      ),
+                      decoration: pw.BoxDecoration(
+                        gradient: pw.LinearGradient(
+                          colors: [kGold, const PdfColor.fromInt(0xFFB8860B)],
+                        ),
+                        borderRadius: const pw.BorderRadius.all(
+                          pw.Radius.circular(20),
+                        ),
+                        boxShadow: [
+                          pw.BoxShadow(
+                            color: const PdfColor(0, 0, 0, 0.3),
+                            offset: const PdfPoint(0, 1),
+                            blurRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: pw.Text(
+                        sizeLabel.toUpperCase(),
+                        style: ts(size: 7.5, bold: true, color: kGreenDark),
+                      ),
+                    ),
+                  ],
                 ),
                 pw.SizedBox(height: 3),
                 pw.Text(
-                  ruleLabel,
-                  style: tsEmoji(size: 9, color: const PdfColor(1, 1, 1, 0.85)),
+                  _pdfSafe(ruleLabel),
+                  style: ts(size: 9, color: const PdfColor(1, 1, 1, 0.85)),
                 ),
                 pw.SizedBox(height: 10),
                 pw.Divider(
@@ -1069,7 +1342,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           ),
 
           // ── BATCH SUMMARY ─────────────────────────────────────────────────
-          pdfSection('🐥  Batch Summary', kBlue, kBlueLight, [
+          pdfSection('Batch Summary', 'B', kBlue, kBlueDark, kBlueLight, [
             pdfDataRow('Initial Chicks Housed', '$initialChicks pcs'),
             pdfDataRow(
               'Total Mortality',
@@ -1101,28 +1374,43 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           ]),
 
           // ── BANK DETAILS ──────────────────────────────────────────────────
-          pdfSection('🏦  Farmer Bank Details', kIndigo, kIndigoLight, [
-            pdfDataRow(
-              'Account Holder',
-              _farmerAccountHolder.isNotEmpty ? _farmerAccountHolder : '--',
-            ),
-            pdfDataRow(
-              'Bank Name',
-              _farmerBankName.isNotEmpty ? _farmerBankName : '--',
-            ),
-            pdfDataRow(
-              'Account No.',
-              _farmerAccountNo.isNotEmpty ? _farmerAccountNo : '--',
-            ),
-            pdfDataRow(
-              'IFSC Code',
-              _farmerIfsc.isNotEmpty ? _farmerIfsc : '--',
-            ),
-          ]),
+          pdfSection(
+            'Farmer Bank Details',
+            '\$',
+            kIndigo,
+            kIndigoDark,
+            kIndigoLight,
+            [
+              pdfDataRow(
+                'Account Holder',
+                _farmerAccountHolder.isNotEmpty
+                    ? _farmerAccountHolder
+                    : '--',
+              ),
+              pdfDataRow(
+                'Bank Name',
+                _farmerBankName.isNotEmpty ? _farmerBankName : '--',
+              ),
+              pdfDataRow(
+                'Account No.',
+                _farmerAccountNo.isNotEmpty ? _farmerAccountNo : '--',
+              ),
+              pdfDataRow(
+                'IFSC Code',
+                _farmerIfsc.isNotEmpty ? _farmerIfsc : '--',
+              ),
+            ],
+          ),
 
           if (!isRule2) ...[
             // ── PRODUCTION COST ───────────────────────────────────────────
-            pdfSection('🏭  Production Cost Breakdown', kRed, kRedLight, [
+            pdfSection(
+              'Production Cost Breakdown',
+              'P',
+              kRed,
+              kRedDark,
+              kRedLight,
+              [
               pdfDataRow(
                 'Chick Cost',
                 'Rs.${totalChickCost.toStringAsFixed(2)}',
@@ -1162,57 +1450,188 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             ]),
 
             // ── COMMISSION ────────────────────────────────────────────────
-            pdfSection('💰  Farmer Commission Calculation', kGreen, kGreenLight, [
-              pdfDataRow(
-                'Base Commission',
-                'Rs.${baseCommPerKg.toStringAsFixed(2)}/KG',
-              ),
-              pdfDataRow(
-                costAdjPerKg >= 0 ? 'Cost Saving Bonus' : 'Exceeded Penalty',
-                '${costAdjPerKg >= 0 ? "+" : ""}Rs.${costAdjPerKg.toStringAsFixed(2)}/KG',
-                valueColor: costAdjPerKg >= 0 ? kGreen : kRed,
-              ),
-              pdfDataRow('Calculation Note', costAdjLabel),
-              pdfDataRow(
-                'Rate Bonus',
-                rateBonusApplied
-                    ? '+Rs.${rateBonusPerKg.toStringAsFixed(2)}/KG'
-                    : 'Rs.0.00 (Not Applicable)',
-                valueColor: rateBonusApplied ? kGreen : kGrey,
-              ),
-              pdfDataRow(
-                'Final Commission/KG',
-                'Rs.${finalCommPerKg.toStringAsFixed(2)}/KG',
-                bold: true,
-                valueColor: kGreen,
-                divider: true,
-                highlight: true,
-              ),
-            ]),
-
-            // ── NET PAYOUT ────────────────────────────────────────────────
-            pdfSection('💵  Net Farmer Payout', kGreen, kGreenLight, [
-              pdfDataRow(
-                'Gross Earning (Wt x Comm)',
-                '${totalWeightSoldKg.toStringAsFixed(2)} KG'
-                    ' x Rs.${finalCommPerKg.toStringAsFixed(2)}'
-                    ' = Rs.${grossEarning.toStringAsFixed(2)}',
-              ),
-              if (!medInProdCost)
+            pdfSection(
+              'Farmer Commission Calculation',
+              'C',
+              kGreen,
+              kGreenDark,
+              kGreenLight,
+              [
                 pdfDataRow(
-                  'Medicine Deduction',
-                  '-Rs.${totalMedicineCost.toStringAsFixed(2)}',
-                  valueColor: kRed,
+                  'Base Commission',
+                  'Rs.${baseCommPerKg.toStringAsFixed(2)}/KG',
                 ),
-              pdfDataRow(
-                'NET PAYOUT TO FARMER',
-                'Rs.${netPayout.toStringAsFixed(2)}',
-                bold: true,
-                valueColor: netPayout > 0 ? kGreen : kRed,
-                divider: true,
-                highlight: true,
+                pdfDataRow(
+                  costAdjPerKg >= 0 ? 'Cost Saving Bonus' : 'Exceeded Penalty',
+                  '${costAdjPerKg >= 0 ? "+" : ""}Rs.${costAdjPerKg.toStringAsFixed(2)}/KG',
+                  valueColor: costAdjPerKg >= 0 ? kGreen : kRed,
+                ),
+                pdfDataRow('Calculation Note', costAdjLabel),
+                pdfDataRow(
+                  'Rate Bonus',
+                  rateBonusApplied
+                      ? '+Rs.${rateBonusPerKg.toStringAsFixed(2)}/KG'
+                      : 'Rs.0.00 (Not Applicable)',
+                  valueColor: rateBonusApplied ? kGreen : kGrey,
+                ),
+                pdfDataRow(
+                  'Final Commission/KG',
+                  'Rs.${finalCommPerKg.toStringAsFixed(2)}/KG',
+                  bold: true,
+                  valueColor: kGreen,
+                  divider: true,
+                  highlight: true,
+                ),
+              ],
+            ),
+
+            // ── NET PAYOUT — premium gradient hero card ───────────────────
+            pw.Container(
+              margin: const pw.EdgeInsets.only(bottom: 10, top: 2),
+              padding: const pw.EdgeInsets.all(16),
+              decoration: pw.BoxDecoration(
+                gradient: pw.LinearGradient(
+                  begin: pw.Alignment.topLeft,
+                  end: pw.Alignment.bottomRight,
+                  colors: [kGreenDark, kGreenMid, kGreenDark],
+                  stops: const [0.0, 0.55, 1.0],
+                ),
+                borderRadius: const pw.BorderRadius.all(
+                  pw.Radius.circular(12),
+                ),
+                border: pw.Border.all(
+                  color: const PdfColor(1, 1, 1, 0.12),
+                  width: 1,
+                ),
+                boxShadow: cardShadow(opacity: 0.32),
               ),
-            ]),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Row(
+                        children: [
+                          pdfIconBadge('N', kGreenMid, kGreenDark),
+                          pw.SizedBox(width: 8),
+                          pw.Text(
+                            'NET FARMER PAYOUT',
+                            style: ts(size: 11, bold: true, color: kWhite),
+                          ),
+                        ],
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 4,
+                        ),
+                        decoration: pw.BoxDecoration(
+                          gradient: pw.LinearGradient(
+                            colors: [
+                              kGold,
+                              const PdfColor.fromInt(0xFFB8860B),
+                            ],
+                          ),
+                          borderRadius: const pw.BorderRadius.all(
+                            pw.Radius.circular(20),
+                          ),
+                          boxShadow: [
+                            pw.BoxShadow(
+                              color: const PdfColor(0, 0, 0, 0.3),
+                              offset: const PdfPoint(0, 1),
+                              blurRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: pw.Text(
+                          'SETTLED',
+                          style: ts(
+                            size: 7.5,
+                            bold: true,
+                            color: kGreenDark,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 12),
+                  pw.Container(
+                    padding: const pw.EdgeInsets.only(bottom: 8),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border(
+                        bottom: pw.BorderSide(
+                          color: PdfColor(1, 1, 1, 0.25),
+                          width: 0.6,
+                        ),
+                      ),
+                    ),
+                    child: pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Expanded(
+                          child: pw.Text(
+                            'Gross Earning (Wt x Comm)',
+                            style: ts(
+                              size: 8.5,
+                              color: const PdfColor(1, 1, 1, 0.85),
+                            ),
+                          ),
+                        ),
+                        pw.Text(
+                          '${totalWeightSoldKg.toStringAsFixed(2)} KG'
+                          ' x Rs.${finalCommPerKg.toStringAsFixed(2)}'
+                          ' = Rs.${grossEarning.toStringAsFixed(2)}',
+                          textAlign: pw.TextAlign.right,
+                          style: ts(size: 8.5, bold: true, color: kWhite),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!medInProdCost) ...[
+                    pw.SizedBox(height: 6),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          'Medicine Deduction',
+                          style: ts(
+                            size: 8.5,
+                            color: const PdfColor(1, 1, 1, 0.85),
+                          ),
+                        ),
+                        pw.Text(
+                          '-Rs.${totalMedicineCost.toStringAsFixed(2)}',
+                          style: ts(size: 8.5, bold: true, color: kGold),
+                        ),
+                      ],
+                    ),
+                  ],
+                  pw.SizedBox(height: 12),
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text(
+                        'Net Payout to Farmer',
+                        style: ts(
+                          size: 9.5,
+                          color: const PdfColor(1, 1, 1, 0.9),
+                        ),
+                      ),
+                      pw.Text(
+                        'Rs.${netPayout.toStringAsFixed(2)}',
+                        style: ts(
+                          size: 24,
+                          bold: true,
+                          color: netPayout > 0 ? kGold : PdfColors.red100,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ] else ...[
             // ── RULE 2 NOTICE ─────────────────────────────────────────────
             pw.Container(
@@ -1225,6 +1644,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   color: const PdfColor(0.9, 0.4, 0.0, 0.4),
                   width: 0.7,
                 ),
+                boxShadow: cardShadow(),
               ),
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -1247,20 +1667,47 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
           // ── FOOTER ────────────────────────────────────────────────────────
           pw.SizedBox(height: 4),
-          pw.Divider(color: kDivider, thickness: 0.5),
+          pw.Divider(color: kDivider, thickness: 0.7),
           pw.SizedBox(height: 4),
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
             children: [
-              pw.Text(
-                'Generated by Tracko App',
-                style: ts(size: 8, color: kGrey),
+              pw.Row(
+                children: [
+                  pw.Container(
+                    width: 6,
+                    height: 6,
+                    decoration: pw.BoxDecoration(
+                      color: kGreenMid,
+                      shape: pw.BoxShape.circle,
+                    ),
+                  ),
+                  pw.SizedBox(width: 5),
+                  pw.Text(
+                    'Generated by Tracko App',
+                    style: ts(size: 8, bold: true, color: kGrey),
+                  ),
+                ],
               ),
               pw.Text(
                 _formatDate(DateTime.now()),
                 style: ts(size: 8, color: kGrey),
               ),
             ],
+          ),
+
+          // ── Diagonal company-name watermark — sabse aakhir mein taaki ye
+          // saare cards ke UPAR paint ho aur har jagah dikhe (pehle ye
+          // shuru mein tha isliye opaque cards ke neeche dab jaata tha) ────
+          pw.Watermark.text(
+            watermarkText,
+            angle: 45,
+            style: pw.TextStyle(
+              fontSize: 60,
+              fontWeight: pw.FontWeight.bold,
+              color: const PdfColor(0, 0, 0, 0.09),
+            ),
           ),
         ],
       ),
