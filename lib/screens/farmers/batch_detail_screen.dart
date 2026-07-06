@@ -1181,22 +1181,63 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     final pw.PageTheme pageTheme = pw.PageTheme(
       pageFormat: const PdfPageFormat(595.28, 1500),
       margin: const pw.EdgeInsets.symmetric(horizontal: 22, vertical: 20),
-      buildForeground: (pw.Context context) => pw.FullPage(
-        ignoreMargins: true,
-        child: pw.Watermark.text(
+      buildForeground: (pw.Context context) {
+        // ── Watermark ka style — ek jagah define karke 3 baar reuse ──────
+        pw.Widget singleWatermark() => pw.Watermark.text(
           watermarkText,
-          angle: 35,
+          // NOTE: PDF ka coordinate system screen se ulta (Y-axis flipped)
+          // hota hai — isliye positive angle text ko ulta/mirror dikhata
+          // tha. Negative angle se text seedha (readable) direction mein
+          // aata hai.
+          angle: -35,
           style: pw.TextStyle(
-            fontSize: 60,
-            fontWeight: pw.FontWeight.bold,
+            // NOTE: pehle fontSize 60 + bold itna bada tha ki numbers/text
+            // ke upar seedha overlap karke unhe chhupa raha tha (readability
+            // issue). Ab chhota size + normal weight + aur bhi halka color
+            // — isse watermark subtle rahega aur data readable bhi rahega.
+            fontSize: 20,
+            fontWeight: pw.FontWeight.normal,
             // NOTE: translucent black (alpha 0.08) yahan bhi wahi bug deta
             // hai — viewer alpha ignore karke SOLID BLACK bana deta hai,
             // jisse bade bade black diagonal marks dikhte the poore page
-            // par. Ab guaranteed-safe SOLID light-grey color use kiya hai.
-            color: PdfColor.fromInt(0xFFE2E2E2),
+            // par. Ab guaranteed-safe SOLID very-light-grey color use
+            // kiya hai (pehle se aur halka).
+            color: PdfColor.fromInt(0xFFEFEFEF),
           ),
-        ),
-      ),
+        );
+
+        // ── Poore page (1500pt) mein 3 jagah — top, middle, bottom — taaki
+        // company ka naam pure rasid mein 2-3 baar dikhe, ek hi jagah dense
+        // cluster hone ke bajaye ────────────────────────────────────────
+        return pw.FullPage(
+          ignoreMargins: true,
+          child: pw.Stack(
+            children: [
+              pw.Positioned(
+                top: 120,
+                left: 0,
+                right: 0,
+                height: 220,
+                child: singleWatermark(),
+              ),
+              pw.Positioned(
+                top: 620,
+                left: 0,
+                right: 0,
+                height: 220,
+                child: singleWatermark(),
+              ),
+              pw.Positioned(
+                top: 1150,
+                left: 0,
+                right: 0,
+                height: 220,
+                child: singleWatermark(),
+              ),
+            ],
+          ),
+        );
+      },
     );
 
     pdf.addPage(
