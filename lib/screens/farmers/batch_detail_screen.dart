@@ -1020,9 +1020,13 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         children: [
           if (divider) pw.Divider(color: kDivider, thickness: 0.5),
           pw.Container(
+            // NOTE: PdfColor(0,0,0,0) "transparent black" trick avoid karo —
+            // kai PDF viewers alpha=0 ko sahi handle nahi karte aur ise solid
+            // BLACK box bana dete hain. Jab highlight nahi karna to color
+            // hi mat do (null), tabhi guaranteed transparent rahega.
             color: highlight
                 ? const PdfColor(0.106, 0.369, 0.125, 0.08)
-                : const PdfColor(0, 0, 0, 0),
+                : null,
             padding: const pw.EdgeInsets.symmetric(vertical: 3),
             child: pw.Row(
               crossAxisAlignment: pw.CrossAxisAlignment.end,
@@ -3051,8 +3055,28 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           downloadsDir = await getApplicationDocumentsDirectory();
         }
 
-        final file = File('${downloadsDir.path}/$fileName');
-        await file.writeAsBytes(bytes);
+        // ── Actual write ko try/catch mein rakha hai — Android 10+ (Scoped
+        // Storage) par public Download folder me seedha likhna "Permission
+        // denied" de sakta hai chahe folder "exists" dikhe. Agar wo fail ho
+        // to app ke apne external-storage folder mein save karo, jisko
+        // KABHI bhi extra permission nahi chahiye kisi bhi Android version
+        // par — isse download kabhi crash nahi hoga.
+        File file = File('${downloadsDir.path}/$fileName');
+        bool savedToPublicDownloads = true;
+        try {
+          await file.writeAsBytes(bytes);
+        } catch (_) {
+          savedToPublicDownloads = false;
+          final appDir =
+              await getExternalStorageDirectory() ??
+              await getApplicationDocumentsDirectory();
+          final rasidFolder = Directory('${appDir.path}/Tracko_Rasid');
+          if (!await rasidFolder.exists()) {
+            await rasidFolder.create(recursive: true);
+          }
+          file = File('${rasidFolder.path}/$fileName');
+          await file.writeAsBytes(bytes);
+        }
 
         // ── Asli "Download complete" notification — tap karke seedha
         // PDF open ho jayegi, jaise Android ka Download Manager karta hai
@@ -3064,7 +3088,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         if (!mounted) return;
         Get.snackbar(
           '✅ PDF Downloaded!',
-          'Saved: Downloads/$fileName\nTap OPEN to view',
+          savedToPublicDownloads
+              ? 'Saved: Downloads/$fileName\nTap OPEN to view'
+              : 'Saved: App Storage/Tracko_Rasid/$fileName\nTap OPEN to view',
           backgroundColor: Colors.green.shade700,
           colorText: Colors.white,
           snackPosition: SnackPosition.BOTTOM,
