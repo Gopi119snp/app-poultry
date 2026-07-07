@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import '../home/home_screen.dart';
 import '../../services/auth_service.dart';
+import '../../services/company_store.dart';
 
 class CompanyRegisterScreen extends StatefulWidget {
   final String industry;
@@ -31,6 +34,10 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
 
   // Background Location Analytics Data (Database mein store karne ke liye)
   Map<String, dynamic> _ipAnalyticsData = {};
+
+  // Owner Signature (Optional — registration ke time ya baad mein Profile se add kar sakte hain)
+  File? _signatureFile;
+  final ImagePicker _signaturePicker = ImagePicker();
 
   // ---------------------------------------------------------------------------
   // CONTROLLERS (Total 13 Controllers)
@@ -193,6 +200,23 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
           _isLoadingPin = false;
         });
       }
+    }
+  }
+
+  // Gallery se Owner ka signature pick karna (Optional step)
+  Future<void> _pickSignature() async {
+    try {
+      final XFile? selectedFile = await _signaturePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 60,
+      );
+      if (selectedFile != null && mounted) {
+        setState(() {
+          _signatureFile = File(selectedFile.path);
+        });
+      }
+    } catch (e) {
+      _showError('Signature image select karne mein dikkat aayi');
     }
   }
 
@@ -386,6 +410,17 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
     if (!result.success) {
       _showError(result.errorMessage ?? 'Registration fail');
       return;
+    }
+
+    // Agar registration ke time signature select kiya tha, to ab save karo
+    if (_signatureFile != null) {
+      try {
+        final bytes = await _signatureFile!.readAsBytes();
+        final base64Signature = base64Encode(bytes);
+        await CompanyStore.instance.setString('ownerSignature', base64Signature);
+      } catch (e) {
+        debugPrint('Signature save karte waqt error: $e');
+      }
     }
 
     Get.snackbar(
@@ -699,6 +734,83 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
                             () => _showConfirmPassword = !_showConfirmPassword,
                           );
                         },
+                      ),
+                      const SizedBox(height: 28),
+                      _sectionLabel('✍️ OWNER SIGNATURE (Optional)', ''),
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: _pickSignature,
+                        child: Container(
+                          width: double.infinity,
+                          height: 110,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _signatureFile != null
+                                  ? widget.industryColor
+                                  : Colors.grey.shade300,
+                              width: _signatureFile != null ? 1.5 : 1,
+                            ),
+                          ),
+                          child: _signatureFile != null
+                              ? Stack(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Image.file(
+                                        _signatureFile!,
+                                        width: double.infinity,
+                                        height: 110,
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 6,
+                                      right: 6,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          if (!mounted) return;
+                                          setState(() => _signatureFile = null);
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.black54,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.close_rounded,
+                                            size: 14,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.draw_rounded,
+                                        color: Colors.grey.shade400,
+                                        size: 28,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Signature upload karo (ya baad mein Profile se add karo)',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                        ),
                       ),
                       const SizedBox(height: 32),
                       SizedBox(
