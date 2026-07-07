@@ -39,6 +39,7 @@ class CompanyStore {
     'performanceAlertConfig',
     'personalFarmers',
     'password', // legacy owner password — Firebase Auth primary hai
+    'ownerSignature', // Owner ka signature — base64 encoded image string
   };
 
   static const intKeys = {
