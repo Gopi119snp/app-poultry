@@ -1182,58 +1182,53 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       pageFormat: const PdfPageFormat(595.28, 1500),
       margin: const pw.EdgeInsets.symmetric(horizontal: 22, vertical: 20),
       buildForeground: (pw.Context context) {
-        // ── Watermark ka style — ek jagah define karke 3 baar reuse ──────
+        // ── Watermark ka style — ek jagah define karke baar baar reuse ───
+        // BUG FIX #1: 'angle' RADIANS mein hota hai, degrees mein nahi —
+        // pehle 35/-35 diya tha jo ek bahut bada/random rotation (kai
+        // chakkar) ban gaya, isi wajah se text ulta/bekar dikh raha tha.
+        // Ab sahi radian value (~0.5 rad = 28.6°) use kiya hai.
+        // BUG FIX #2: Watermark.text apne aap BoxFit.contain use karta hai
+        // — matlab jitni badi jagah (Positioned box) do, utna bada text ho
+        // jaata hai, fontSize se koi farak nahi padta! Pehle poore page
+        // jitna wide+tall box diya tha, isliye text bahut bada ban ke data
+        // ko dhak raha tha. Ab har box genuinely CHHOTA (220 x 55) rakha
+        // hai, taaki text bhi chhota, subtle rahe.
         pw.Widget singleWatermark() => pw.Watermark.text(
           watermarkText,
-          // NOTE: PDF ka coordinate system screen se ulta (Y-axis flipped)
-          // hota hai — isliye positive angle text ko ulta/mirror dikhata
-          // tha. Negative angle se text seedha (readable) direction mein
-          // aata hai.
-          angle: -35,
+          angle: 0.5,
           style: pw.TextStyle(
-            // NOTE: pehle fontSize 60 + bold itna bada tha ki numbers/text
-            // ke upar seedha overlap karke unhe chhupa raha tha (readability
-            // issue). Ab chhota size + normal weight + aur bhi halka color
-            // — isse watermark subtle rahega aur data readable bhi rahega.
-            fontSize: 20,
             fontWeight: pw.FontWeight.normal,
-            // NOTE: translucent black (alpha 0.08) yahan bhi wahi bug deta
-            // hai — viewer alpha ignore karke SOLID BLACK bana deta hai,
-            // jisse bade bade black diagonal marks dikhte the poore page
-            // par. Ab guaranteed-safe SOLID very-light-grey color use
-            // kiya hai (pehle se aur halka).
-            color: PdfColor.fromInt(0xFFEFEFEF),
+            color: PdfColor.fromInt(0xFFE8E8E8),
           ),
         );
 
-        // ── Poore page (1500pt) mein 3 jagah — top, middle, bottom — taaki
-        // company ka naam pure rasid mein 2-3 baar dikhe, ek hi jagah dense
-        // cluster hone ke bajaye ────────────────────────────────────────
+        // ── 2 columns x 3 rows = 6 chhoti watermark jagah, pure page mein
+        // spread — koi bhi single instance bada nahi, isliye text/numbers
+        // ke upar heavy overlap nahi karega, lekin naam poore rasid mein
+        // kai jagah dikhega ─────────────────────────────────────────────
+        pw.Widget gridSlot({
+          required double top,
+          required double bottom,
+          required double left,
+          required double right,
+        }) => pw.Positioned(
+          top: top,
+          bottom: bottom,
+          left: left,
+          right: right,
+          child: singleWatermark(),
+        );
+
         return pw.FullPage(
           ignoreMargins: true,
           child: pw.Stack(
             children: [
-              pw.Positioned(
-                top: 120,
-                bottom: 1160,
-                left: 0,
-                right: 0,
-                child: singleWatermark(),
-              ),
-              pw.Positioned(
-                top: 620,
-                bottom: 660,
-                left: 0,
-                right: 0,
-                child: singleWatermark(),
-              ),
-              pw.Positioned(
-                top: 1150,
-                bottom: 130,
-                left: 0,
-                right: 0,
-                child: singleWatermark(),
-              ),
+              gridSlot(top: 150, bottom: 1300, left: 40, right: 335),
+              gridSlot(top: 150, bottom: 1300, left: 335, right: 40),
+              gridSlot(top: 650, bottom: 800, left: 40, right: 335),
+              gridSlot(top: 650, bottom: 800, left: 335, right: 40),
+              gridSlot(top: 1150, bottom: 300, left: 40, right: 335),
+              gridSlot(top: 1150, bottom: 300, left: 335, right: 40),
             ],
           ),
         );
@@ -1339,7 +1334,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     ],
                   ),
                 ),
-                // Tracko badge
+                // Company badge — asli company/business ka naam dikhao
+                // (wahi jo watermark mein bhi use ho raha hai), 'TRACKO'
+                // sirf tab jab company naam set na ho
                 pw.Container(
                   padding: const pw.EdgeInsets.symmetric(
                     horizontal: 10,
@@ -1360,11 +1357,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     crossAxisAlignment: pw.CrossAxisAlignment.center,
                     children: [
                       pw.Text(
-                        'TRACKO',
+                        watermarkText,
                         style: ts(size: 9, bold: true, color: kWhite),
                       ),
                       pw.Text(
-                        'Poultry App',
+                        'via Tracko App',
                         style: ts(
                           size: 7,
                           color: const PdfColor(1, 1, 1, 0.85),
