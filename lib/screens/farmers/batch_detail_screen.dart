@@ -98,6 +98,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
   // ── FIX 1: Farmer avatar bytes for PDF photo ─────────────────────────────
   Uint8List? _farmerAvatarBytes;
+  Uint8List? _farmerSignatureBytes;
+  Uint8List? _ownerSignatureBytes;
 
   // ── Settlement Rule State ─────────────────────────────────────────────────
   int? _appliedRuleId;
@@ -641,6 +643,41 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               break;
             }
           }
+        }
+
+        // ── Farmer ka signature load karo ────────────────────────────────
+        // Key 'signaturePath' hai (farmer_profile_screen.dart mein
+        // ImagePicker se local file path save hoti hai)
+        _farmerSignatureBytes = null;
+        final sigPathVal = currentFarmer['signaturePath']?.toString();
+        if (sigPathVal != null && sigPathVal.isNotEmpty) {
+          try {
+            final sigFile = File(sigPathVal);
+            if (await sigFile.exists()) {
+              final bytes = await sigFile.readAsBytes();
+              setState(() => _farmerSignatureBytes = bytes);
+            }
+          } catch (_) {
+            _farmerSignatureBytes = null;
+          }
+        }
+
+        // ── Company Owner ka signature load karo ─────────────────────────
+        // Key 'ownerSignature' hai (company_store.dart/profile_screen.dart
+        // mein base64 encoded string ke roop mein CompanyStore mein save
+        // hoti hai — file path nahi, seedha base64 string)
+        _ownerSignatureBytes = null;
+        try {
+          final ownerSigBase64 = await CompanyStore.instance.getString(
+            'ownerSignature',
+          );
+          if (ownerSigBase64 != null && ownerSigBase64.isNotEmpty) {
+            setState(
+              () => _ownerSignatureBytes = base64Decode(ownerSigBase64),
+            );
+          }
+        } catch (_) {
+          _ownerSignatureBytes = null;
         }
 
         if (currentFarmer['batches'] != null) {
@@ -1809,6 +1846,85 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             ),
           ],
 
+          // ── SIGNATURES ───────────────────────────────────────────────────
+          // Left: Company owner ka signature, Right: Farmer ka signature.
+          // Agar profile mein signature load kiya hua hai to uski image
+          // dikhegi; nahi to khaali jagah (physical sign karne ke liye).
+          pw.SizedBox(height: 24),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    // Signature image ho to dikhao, warna khaali jagah
+                    _ownerSignatureBytes != null
+                        ? pw.Container(
+                            height: 34,
+                            alignment: pw.Alignment.bottomCenter,
+                            child: pw.Image(
+                              pw.MemoryImage(_ownerSignatureBytes!),
+                              height: 32,
+                              fit: pw.BoxFit.contain,
+                            ),
+                          )
+                        : pw.SizedBox(height: 34),
+                    pw.Container(
+                      width: 150,
+                      height: 0.8,
+                      color: kDark,
+                    ),
+                    pw.SizedBox(height: 5),
+                    pw.Text(
+                      'Company Owner Signature',
+                      style: ts(size: 8, bold: true, color: kDark),
+                    ),
+                    pw.SizedBox(height: 1),
+                    pw.Text(
+                      watermarkText,
+                      style: ts(size: 7.5, color: kGrey),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(width: 20),
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    _farmerSignatureBytes != null
+                        ? pw.Container(
+                            height: 34,
+                            alignment: pw.Alignment.bottomCenter,
+                            child: pw.Image(
+                              pw.MemoryImage(_farmerSignatureBytes!),
+                              height: 32,
+                              fit: pw.BoxFit.contain,
+                            ),
+                          )
+                        : pw.SizedBox(height: 34),
+                    pw.Container(
+                      width: 150,
+                      height: 0.8,
+                      color: kDark,
+                    ),
+                    pw.SizedBox(height: 5),
+                    pw.Text(
+                      'Farmer Signature',
+                      style: ts(size: 8, bold: true, color: kDark),
+                    ),
+                    pw.SizedBox(height: 1),
+                    pw.Text(
+                      _farmerName.isNotEmpty ? _farmerName : 'Farmer',
+                      style: ts(size: 7.5, color: kGrey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
           // ── FOOTER ────────────────────────────────────────────────────────
           pw.SizedBox(height: 4),
           pw.Divider(color: kDivider, thickness: 0.7),
@@ -2834,6 +2950,62 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   // SHARE AS PDF
   // ===========================================================================
 
+  // ── Download/Share se pehle signature check ─────────────────────────────
+  // Agar Farmer ya Company Owner ka signature profile mein load nahi hai,
+  // to warning popup dikhao. User "Continue Anyway" kare to wahi khaali
+  // signing-space wala rasid mil jaayega (hand-sign ke liye); "Cancel" kare
+  // to download/share ruk jaayega taaki wo pehle signature load kar sake.
+  Future<bool> _confirmSignaturesOrProceed() async {
+    final missingFarmer = _farmerSignatureBytes == null;
+    final missingOwner = _ownerSignatureBytes == null;
+    if (!missingFarmer && !missingOwner) return true; // dono load hain, aage badho
+
+    if (!mounted) return true;
+
+    final String message = missingFarmer && missingOwner
+        ? 'Farmer aur Company Owner — dono ka signature abhi tak profile mein load nahi hua hai.'
+        : missingFarmer
+        ? 'Farmer ka signature abhi tak profile mein load nahi hua hai.'
+        : 'Company Owner ka signature abhi tak profile mein load nahi hua hai.';
+
+    final bool? proceed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Signature Missing'),
+          ],
+        ),
+        content: Text(
+          '$message\n\nPehle profile se signature load kar lo, taaki rasid mein '
+          'digital signature dikhe. Agar abhi continue karoge to iske bajaye '
+          'khaali jagah milegi jaha hand se sign kiya ja sakta hai.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange.shade700,
+            ),
+            child: const Text(
+              'Continue Anyway',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return proceed ?? false;
+  }
+
   Future<void> _shareSettlementAsPdf({
     required String ruleLabel,
     required String sizeLabel,
@@ -2864,7 +3036,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double grossEarning,
     required double netPayout,
     bool isRule2 = false,
+    bool skipSignatureCheck = false,
   }) async {
+    if (!skipSignatureCheck && !await _confirmSignaturesOrProceed()) {
+      return; // User ne Cancel kiya — download/share dono ruk gaye
+    }
+
     // Web pe share nahi hota — download karo
     if (kIsWeb) {
       await _downloadSettlementAsPdf(
@@ -2897,6 +3074,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         grossEarning: grossEarning,
         netPayout: netPayout,
         isRule2: isRule2,
+        skipSignatureCheck: true,
       );
       return;
     }
@@ -3021,7 +3199,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double grossEarning,
     required double netPayout,
     bool isRule2 = false,
+    bool skipSignatureCheck = false,
   }) async {
+    if (!skipSignatureCheck && !await _confirmSignaturesOrProceed()) {
+      return; // User ne Cancel kiya
+    }
+
     Get.snackbar(
       '📥 PDF Download Ho Raha Hai...',
       'Kripya wait karein — PDF ban rahi hai',
