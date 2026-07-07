@@ -24,8 +24,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _phone = '';
   String _industry = '';
   String _profileImagePath = ''; // Image path store karne ke liye
+  String _ownerSignatureBase64 = ''; // Owner signature, base64 mein CompanyStore se
 
   final ImagePicker _imagePicker = ImagePicker(); // Picker object
+  final ImagePicker _signaturePicker = ImagePicker();
 
   // Managers lists
   List<Map<String, dynamic>> _officeManagers = [];
@@ -45,6 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _phone = '';
       _industry = 'Poultry';
       _profileImagePath = '';
+      _ownerSignatureBase64 = '';
       _officeManagers = [];
       _fieldManagers = [];
     });
@@ -56,6 +59,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final prefs = await SharedPreferences.getInstance();
     _profileImagePath = prefs.getString('profileImagePath') ?? '';
+
+    _ownerSignatureBase64 =
+        await CompanyStore.instance.getString('ownerSignature') ?? '';
 
     _officeManagers =
         await CompanyStore.instance.getJsonList('officeManagers');
@@ -94,6 +100,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     } catch (e) {
       _showError('Gallery open karne mein koi dikkat aayi hai');
+    }
+  }
+
+  // Owner signature add/replace karne ka function (Gallery se)
+  Future<void> _pickSignature() async {
+    try {
+      final XFile? selectedFile = await _signaturePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 60,
+      );
+      if (selectedFile != null) {
+        final bytes = await File(selectedFile.path).readAsBytes();
+        final base64Signature = base64Encode(bytes);
+
+        await CompanyStore.instance.setString(
+          'ownerSignature',
+          base64Signature,
+        );
+
+        if (!mounted) return;
+        setState(() {
+          _ownerSignatureBase64 = base64Signature;
+        });
+
+        Get.snackbar(
+          '✅ Success!',
+          'Signature save ho gaya hai',
+          backgroundColor: primaryGreen,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+      }
+    } catch (e) {
+      _showError('Signature save karne mein koi dikkat aayi hai');
     }
   }
 
@@ -566,6 +606,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
+            _signatureSection(),
+
+            const SizedBox(height: 16),
+
             _managerSection(
               title: '👔 Office Managers',
               role: 'Office Manager',
@@ -641,6 +685,101 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
 
             const SizedBox(height: 40),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _signatureSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Text(
+                '✍️ Owner Signature',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.black54,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFEEEEEE)),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: GestureDetector(
+                onTap: _pickSignature,
+                child: Container(
+                  width: double.infinity,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFAFAFA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: _ownerSignatureBase64.isNotEmpty
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            base64Decode(_ownerSignatureBase64),
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.draw_rounded,
+                                color: Colors.grey.shade400,
+                                size: 26,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Signature add karo',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                ),
+              ),
+            ),
+            if (_ownerSignatureBase64.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _pickSignature,
+                    icon: Icon(Icons.edit_rounded, size: 15, color: primaryGreen),
+                    label: Text(
+                      'Signature Badlo',
+                      style: TextStyle(color: primaryGreen, fontSize: 12),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
