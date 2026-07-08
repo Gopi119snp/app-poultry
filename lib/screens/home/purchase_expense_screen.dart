@@ -1775,7 +1775,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
 
                               // ✅ NEW: Company farmers list bhi load karo —
                               // isi mein batch link/create hoga.
-                              List<dynamic> farmersForBatchWrite =
+                              List<Map<String, dynamic>> farmersForBatchWrite =
                                   await CompanyStore.instance.getJsonList(
                                     'companyFarmers',
                                   );
@@ -3443,7 +3443,7 @@ Future<void> _showFeedAllocationDialog(
                         }
 
                         // ✅ NEW: Farmer ka batch dhoondo (running ya back/completed)
-                        List<dynamic> farmersForBatch =
+                        List<Map<String, dynamic>> farmersForBatch =
                             await CompanyStore.instance.getJsonList('companyFarmers');
                         Map<String, dynamic>? farmerMap;
                         int farmerIdxInList = -1;
@@ -7766,7 +7766,7 @@ class _AllocateMedicineToFarmerScreenState
     }
 
     // ✅ NEW: Farmer ka batch dhoondo (running ya back/completed)
-    List<dynamic> farmersForBatch =
+    List<Map<String, dynamic>> farmersForBatch =
         await CompanyStore.instance.getJsonList('companyFarmers');
     Map<String, dynamic>? farmerMap;
     int farmerIdxInList = -1;
