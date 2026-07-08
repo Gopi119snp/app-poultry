@@ -7,6 +7,53 @@ import 'package:poultrypro/services/company_store.dart';
 import 'package:poultrypro/services/session_service.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 🔗 SHARED HELPERS — Farmer ka batch dhoondhna / naya batch ID banana
+// (Chicks/Feed/Medicine teeno allocation flows yahi use karte hain, taaki
+// batch-creation ka pattern farmer_profile_screen.dart jaisa hi rahe.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const List<String> kRunningBatchStatuses = [
+  'ACTIVE',
+  'LIFTING READY',
+  'PARTIAL LIFTED',
+];
+
+/// Farmer ke batches mein se abhi "running" (not completed) batch dhoondo.
+/// Null aata hai agar koi running batch nahi hai (ya batches hi nahi hain).
+Map<String, dynamic>? findRunningBatch(Map<String, dynamic> farmer) {
+  final batches = (farmer['batches'] as List?) ?? [];
+  for (var b in batches) {
+    final status = (b['status'] ?? '').toString().toUpperCase();
+    if (kRunningBatchStatuses.contains(status)) {
+      return Map<String, dynamic>.from(b as Map);
+    }
+  }
+  return null;
+}
+
+/// Farmer ke COMPLETED (ended) batches ki list — purane/back-batch select
+/// karne ke liye (Feed/Medicine allocation mein use hota hai).
+List<Map<String, dynamic>> findCompletedBatches(Map<String, dynamic> farmer) {
+  final batches = (farmer['batches'] as List?) ?? [];
+  return batches
+      .where((b) => (b['status'] ?? '').toString().toUpperCase() == 'COMPLETED')
+      .map((b) => Map<String, dynamic>.from(b as Map))
+      .toList();
+}
+
+/// farmer_profile_screen.dart jaisa hi Batch ID format:
+/// "<3-letter-prefix>001-LOT-<lotNumber padded>"
+String generateBatchId(Map<String, dynamic> farmer) {
+  final batches = (farmer['batches'] as List?) ?? [];
+  int lotNumber = batches.length + 1;
+  String farmerName = farmer['name']?.toString() ?? 'FAR';
+  String prefix = farmerName.trim().length >= 3
+      ? farmerName.trim().substring(0, 3).toUpperCase()
+      : farmerName.trim().toUpperCase().padRight(3, 'X');
+  return '${prefix}001-LOT-${lotNumber.toString().padLeft(3, '0')}';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 📦 STEP 1: ChicksPurchase DATA MODEL
 // ═══════════════════════════════════════════════════════════════════════════
 class ChicksPurchase {
@@ -737,6 +784,13 @@ class PurchaseExpenseScreen extends StatelessWidget {
           'No Location'; // farmer_profile mein district save hota hai
       return "$name - $mobile - $location";
     }).toList();
+    // ✅ NEW: display-string → farmerId map, taaki batch auto-link/create ke
+    // liye asli farmer record dhoondh sakein (sirf naam se match risky hai).
+    final Map<String, String> farmerDisplayToId = {};
+    for (int fi = 0; fi < rawFarmers.length; fi++) {
+      farmerDisplayToId[farmerOptions[fi]] =
+          rawFarmers[fi]['id']?.toString() ?? '';
+    }
 
     // 3. Settlement billing rate
     double settlementBillingRate = 40.00;
@@ -752,6 +806,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
         'type': type, // Currently active type
         // ── Company data (hamesha preserve hota hai) ──
         'farmerInfo': null,
+        'farmerId': null,
         'farmerSearchCtrl': TextEditingController(),
         'companyQtyCtrl': TextEditingController(),
         'companyRateCtrl': TextEditingController(
@@ -1079,6 +1134,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                           alloc['dropdownVisible'] = true;
                                           alloc['farmerInfo'] =
                                               null; // typing kiya toh selection reset
+                                          alloc['farmerId'] = null;
                                         }),
                                       ),
                                       // Filtered dropdown — sirf tab dikhe jab dropdownVisible=true
@@ -1145,6 +1201,9 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                                       setModalState(() {
                                                         alloc['farmerInfo'] =
                                                             option;
+                                                        alloc['farmerId'] =
+                                                            farmerDisplayToId[
+                                                                option];
                                                         (alloc['farmerSearchCtrl']
                                                                     as TextEditingController)
                                                                 .text =
@@ -1620,6 +1679,83 @@ class PurchaseExpenseScreen extends StatelessWidget {
                               }
 
                               // ══════════════════════════════════════
+                              // ✅ NEW: BATCH LINK/CREATE PRE-FLIGHT CHECK
+                              // Company allocation ke liye farmer ka batch
+                              // dhoondo/validate karo SAVE se pehle — taaki
+                              // partial save na ho agar koi block fail ho.
+                              // ══════════════════════════════════════
+                              List<dynamic> freshFarmersForBatchCheck =
+                                  await CompanyStore.instance.getJsonList(
+                                    'companyFarmers',
+                                  );
+                              for (int i = 0; i < allocations.length; i++) {
+                                var a = allocations[i];
+                                double compQty =
+                                    double.tryParse(
+                                      (a['companyQtyCtrl']
+                                              as TextEditingController)
+                                          .text,
+                                    ) ??
+                                    0.0;
+                                if (compQty <= 0) continue;
+
+                                String? farmerId = a['farmerId']?.toString();
+                                if (farmerId == null || farmerId.isEmpty) {
+                                  Get.snackbar(
+                                    'Farmer Select Karein ⚠️',
+                                    'Block #${i + 1}: Kripya dropdown list se hi farmer select karein (batch link karne ke liye zaroori hai).',
+                                    backgroundColor: Colors.red,
+                                    colorText: Colors.white,
+                                  );
+                                  return;
+                                }
+
+                                Map<String, dynamic>? farmerMap;
+                                for (var f in freshFarmersForBatchCheck) {
+                                  if (f['id']?.toString() == farmerId) {
+                                    farmerMap = Map<String, dynamic>.from(f);
+                                    break;
+                                  }
+                                }
+                                if (farmerMap == null) {
+                                  Get.snackbar(
+                                    'Error ⚠️',
+                                    'Block #${i + 1}: Farmer record nahi mila.',
+                                    backgroundColor: Colors.red,
+                                    colorText: Colors.white,
+                                  );
+                                  return;
+                                }
+
+                                final runningBatch = findRunningBatch(
+                                  farmerMap,
+                                );
+                                if (runningBatch != null) {
+                                  double runningChicks =
+                                      (runningBatch['chicksCount'] as num?)
+                                          ?.toDouble() ??
+                                      0.0;
+                                  if (runningChicks != compQty) {
+                                    Get.snackbar(
+                                      'Batch Mismatch ⚠️',
+                                      'Block #${i + 1}: ${farmerMap['name']} ka running batch (${runningBatch['batchId']}) mein $runningChicks chicks hain, lekin aap $compQty allocate kar rahe hain. Dono same hone chahiye — allocate nahi ho sakta.',
+                                      backgroundColor: Colors.red,
+                                      colorText: Colors.white,
+                                      duration: const Duration(seconds: 5),
+                                    );
+                                    return;
+                                  }
+                                  // ✅ Match ho gaya — isi running batch se link hoga
+                                  a['_batchAction'] = 'link';
+                                  a['_batchId'] = runningBatch['batchId'];
+                                } else {
+                                  // Koi running batch nahi — naya batch banega
+                                  a['_batchAction'] = 'create';
+                                  a['_batchId'] = null;
+                                }
+                              }
+
+                              // ══════════════════════════════════════
                               // STEP 2: SAVE LOGIC — CompanyStore mein update (company-prefixed)
                               // ══════════════════════════════════════
                               // Current user ka naam aur role read karo
@@ -1636,6 +1772,14 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                   allEntries = json.decode(jsonStr);
                                 } catch (_) {}
                               }
+
+                              // ✅ NEW: Company farmers list bhi load karo —
+                              // isi mein batch link/create hoga.
+                              List<dynamic> farmersForBatchWrite =
+                                  await CompanyStore.instance.getJsonList(
+                                    'companyFarmers',
+                                  );
+                              bool farmersListChanged = false;
 
                               // Match karo purchaseEntry ko list mein se (date se)
                               for (int i = 0; i < allEntries.length; i++) {
@@ -1684,6 +1828,55 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                                     as TextEditingController)
                                                 .text
                                                 .trim();
+
+                                      // ✅ NEW: Batch link/create — pre-flight
+                                      // check mein already decide ho chuka hai.
+                                      String? linkedBatchId = a['_batchId'];
+                                      if (a['_batchAction'] == 'create') {
+                                        final String? farmerId = a['farmerId']
+                                            ?.toString();
+                                        for (var f in farmersForBatchWrite) {
+                                          if (f['id']?.toString() ==
+                                              farmerId) {
+                                            if (f['batches'] == null) {
+                                              f['batches'] = [];
+                                            }
+                                            final String newBatchId =
+                                                generateBatchId(
+                                                  Map<String, dynamic>.from(f),
+                                                );
+                                            final double compRate =
+                                                double.tryParse(
+                                                  (a['companyRateCtrl']
+                                                          as TextEditingController)
+                                                      .text,
+                                                ) ??
+                                                0.0;
+                                            f['batches'].add({
+                                              'id': newBatchId,
+                                              'batchId': newBatchId,
+                                              'lotNumber':
+                                                  f['batches'].length + 1,
+                                              'chicksCount': compQty.toInt(),
+                                              'chicksRate': compRate,
+                                              'totalChicksCost':
+                                                  (compQty * compRate)
+                                                      .toStringAsFixed(2),
+                                              'startDate':
+                                                  purchaseEntry['date']
+                                                      ?.toString() ??
+                                                  DateTime.now()
+                                                      .toIso8601String(),
+                                              'status': 'ACTIVE',
+                                              'dailyEntries': [],
+                                            });
+                                            linkedBatchId = newBatchId;
+                                            farmersListChanged = true;
+                                            break;
+                                          }
+                                        }
+                                      }
+
                                       existingAllocs.add({
                                         'name': farmerName.isNotEmpty
                                             ? farmerName
@@ -1703,6 +1896,9 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                             .toIso8601String(),
                                         'allocatedByName': allocatedByName,
                                         'allocatedByRole': allocatedByRole,
+                                        'farmerId': a['farmerId'],
+                                        'batchId':
+                                            linkedBatchId, // ✅ NEW: batch number allocation ke saath save
                                       });
                                     }
 
@@ -1752,6 +1948,15 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                 'chicksPurchaseHistory',
                                 json.encode(allEntries),
                               );
+
+                              // ✅ NEW: agar naya batch bana ho to farmers list
+                              // bhi persist karo.
+                              if (farmersListChanged) {
+                                await CompanyStore.instance.saveJsonList(
+                                  'companyFarmers',
+                                  farmersForBatchWrite,
+                                );
+                              }
 
                               Navigator.pop(context);
                               Get.snackbar(
@@ -3008,9 +3213,28 @@ Future<void> _showFeedAllocationDialog(
     String location = f['district']?.toString() ?? 'No Location';
     return "$name - $mobile - $location";
   }).toList();
+  // ✅ NEW: display-string → farmerId map (batch link/create ke liye)
+  final Map<String, String> farmerDisplayToId = {};
+  for (int fi = 0; fi < rawFarmers.length; fi++) {
+    farmerDisplayToId[farmerOptions[fi]] = rawFarmers[fi]['id']?.toString() ?? '';
+  }
+  // ✅ NEW: Big/Small size ka kgPerBag — feed KG track karne ke liye
+  double bigKgPerBagCfg = 50.0;
+  double smKgPerBagCfg = 50.0;
+  try {
+    final SharedPreferences prefs2 = await SharedPreferences.getInstance();
+    final String? r1Json2 = prefs2.getString('rule1SettlementConfig');
+    if (r1Json2 != null) {
+      final Map<String, dynamic> r1b = json.decode(r1Json2);
+      bigKgPerBagCfg = (r1b['bigKgPerBag'] ?? 50.0).toDouble();
+      smKgPerBagCfg = (r1b['smKgPerBag'] ?? 50.0).toDouble();
+    }
+  } catch (_) {}
+  final double feedKgPerBagCfg = bigKgPerBagCfg > 0 ? bigKgPerBagCfg : smKgPerBagCfg;
 
   final farmerSearchCtrl = TextEditingController();
   String? selectedFarmer;
+  String? selectedFarmerId;
   bool dropdownVisible = false;
 
   final starterQtyCtrl = TextEditingController();
@@ -3099,6 +3323,7 @@ Future<void> _showFeedAllocationDialog(
                           onChanged: (_) => setModalState(() {
                             dropdownVisible = true;
                             selectedFarmer = null;
+                            selectedFarmerId = null;
                           }),
                         ),
                         if (dropdownVisible && farmerSearchCtrl.text.isNotEmpty) ...[
@@ -3136,6 +3361,7 @@ Future<void> _showFeedAllocationDialog(
                                   return InkWell(
                                     onTap: () => setModalState(() {
                                       selectedFarmer = option;
+                                      selectedFarmerId = farmerDisplayToId[option];
                                       farmerSearchCtrl.text = option;
                                       dropdownVisible = false;
                                     }),
@@ -3208,14 +3434,151 @@ Future<void> _showFeedAllocationDialog(
                           return;
                         }
 
+                        // ✅ NEW: farmerId zaroori hai batch link karne ke liye
+                        if (selectedFarmerId == null || selectedFarmerId!.isEmpty) {
+                          Get.snackbar('Farmer Select Karein ⚠️',
+                              'Kripya dropdown list se hi farmer select karein.',
+                              backgroundColor: Colors.red, colorText: Colors.white);
+                          return;
+                        }
+
+                        // ✅ NEW: Farmer ka batch dhoondo (running ya back/completed)
+                        List<dynamic> farmersForBatch =
+                            await CompanyStore.instance.getJsonList('companyFarmers');
+                        Map<String, dynamic>? farmerMap;
+                        int farmerIdxInList = -1;
+                        for (int fi = 0; fi < farmersForBatch.length; fi++) {
+                          if (farmersForBatch[fi]['id']?.toString() == selectedFarmerId) {
+                            farmerMap = Map<String, dynamic>.from(farmersForBatch[fi]);
+                            farmerIdxInList = fi;
+                            break;
+                          }
+                        }
+                        if (farmerMap == null) {
+                          Get.snackbar('Error', 'Farmer record nahi mila.',
+                              backgroundColor: Colors.red, colorText: Colors.white);
+                          return;
+                        }
+
+                        String? linkedBatchId;
+                        final runningBatch = findRunningBatch(farmerMap);
+                        if (runningBatch != null) {
+                          linkedBatchId = runningBatch['batchId']?.toString();
+                        } else {
+                          // ✅ Koi running batch nahi — poochho: Naya ya Back-batch?
+                          final completedBatches = findCompletedBatches(farmerMap);
+                          final String? choice = await showDialog<String>(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (ctx) => AlertDialog(
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14)),
+                              title: const Text('Batch Nahi Mila ⚠️'),
+                              content: Text(
+                                '$farmerName ka koi RUNNING batch nahi hai.\n\n'
+                                'Kya ye feed kisi NAYE batch ke liye hai (jo abhi banega), '
+                                'ya kisi PURANE (completed) batch ke liye hai?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, 'cancel'),
+                                  child: const Text('Cancel',
+                                      style: TextStyle(color: Colors.grey)),
+                                ),
+                                if (completedBatches.isNotEmpty)
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, 'old'),
+                                    child: const Text('Purane Batch Ka'),
+                                  ),
+                                ElevatedButton(
+                                  onPressed: () => Navigator.pop(ctx, 'new'),
+                                  style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.blue.shade800),
+                                  child: const Text('Naya Batch',
+                                      style: TextStyle(color: Colors.white)),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (choice == null || choice == 'cancel') return;
+
+                          if (choice == 'old') {
+                            final Map<String, dynamic>? picked =
+                                await showDialog<Map<String, dynamic>>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Batch Chuniye'),
+                                content: SizedBox(
+                                  width: double.maxFinite,
+                                  child: ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: completedBatches.length,
+                                    itemBuilder: (c, bi) {
+                                      final b = completedBatches[bi];
+                                      return ListTile(
+                                        title: Text(b['batchId']?.toString() ?? '-'),
+                                        subtitle: Text(
+                                            '${b['chicksCount']} chicks | ${b['startDate'] ?? ''}'),
+                                        onTap: () => Navigator.pop(ctx, b),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            );
+                            if (picked == null) return;
+                            linkedBatchId = picked['batchId']?.toString();
+                          }
+                          // choice == 'new' → linkedBatchId stays null (purana
+                          // behavior — allocation save hogi bina kisi batch link ke)
+                        }
+
                         final String allocatedByRole =
                             await SessionService.currentRole ?? 'Owner';
                         final String allocatedByName =
                             await SessionService.currentName ?? '';
 
+                        // ✅ NEW: Agar batch mila (running ya back), to us batch ki
+                        // dailyEntries mein seedha cost-entry add karo — taaki
+                        // Batch Tracking Details/Daily Update List mein wahi se dikhe.
+                        if (linkedBatchId != null && farmerIdxInList >= 0) {
+                          final target = farmersForBatch[farmerIdxInList];
+                          for (var b in (target['batches'] ?? [])) {
+                            if (b['batchId']?.toString() == linkedBatchId) {
+                              final now = DateTime.now();
+                              final dateStr =
+                                  '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+                              final int totalBags =
+                                  (sQty + gQty + fQty).toInt();
+                              b['dailyEntries'] ??= [];
+                              b['dailyEntries'].add({
+                                'type': 'cost',
+                                'date': dateStr,
+                                'weight': '0',
+                                'mortality': '0',
+                                'feed': totalBags.toString(),
+                                'feedStarterBags': sQty.toInt(),
+                                'feedGrowerBags': gQty.toInt(),
+                                'feedFinisherBags': fQty.toInt(),
+                                'feedTotalKg': (sQty + gQty + fQty) * feedKgPerBagCfg,
+                                'remainingFeed': '0',
+                                'enteredBy': allocatedByRole,
+                                'timestamp': now.toIso8601String(),
+                                'source': 'feedAllocation',
+                              });
+                              break;
+                            }
+                          }
+                          await CompanyStore.instance
+                              .saveJsonList('companyFarmers', farmersForBatch);
+                        }
+
                         savedAllocations.add({
                           'id': DateTime.now().millisecondsSinceEpoch.toString(),
                           'farmerName': farmerName,
+                          'farmerId': selectedFarmerId,
+                          'batchId': linkedBatchId, // ✅ NEW: is batch ko gaya
                           'starterQty': sQty,
                           'starterRate': double.tryParse(starterRateCtrl.text) ?? 0.0,
                           'growerQty': gQty,
@@ -7247,6 +7610,8 @@ class _AllocateMedicineToFarmerScreenState
   // Farmer search
   final _farmerSearchCtrl = TextEditingController();
   String? _selectedFarmer;
+  String? _selectedFarmerId; // ✅ NEW: batch link/create ke liye
+  Map<String, String> _farmerDisplayToId = {}; // ✅ NEW
   bool _dropdownVisible = false;
   List<String> _farmerOptions = [];
 
@@ -7269,6 +7634,7 @@ class _AllocateMedicineToFarmerScreenState
     _farmerSearchCtrl.addListener(() => setState(() {
       _dropdownVisible = _farmerSearchCtrl.text.isNotEmpty;
       _selectedFarmer = null;
+      _selectedFarmerId = null;
     }));
     _medicineSearchCtrl.addListener(() => setState(() {
       _medicineDropdownVisible = _medicineSearchCtrl.text.isNotEmpty;
@@ -7282,6 +7648,11 @@ class _AllocateMedicineToFarmerScreenState
     final farmers = rawFarmers.map((f) {
       return '${f['name'] ?? 'Unknown'} - ${f['phone'] ?? ''} - ${f['district'] ?? ''}';
     }).toList();
+    // ✅ NEW: display-string → farmerId map
+    final Map<String, String> displayToId = {};
+    for (int fi = 0; fi < rawFarmers.length; fi++) {
+      displayToId[farmers[fi]] = rawFarmers[fi]['id']?.toString() ?? '';
+    }
 
     // Build medicine rows — only those with available qty > 0
     final rows = <Map<String, dynamic>>[];
@@ -7301,6 +7672,7 @@ class _AllocateMedicineToFarmerScreenState
     if (mounted) {
       setState(() {
         _farmerOptions = farmers;
+        _farmerDisplayToId = displayToId;
         _medicineRows  = rows;
         _isLoading     = false;
       });
@@ -7385,6 +7757,100 @@ class _AllocateMedicineToFarmerScreenState
       }
     }
 
+    // ✅ NEW: farmerId zaroori hai batch link karne ke liye
+    if (_selectedFarmerId == null || _selectedFarmerId!.isEmpty) {
+      Get.snackbar('Farmer Select Karein ⚠️',
+          'Kripya dropdown list se hi farmer select karein.',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      return;
+    }
+
+    // ✅ NEW: Farmer ka batch dhoondo (running ya back/completed)
+    List<dynamic> farmersForBatch =
+        await CompanyStore.instance.getJsonList('companyFarmers');
+    Map<String, dynamic>? farmerMap;
+    int farmerIdxInList = -1;
+    for (int fi = 0; fi < farmersForBatch.length; fi++) {
+      if (farmersForBatch[fi]['id']?.toString() == _selectedFarmerId) {
+        farmerMap = Map<String, dynamic>.from(farmersForBatch[fi]);
+        farmerIdxInList = fi;
+        break;
+      }
+    }
+    if (farmerMap == null) {
+      Get.snackbar('Error', 'Farmer record nahi mila.',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      return;
+    }
+
+    String? linkedBatchId;
+    final runningBatch = findRunningBatch(farmerMap);
+    if (runningBatch != null) {
+      linkedBatchId = runningBatch['batchId']?.toString();
+    } else {
+      final completedBatches = findCompletedBatches(farmerMap);
+      final String? choice = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          title: const Text('Batch Nahi Mila ⚠️'),
+          content: Text(
+            '$farmerName ka koi RUNNING batch nahi hai.\n\n'
+            'Kya ye medicine kisi NAYE batch ke liye hai (jo abhi banega), '
+            'ya kisi PURANE (completed) batch ke liye hai?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'cancel'),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            if (completedBatches.isNotEmpty)
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'old'),
+                child: const Text('Purane Batch Ka'),
+              ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, 'new'),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade700),
+              child: const Text('Naya Batch', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+
+      if (choice == null || choice == 'cancel') return;
+
+      if (choice == 'old') {
+        final Map<String, dynamic>? picked =
+            await showDialog<Map<String, dynamic>>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Batch Chuniye'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: completedBatches.length,
+                itemBuilder: (c, bi) {
+                  final b = completedBatches[bi];
+                  return ListTile(
+                    title: Text(b['batchId']?.toString() ?? '-'),
+                    subtitle:
+                        Text('${b['chicksCount']} chicks | ${b['startDate'] ?? ''}'),
+                    onTap: () => Navigator.pop(ctx, b),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        if (picked == null) return;
+        linkedBatchId = picked['batchId']?.toString();
+      }
+      // choice == 'new' → linkedBatchId null hi rahega (purana behavior)
+    }
+
     final String byName = await SessionService.currentName ?? '';
     final String byRole = await SessionService.currentRole ?? '';
     final String allocId =
@@ -7419,6 +7885,8 @@ class _AllocateMedicineToFarmerScreenState
             'id'             : '$allocId-$mId',
             'groupId'        : allocId, // same group = same allocation session
             'farmerName'     : farmerName,
+            'farmerId'       : _selectedFarmerId, // ✅ NEW
+            'batchId'        : linkedBatchId, // ✅ NEW: is batch ko gaya
             'qty'            : qty,
             'unit'           : su,
             'qtyInBaseUnit'  : qb,
@@ -7432,6 +7900,39 @@ class _AllocateMedicineToFarmerScreenState
           break;
         }
       }
+
+      // ✅ NEW: Agar batch mila (running ya back), to us batch ki
+      // dailyEntries mein seedha medicine-entry add karo — taaki
+      // Batch Tracking Details/Data Sheet mein wahi se dikhe.
+      if (linkedBatchId != null && farmerIdxInList >= 0) {
+        final target = farmersForBatch[farmerIdxInList];
+        for (var b in (target['batches'] ?? [])) {
+          if (b['batchId']?.toString() == linkedBatchId) {
+            final now = DateTime.now();
+            final dateStr =
+                '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+            b['dailyEntries'] ??= [];
+            b['dailyEntries'].add({
+              'type': 'medicine',
+              'date': dateStr,
+              'medicineName': med['name'] ?? '',
+              'quantity': qty,
+              'unit': su,
+              'price': qb * fRatePB,
+              'stockLinked': true,
+              'enteredBy': byRole,
+              'timestamp': now.toIso8601String(),
+              'source': 'medicineAllocation',
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    if (linkedBatchId != null) {
+      await CompanyStore.instance
+          .saveJsonList('companyFarmers', farmersForBatch);
     }
 
     await CompanyStore.instance.setString('medicineStockList', json.encode(all));
@@ -7544,6 +8045,7 @@ class _AllocateMedicineToFarmerScreenState
                           itemBuilder: (cx2, fi) => InkWell(
                             onTap: () => setState(() {
                               _selectedFarmer = filtered[fi];
+                              _selectedFarmerId = _farmerDisplayToId[filtered[fi]];
                               _farmerSearchCtrl.text = filtered[fi];
                               _dropdownVisible = false;
                             }),
