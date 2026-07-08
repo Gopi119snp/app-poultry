@@ -64,6 +64,8 @@ class _DayRow {
   final double? manualFcr;
   final double costPerKg;
   final FraudRiskAssessment fraud;
+  final bool hasMismatch;
+  final String? mismatchReason;
 
   _DayRow({
     required this.date,
@@ -81,6 +83,8 @@ class _DayRow {
     required this.manualFcr,
     required this.costPerKg,
     required this.fraud,
+    this.hasMismatch = false,
+    this.mismatchReason,
   });
 }
 
@@ -242,6 +246,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         'feedBags': int.tryParse(e['feed'].toString()) ?? 0,
         'weightKg': double.tryParse(e['weight'].toString()) ?? 0.0,
         'remainingFeedBags': int.tryParse(e['remainingFeed'].toString()) ?? 0,
+        'hasMismatch': e['hasMismatch'] == true,
+        'mismatchReason': e['mismatchReason']?.toString(),
       });
     }
 
@@ -260,6 +266,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       int feedBagsDeliveredToday = 0;
       double? weightEnteredToday;
       int? remainingFeedBagsToday;
+      bool hasMismatchToday = false;
+      final List<String> mismatchReasonsToday = [];
 
       for (final entry in costEntries) {
         if (_sameDay(entry['date'] as DateTime, date)) {
@@ -269,6 +277,13 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           if (w > 0) weightEnteredToday = w;
           final rf = entry['remainingFeedBags'] as int;
           if (rf > 0) remainingFeedBagsToday = rf;
+          if (entry['hasMismatch'] == true) {
+            hasMismatchToday = true;
+            final reason = entry['mismatchReason'] as String?;
+            if (reason != null && reason.isNotEmpty) {
+              mismatchReasonsToday.add(reason);
+            }
+          }
         }
       }
 
@@ -372,6 +387,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           manualFcr: manualFcr,
           costPerKg: costPerKg,
           fraud: fraud,
+          hasMismatch: hasMismatchToday,
+          mismatchReason: mismatchReasonsToday.isNotEmpty
+              ? mismatchReasonsToday.join(' | ')
+              : null,
         ),
       );
     }
@@ -1269,26 +1288,93 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                             final bool isHigh =
                                                 r.fraud.riskLevel == 'high';
                                             final bool isEven = i % 2 == 0;
+                                            final bool isEditable =
+                                                _isEditableDate(r.date);
                                             return DataRow(
                                               color: WidgetStateProperty.all(
-                                                isHigh
-                                                    ? Colors.red.shade50
-                                                    : (isEven
-                                                        ? Colors.white
-                                                        : lightGreen
-                                                            .withOpacity(0.5)),
+                                                r.hasMismatch
+                                                    ? Colors.red.shade100
+                                                    : (isHigh
+                                                        ? Colors.red.shade50
+                                                        : (isEven
+                                                            ? Colors.white
+                                                            : lightGreen
+                                                                .withOpacity(
+                                                                    0.5))),
                                               ),
-                                              onSelectChanged: (_) =>
-                                                  _showEditDayDialog(r),
+                                              onSelectChanged: isEditable
+                                                  ? (_) =>
+                                                      _showEditDayDialog(r)
+                                                  : (_) {
+                                                      Get.snackbar(
+                                                        'Locked 🔒',
+                                                        'Sirf Aaj + pichle 2 din tak hi entry edit ho sakti hai.',
+                                                        backgroundColor:
+                                                            Colors
+                                                                .grey.shade700,
+                                                        colorText:
+                                                            Colors.white,
+                                                        snackPosition:
+                                                            SnackPosition
+                                                                .BOTTOM,
+                                                      );
+                                                    },
                                               cells: [
                                                 DataCell(
-                                                  _editButton(
-                                                      () => _showEditDayDialog(
-                                                          r)),
+                                                  isEditable
+                                                      ? _editButton(
+                                                          () =>
+                                                              _showEditDayDialog(
+                                                                  r),
+                                                        )
+                                                      : _lockedButton(),
                                                 ),
                                                 DataCell(_riskBadge(r.fraud)),
                                                 DataCell(
-                                                    Text(_fmtDate(r.date))),
+                                                  Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Text(_fmtDate(r.date)),
+                                                      if (r.hasMismatch) ...[
+                                                        const SizedBox(
+                                                            width: 4),
+                                                        InkWell(
+                                                          onTap: () {
+                                                            showDialog(
+                                                              context:
+                                                                  context,
+                                                              builder: (ctx) =>
+                                                                  AlertDialog(
+                                                                title: const Text(
+                                                                    '⚠️ Photo Mismatch'),
+                                                                content: Text(
+                                                                  r.mismatchReason ??
+                                                                      'Entered value photo se match nahi hui thi.',
+                                                                ),
+                                                                actions: [
+                                                                  TextButton(
+                                                                    onPressed: () =>
+                                                                        Navigator.pop(
+                                                                            ctx),
+                                                                    child: const Text(
+                                                                        'OK'),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            );
+                                                          },
+                                                          child: const Icon(
+                                                            Icons
+                                                                .warning_amber_rounded,
+                                                            size: 15,
+                                                            color: Colors.red,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ),
                                                 DataCell(Text('${r.day}')),
                                                 DataCell(
                                                     Text('${r.liveChicks}')),
@@ -1416,6 +1502,45 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           border: Border.all(color: Colors.grey.shade200),
         ),
         child: Icon(icon, size: 16, color: primaryGreen),
+      ),
+    );
+  }
+
+  // ── ✅ NEW: Sirf Aaj + pichle 2 din (total 3 din) hi editable hain,
+  // uske pehle ke saare din locked/read-only rahenge. ─────────────────────
+  bool _isEditableDate(DateTime d) {
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    final dateOnly = DateTime(d.year, d.month, d.day);
+    final diffDays = todayOnly.difference(dateOnly).inDays;
+    return diffDays >= 0 && diffDays <= 2;
+  }
+
+  // ── Locked (read-only) din ke liye grey lock icon — tap karne par
+  // info snackbar dikhata hai. ────────────────────────────────────────────
+  Widget _lockedButton() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () {
+        Get.snackbar(
+          'Locked 🔒',
+          'Sirf Aaj + pichle 2 din tak hi entry edit ho sakti hai.',
+          backgroundColor: Colors.grey.shade700,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+      },
+      child: Container(
+        padding: EdgeInsets.all(6 * _tableScale),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade300,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          Icons.lock_outline_rounded,
+          color: Colors.grey.shade600,
+          size: 16 * _tableScale,
+        ),
       ),
     );
   }
