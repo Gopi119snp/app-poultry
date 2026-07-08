@@ -6,8 +6,6 @@ import 'package:flutter/material.dart';
 // =============================================================================
 enum SimpleMedicineTreatment { includeInProdCost, deductFromEarning }
 
-enum FeedPricingMode { perKg, perBag }
-
 class SimpleCompanyConfig {
   double standardRearingRatePerKg;
   double chickPricePerPiece;
@@ -16,7 +14,6 @@ class SimpleCompanyConfig {
   double farmerPenaltySharePercentage;
   double minRearingRateGuarantee;
   double kgPerBag;
-  FeedPricingMode feedPricingMode;
   double feedRate;
   double adminCostPerKg;
   SimpleMedicineTreatment medicineTreatment;
@@ -38,7 +35,6 @@ class SimpleCompanyConfig {
     required this.farmerPenaltySharePercentage,
     required this.minRearingRateGuarantee,
     required this.kgPerBag,
-    required this.feedPricingMode,
     required this.feedRate,
     required this.adminCostPerKg,
     required this.medicineTreatment,
@@ -115,13 +111,10 @@ class SimpleBatchSettlementEngine {
       }
     }
 
-    double totalFeedCostAllotted = 0.0;
-    if (config.feedPricingMode == FeedPricingMode.perKg) {
-      double totalKgConsumed = totalFeedBagsCount * config.kgPerBag;
-      totalFeedCostAllotted = totalKgConsumed * config.feedRate;
-    } else {
-      totalFeedCostAllotted = totalFeedBagsCount * config.feedRate;
-    }
+    // ✅ Bags -> KG -> cost, seedhe formula se (perBag "fix" allocation mode
+    // hata diya gaya, ab hamesha bag ka actual kg-weight use hoga).
+    double totalKgConsumed = totalFeedBagsCount * config.kgPerBag;
+    double totalFeedCostAllotted = totalKgConsumed * config.feedRate;
 
     double totalAdminCostSum = totalWeightSoldKg * config.adminCostPerKg;
     double totalProductionCostSum =
