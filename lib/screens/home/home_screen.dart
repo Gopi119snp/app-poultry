@@ -3424,7 +3424,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ═══════════════════════════════════════════════════════════════════════════
   // 🧮 SETTLEMENT WIZARD
   // ═══════════════════════════════════════════════════════════════════════════
-  void _showLiveSettlementWizard() {
+  void _showLiveSettlementWizard() async {
     final r1BigFeedRateCtrl = TextEditingController(text: '42.00');
     final r1BigChicksRateCtrl = TextEditingController(text: '40.00');
     final r1BigAdminCostCtrl = TextEditingController(text: '1.50');
@@ -3459,6 +3459,74 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     bool r2IsRupeeIncentiveMode = true;
     bool r2IsMedicineIncludeProd = true;
     bool r2UseConvertedFcr = true;
+
+    // ✅ FIX: pehle se saved Rule 1 / Rule 2 config Firestore/CompanyStore se
+    // wapas load karo, warna har baar wizard reopen hone par sab fields
+    // (medicine toggle sameet) hardcoded defaults par reset ho jaate the.
+    final savedR1Json = await CompanyStore.instance.getString(
+      'rule1SettlementConfig',
+    );
+    if (savedR1Json != null && savedR1Json.isNotEmpty) {
+      try {
+        final r1 = Map<String, dynamic>.from(json.decode(savedR1Json));
+        r1BigFeedRateCtrl.text = (r1['bigFeedRate'] ?? 42.0).toString();
+        r1BigChicksRateCtrl.text = (r1['bigChicksRate'] ?? 40.0).toString();
+        r1BigAdminCostCtrl.text = (r1['bigAdminCost'] ?? 1.50).toString();
+        r1BigKgPerBagCtrl.text = (r1['bigKgPerBag'] ?? 50.0).toString();
+        r1BigTargetCostCtrl.text = (r1['bigTargetCost'] ?? 85.0).toString();
+        r1BigBaseCommCtrl.text = (r1['bigBaseComm'] ?? 8.0).toString();
+        r1BigSavingsShareCtrl.text =
+            (r1['bigSavingsShare'] ?? 50.0).toString();
+        r1BigExceededShareCtrl.text =
+            (r1['bigExceededShare'] ?? 50.0).toString();
+        r1BigRateBonusThreshCtrl.text =
+            (r1['bigRateBonusThresh'] ?? 110.0).toString();
+        r1BigRateBonusShareCtrl.text =
+            (r1['bigRateBonusShare'] ?? 10.0).toString();
+        r1BigMedicineInProdCost = r1['bigMedicineInProd'] ?? true;
+
+        r1SmFeedRateCtrl.text = (r1['smFeedRate'] ?? 42.0).toString();
+        r1SmChicksRateCtrl.text = (r1['smChicksRate'] ?? 40.0).toString();
+        r1SmAdminCostCtrl.text = (r1['smAdminCost'] ?? 1.50).toString();
+        r1SmKgPerBagCtrl.text = (r1['smKgPerBag'] ?? 50.0).toString();
+        r1SmTargetCostCtrl.text = (r1['smTargetCost'] ?? 90.0).toString();
+        r1SmBaseCommCtrl.text = (r1['smBaseComm'] ?? 10.0).toString();
+        r1SmSavingsShareCtrl.text =
+            (r1['smSavingsShare'] ?? 50.0).toString();
+        r1SmExceededShareCtrl.text =
+            (r1['smExceededShare'] ?? 50.0).toString();
+        r1SmRateBonusThreshCtrl.text =
+            (r1['smRateBonusThresh'] ?? 120.0).toString();
+        r1SmRateBonusShareCtrl.text =
+            (r1['smRateBonusShare'] ?? 10.0).toString();
+        r1SmMedicineInProdCost = r1['smMedicineInProd'] ?? true;
+      } catch (e) {
+        debugPrint('[SettlementWizard] rule1 load failed: $e');
+      }
+    }
+
+    final savedR2Json = await CompanyStore.instance.getString(
+      'rule2SettlementConfig',
+    );
+    if (savedR2Json != null && savedR2Json.isNotEmpty) {
+      try {
+        final r2 = Map<String, dynamic>.from(json.decode(savedR2Json));
+        r2BaseRateCtrl.text = (r2['baseRate'] ?? 7.50).toString();
+        r2GoodMinCtrl.text = (r2['goodMin'] ?? 1.40).toString();
+        r2GoodMaxCtrl.text = (r2['goodMax'] ?? 1.54).toString();
+        r2NormMinCtrl.text = (r2['normMin'] ?? 1.55).toString();
+        r2NormMaxCtrl.text = (r2['normMax'] ?? 1.65).toString();
+        r2BonusCtrl.text = (r2['bonus'] ?? 0.10).toString();
+        r2PenaltyCtrl.text = (r2['penalty'] ?? 0.15).toString();
+        r2IsRupeeIncentiveMode = r2['isRupeeMode'] ?? true;
+        r2IsMedicineIncludeProd = r2['isMedIncludeProd'] ?? true;
+        r2UseConvertedFcr = r2['useConvFcr'] ?? true;
+      } catch (e) {
+        debugPrint('[SettlementWizard] rule2 load failed: $e');
+      }
+    }
+
+    if (!mounted) return;
 
     int selectedRuleTab = (_appliedCompanyRuleId != null)
         ? _appliedCompanyRuleId!
