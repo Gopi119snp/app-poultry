@@ -12,6 +12,8 @@ import 'package:open_file/open_file.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:image_picker/image_picker.dart';
+import 'package:google_ml_kit/google_ml_kit.dart';
 import '../../../utils/pdf_download.dart' as pdf_web;
 import '../../../services/company_store.dart';
 import '../../../utils/feed_consumption_rule_engine.dart';
@@ -52,8 +54,17 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
   final _weightController = TextEditingController();
   final _mortalityController = TextEditingController();
-  final _feedController = TextEditingController();
   final _dateController = TextEditingController();
+
+  // ── ✅ NEW: Feed ab 3 type mein — Starter / Grower / Finisher ───────────
+  // Har type ke apne bags + per-bag-weight (KG) controllers, taaki
+  // bags × per-bag-weight = us type ka total KG live calculate ho sake.
+  final _feedStarterBagsController = TextEditingController();
+  final _feedStarterKgPerBagController = TextEditingController(text: '50.0');
+  final _feedGrowerBagsController = TextEditingController();
+  final _feedGrowerKgPerBagController = TextEditingController(text: '50.0');
+  final _feedFinisherBagsController = TextEditingController();
+  final _feedFinisherKgPerBagController = TextEditingController(text: '50.0');
 
   final _buyerNameController = TextEditingController();
   final _soldChicksController = TextEditingController();
@@ -66,6 +77,19 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   String _selectedMedicineUnit = 'ml';
 
   final _remainingFeedController = TextEditingController();
+
+  // ── ✅ NEW: Camera-verify state (Mortality photo / Weight-scale photo /
+  // Remaining-feed stock photo). Sab optional hain — user chaahe to hi
+  // camera use kare, form submit karne ke liye compulsory nahi.
+  final ImagePicker _picker = ImagePicker();
+  Uint8List? _mortalityPhotoBytes;
+  Uint8List? _weightPhotoBytes;
+  Uint8List? _remainingFeedPhotoBytes;
+  bool _mortalityPhotoMismatch = false;
+  bool _weightPhotoMismatch = false;
+  String? _mortalityMismatchReason;
+  String? _weightMismatchReason;
+  bool _verifyingPhoto = false;
 
   final List<String> _medicineUnitsList = [
     'ml',
@@ -429,7 +453,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   void dispose() {
     _weightController.dispose();
     _mortalityController.dispose();
-    _feedController.dispose();
+    _feedStarterBagsController.dispose();
+    _feedStarterKgPerBagController.dispose();
+    _feedGrowerBagsController.dispose();
+    _feedGrowerKgPerBagController.dispose();
+    _feedFinisherBagsController.dispose();
+    _feedFinisherKgPerBagController.dispose();
     _dateController.dispose();
     _buyerNameController.dispose();
     _soldChicksController.dispose();
@@ -3540,6 +3569,15 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
   void _showDailyEntryDialog() {
     final existingEntries = List<dynamic>.from(_dailyEntries);
+    // Har baar dialog khulne par purani photo/mismatch state clear karo
+    _mortalityPhotoBytes = null;
+    _weightPhotoBytes = null;
+    _remainingFeedPhotoBytes = null;
+    _mortalityPhotoMismatch = false;
+    _weightPhotoMismatch = false;
+    _mortalityMismatchReason = null;
+    _weightMismatchReason = null;
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -3554,7 +3592,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 const Icon(Icons.note_add_rounded, color: primaryGreen),
                 const SizedBox(width: 8),
                 Text(
-                  'Cost Entry (${widget.userRole})',
+                  'Flock Record (${widget.userRole})',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -3580,7 +3618,52 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
+
+                  // ═══════════════════════════════════════════════════════
+                  // 🏢 SECTION 1 — FEED (Owner / Office Manager hi bhar sakte)
+                  // ═══════════════════════════════════════════════════════
+                  if (widget.userRole == 'Owner' ||
+                      widget.userRole == 'Office Manager') ...[
+                    const Text(
+                      '🏢 Feed Section (Owner / Office Manager)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _feedTypeInputBlock(
+                      label: 'Starter Feed',
+                      bagsCtrl: _feedStarterBagsController,
+                      kgPerBagCtrl: _feedStarterKgPerBagController,
+                      setDialogState: setDialogState,
+                    ),
+                    const SizedBox(height: 12),
+                    _feedTypeInputBlock(
+                      label: 'Grower Feed',
+                      bagsCtrl: _feedGrowerBagsController,
+                      kgPerBagCtrl: _feedGrowerKgPerBagController,
+                      setDialogState: setDialogState,
+                    ),
+                    const SizedBox(height: 12),
+                    _feedTypeInputBlock(
+                      label: 'Finisher Feed',
+                      bagsCtrl: _feedFinisherBagsController,
+                      kgPerBagCtrl: _feedFinisherKgPerBagController,
+                      setDialogState: setDialogState,
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                  ],
+
+                  // ═══════════════════════════════════════════════════════
+                  // 🌾 SECTION 2 — WEIGHT / MORTALITY / REMAINING FEED
+                  // (Owner / Field Manager hi bhar sakte)
+                  // ═══════════════════════════════════════════════════════
                   if (widget.userRole == 'Owner' ||
                       widget.userRole == 'Field Manager') ...[
                     const Text(
@@ -3592,7 +3675,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         letterSpacing: 0.5,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
+
+                    // ── Average Weight + scale-photo verify (optional) ────
                     TextField(
                       controller: _weightController,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -3607,7 +3692,24 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 6),
+                    _photoVerifyRow(
+                      label: 'Taraju (Scale) Photo — optional',
+                      photoBytes: _weightPhotoBytes,
+                      mismatch: _weightPhotoMismatch,
+                      mismatchReason: _weightMismatchReason,
+                      onCapture: () => _captureAndVerifyWeightPhoto(
+                        setDialogState,
+                      ),
+                      onRemove: () => setDialogState(() {
+                        _weightPhotoBytes = null;
+                        _weightPhotoMismatch = false;
+                        _weightMismatchReason = null;
+                      }),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── Mortality + photo count-verify (optional) ─────────
                     TextField(
                       controller: _mortalityController,
                       keyboardType: TextInputType.number,
@@ -3620,7 +3722,24 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 6),
+                    _photoVerifyRow(
+                      label: 'Mortality Photo — optional',
+                      photoBytes: _mortalityPhotoBytes,
+                      mismatch: _mortalityPhotoMismatch,
+                      mismatchReason: _mortalityMismatchReason,
+                      onCapture: () => _captureAndVerifyMortalityPhoto(
+                        setDialogState,
+                      ),
+                      onRemove: () => setDialogState(() {
+                        _mortalityPhotoBytes = null;
+                        _mortalityPhotoMismatch = false;
+                        _mortalityMismatchReason = null;
+                      }),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── Remaining Feed + plain stock photo (optional) ─────
                     TextField(
                       controller: _remainingFeedController,
                       keyboardType: TextInputType.number,
@@ -3633,32 +3752,20 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (widget.userRole == 'Owner' ||
-                      widget.userRole == 'Office Manager') ...[
-                    const Text(
-                      '🏢 Office Manager Entries',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
                     const SizedBox(height: 6),
-                    TextField(
-                      controller: _feedController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Feed Bags (Arrived / Correction) *',
-                        hintText: 'Add: 5  |  Correction/Minus: -2',
-                        prefixIcon: const Icon(Icons.shopping_bag_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+                    _photoVerifyRow(
+                      label: 'Farm Feed Stock Photo — optional',
+                      photoBytes: _remainingFeedPhotoBytes,
+                      mismatch: false,
+                      mismatchReason: null,
+                      onCapture: () => _captureRemainingFeedPhoto(
+                        setDialogState,
                       ),
+                      onRemove: () => setDialogState(() {
+                        _remainingFeedPhotoBytes = null;
+                      }),
                     ),
+                    const SizedBox(height: 8),
                   ],
                 ],
               ),
@@ -3668,8 +3775,13 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 onPressed: () {
                   _weightController.clear();
                   _mortalityController.clear();
-                  _feedController.clear();
+                  _feedStarterBagsController.clear();
+                  _feedGrowerBagsController.clear();
+                  _feedFinisherBagsController.clear();
                   _remainingFeedController.clear();
+                  _mortalityPhotoBytes = null;
+                  _weightPhotoBytes = null;
+                  _remainingFeedPhotoBytes = null;
                   Navigator.pop(context);
                 },
                 child: const Text(
@@ -3678,8 +3790,13 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 ),
               ),
               ElevatedButton(
-                onPressed: () =>
-                    _saveDailyLogEntryToStorage(context, existingEntries),
+                onPressed: _verifyingPhoto
+                    ? null
+                    : () => _saveDailyLogEntryToStorage(
+                        context,
+                        existingEntries,
+                        setDialogState,
+                      ),
                 style: ElevatedButton.styleFrom(backgroundColor: primaryGreen),
                 child: const Text(
                   'Save Entry',
@@ -3694,6 +3811,416 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         },
       ),
     );
+  }
+
+  // ── ✅ NEW: Ek feed-type ka input block — Bags + Per-Bag-Weight(KG),
+  // neeche live calculated KG dikhata hai (bags × kgPerBag). ──────────────
+  Widget _feedTypeInputBlock({
+    required String label,
+    required TextEditingController bagsCtrl,
+    required TextEditingController kgPerBagCtrl,
+    required StateSetter setDialogState,
+  }) {
+    final bags = double.tryParse(bagsCtrl.text.trim()) ?? 0.0;
+    final kgPerBag = double.tryParse(kgPerBagCtrl.text.trim()) ?? 0.0;
+    final totalKg = bags * kgPerBag;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.green.shade100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: bagsCtrl,
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) => setDialogState(() {}),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Bags',
+                    hintText: '0',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: kgPerBagCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => setDialogState(() {}),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Per Bag (KG)',
+                    hintText: '50.0',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Total: ${totalKg.toStringAsFixed(1)} KG',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: primaryGreen,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── ✅ NEW: Photo capture row — optional camera button, thumbnail,
+  // mismatch-warning chip agar AI verify fail hui ho. ─────────────────────
+  Widget _photoVerifyRow({
+    required String label,
+    required Uint8List? photoBytes,
+    required bool mismatch,
+    required String? mismatchReason,
+    required VoidCallback onCapture,
+    required VoidCallback onRemove,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontSize: 11, color: Colors.black54),
+              ),
+            ),
+            if (photoBytes != null)
+              IconButton(
+                icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                onPressed: onRemove,
+                tooltip: 'Photo hatao',
+              ),
+            IconButton(
+              icon: Icon(
+                photoBytes == null
+                    ? Icons.camera_alt_outlined
+                    : Icons.camera_alt,
+                color: primaryGreen,
+              ),
+              onPressed: _verifyingPhoto ? null : onCapture,
+              tooltip: 'Camera se photo lo',
+            ),
+          ],
+        ),
+        if (_verifyingPhoto)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 4),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Photo verify ho rahi hai...',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+        if (photoBytes != null)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              photoBytes,
+              height: 90,
+              width: 90,
+              fit: BoxFit.cover,
+            ),
+          ),
+        if (mismatch && mismatchReason != null)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Text(
+              '⚠️ $mismatchReason',
+              style: TextStyle(fontSize: 11, color: Colors.red.shade700),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── ✅ NEW: Mortality photo — ML Kit Object Detector (on-device, free)
+  // se photo mein detected objects count karta hai aur entered mortality
+  // number se compare karta hai. Camera optional hai; agar mismatch mile
+  // to sirf ek baar warning dikhata hai — save karna block nahi hota,
+  // bas entry par mismatch-flag/reason lag jaata hai (Daily List mein
+  // red dikhega). Note: generic object-counting hai, "dead chicken"
+  // specific training nahi — 100% accurate nahi hoga.
+  Future<void> _captureAndVerifyMortalityPhoto(
+    StateSetter setDialogState,
+  ) async {
+    if (kIsWeb) {
+      Get.snackbar(
+        'Not Supported',
+        'Camera-verify web par available nahi hai.',
+        backgroundColor: Colors.orange.shade700,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+    final XFile? shot = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 70,
+    );
+    if (shot == null) return;
+
+    setDialogState(() => _verifyingPhoto = true);
+    ObjectDetector? detector;
+    try {
+      final bytes = await shot.readAsBytes();
+      final enteredMortality =
+          int.tryParse(_mortalityController.text.trim()) ?? 0;
+
+      detector = ObjectDetector(
+        options: ObjectDetectorOptions(
+          mode: DetectionMode.single,
+          classifyObjects: false,
+          multipleObjects: true,
+        ),
+      );
+      final inputImage = InputImage.fromFilePath(shot.path);
+      final detected = await detector.processImage(inputImage);
+      final detectedCount = detected.length;
+
+      bool mismatch = detectedCount != enteredMortality;
+      String? reason;
+      if (mismatch) {
+        reason =
+            'Photo mein ~$detectedCount object(s) detect hue, lekin '
+            'entered mortality $enteredMortality hai. Kripya dobara check karein.';
+      }
+
+      setDialogState(() {
+        _mortalityPhotoBytes = bytes;
+        _mortalityPhotoMismatch = mismatch;
+        _mortalityMismatchReason = reason;
+        _verifyingPhoto = false;
+      });
+
+      if (mismatch && mounted) {
+        _showMismatchWarningDialog(
+          title: 'Mortality Mismatch ⚠️',
+          message: reason!,
+        );
+      }
+    } catch (e) {
+      setDialogState(() {
+        _mortalityPhotoBytes = null;
+        _mortalityPhotoMismatch = false;
+        _mortalityMismatchReason = null;
+        _verifyingPhoto = false;
+      });
+      Get.snackbar(
+        'Verify Failed',
+        'Photo verify nahi ho payi: $e',
+        backgroundColor: Colors.red.shade600,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } finally {
+      await detector?.close();
+    }
+  }
+
+  // ── ✅ NEW: Weighing-scale photo — ML Kit Text Recognition (on-device,
+  // free, OCR) se scale display ka number padhta hai aur entered average
+  // weight se compare karta hai (±10% ya ±0.15 KG tolerance).
+  Future<void> _captureAndVerifyWeightPhoto(StateSetter setDialogState) async {
+    if (kIsWeb) {
+      Get.snackbar(
+        'Not Supported',
+        'Camera-verify web par available nahi hai.',
+        backgroundColor: Colors.orange.shade700,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+    final XFile? shot = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 70,
+    );
+    if (shot == null) return;
+
+    setDialogState(() => _verifyingPhoto = true);
+    TextRecognizer? recognizer;
+    try {
+      final bytes = await shot.readAsBytes();
+      final enteredWeight =
+          double.tryParse(_weightController.text.trim()) ?? 0.0;
+
+      recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      final inputImage = InputImage.fromFilePath(shot.path);
+      final recognizedText = await recognizer.processImage(inputImage);
+      final scaleReading = _extractLikelyWeightFromText(
+        recognizedText.text,
+        enteredWeight,
+      );
+
+      bool mismatch = false;
+      String? reason;
+      if (scaleReading == null) {
+        // Number hi nahi mila photo mein — ye bhi mismatch treat karo taaki
+        // field manager dobara clear photo le sake.
+        mismatch = true;
+        reason =
+            'Scale ka reading photo mein clear nahi mila. Entered weight: '
+            '${enteredWeight.toStringAsFixed(2)} KG — kripya dobara photo lein.';
+      } else {
+        final tolerance = (enteredWeight * 0.10).clamp(0.15, 5.0);
+        if ((scaleReading - enteredWeight).abs() > tolerance) {
+          mismatch = true;
+          reason =
+              'Scale photo mein ~${scaleReading.toStringAsFixed(2)} KG dikha, '
+              'lekin entered weight ${enteredWeight.toStringAsFixed(2)} KG hai.';
+        }
+      }
+
+      setDialogState(() {
+        _weightPhotoBytes = bytes;
+        _weightPhotoMismatch = mismatch;
+        _weightMismatchReason = reason;
+        _verifyingPhoto = false;
+      });
+
+      if (mismatch && mounted) {
+        _showMismatchWarningDialog(
+          title: 'Weight Mismatch ⚠️',
+          message: reason!,
+        );
+      }
+    } catch (e) {
+      setDialogState(() {
+        _weightPhotoBytes = null;
+        _weightPhotoMismatch = false;
+        _weightMismatchReason = null;
+        _verifyingPhoto = false;
+      });
+      Get.snackbar(
+        'Verify Failed',
+        'Photo verify nahi ho payi: $e',
+        backgroundColor: Colors.red.shade600,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } finally {
+      await recognizer?.close();
+    }
+  }
+
+  // ── ✅ NEW: Remaining-feed stock photo — sirf capture+store, koi
+  // verification nahi (jaisa maanga gaya tha).
+  Future<void> _captureRemainingFeedPhoto(StateSetter setDialogState) async {
+    if (kIsWeb) {
+      Get.snackbar(
+        'Not Supported',
+        'Camera web par available nahi hai.',
+        backgroundColor: Colors.orange.shade700,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+    final XFile? shot = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 70,
+    );
+    if (shot == null) return;
+    final bytes = await shot.readAsBytes();
+    setDialogState(() => _remainingFeedPhotoBytes = bytes);
+  }
+
+  void _showMismatchWarningDialog({
+    required String title,
+    required String message,
+  }) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(title, style: const TextStyle(fontSize: 15)),
+            ),
+          ],
+        ),
+        content: Text(
+          '$message\n\nAap fir bhi ye entry save kar sakte hain, lekin ye '
+          'din Daily Update List mein LAL (red) dikhega aur reason neeche '
+          'likha hoga taaki office isko dekh sake.',
+          style: const TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'Samajh Gaya',
+              style: TextStyle(color: primaryGreen, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Photo ke text se sabse likely weight-number nikalta hai (largest
+  // decimal jo entered weight ke reasonable range ke aas-paas ho). ───────
+  double? _extractLikelyWeightFromText(String text, double enteredWeight) {
+    final matches = RegExp(r'\d+\.?\d*').allMatches(text);
+    double? best;
+    double bestDiff = double.infinity;
+    for (final m in matches) {
+      final val = double.tryParse(m.group(0) ?? '');
+      if (val == null || val <= 0) continue;
+      final diff = enteredWeight > 0
+          ? (val - enteredWeight).abs()
+          : 0.0;
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = val;
+      }
+    }
+    return best;
   }
 
   void _showSalesEntryDialog() {
@@ -4167,18 +4694,31 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   Future<void> _saveDailyLogEntryToStorage(
     BuildContext dialogContext,
     List<dynamic> existingEntries,
+    StateSetter setDialogState,
   ) async {
     if (_isLoading) return;
 
     String weightInput = _weightController.text.trim();
     String mortalityInput = _mortalityController.text.trim();
-    String feedInput = _feedController.text.trim();
+    String starterBagsInput = _feedStarterBagsController.text.trim();
+    String growerBagsInput = _feedGrowerBagsController.text.trim();
+    String finisherBagsInput = _feedFinisherBagsController.text.trim();
+    double starterKgPerBag =
+        double.tryParse(_feedStarterKgPerBagController.text.trim()) ?? 50.0;
+    double growerKgPerBag =
+        double.tryParse(_feedGrowerKgPerBagController.text.trim()) ?? 50.0;
+    double finisherKgPerBag =
+        double.tryParse(_feedFinisherKgPerBagController.text.trim()) ?? 50.0;
     String dateInput = _dateController.text.trim();
     String remainingFeedInput = _remainingFeedController.text.trim();
 
+    bool anyFeedEntered = starterBagsInput.isNotEmpty ||
+        growerBagsInput.isNotEmpty ||
+        finisherBagsInput.isNotEmpty;
+
     if (weightInput.isEmpty &&
         mortalityInput.isEmpty &&
-        feedInput.isEmpty &&
+        !anyFeedEntered &&
         remainingFeedInput.isEmpty) {
       Get.snackbar(
         'Validation Error ⚠️',
@@ -4193,7 +4733,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
     double? weightVal = double.tryParse(weightInput);
     int? mortalityVal = int.tryParse(mortalityInput);
-    int? feedVal = int.tryParse(feedInput);
+    int starterBags = int.tryParse(starterBagsInput) ?? 0;
+    int growerBags = int.tryParse(growerBagsInput) ?? 0;
+    int finisherBags = int.tryParse(finisherBagsInput) ?? 0;
+    int feedVal = starterBags + growerBags + finisherBags;
     int? remainingVal = int.tryParse(remainingFeedInput);
 
     if ((weightVal != null && weightVal < 0) ||
@@ -4210,7 +4753,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       return;
     }
 
-    if (feedVal != null && feedVal < 0) {
+    if (feedVal < 0) {
       int currentTotalFeed = 0;
       for (var e in _dailyEntries) {
         if (e['type'].toString().toLowerCase() == 'cost') {
@@ -4275,6 +4818,22 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       return;
     }
 
+    // ✅ Har feed-type ka KG entered per-bag-weight se calculate karo.
+    double starterKg = starterBags * starterKgPerBag;
+    double growerKg = growerBags * growerKgPerBag;
+    double finisherKg = finisherBags * finisherKgPerBag;
+    double totalFeedKg = starterKg + growerKg + finisherKg;
+
+    // ✅ Camera-verify mismatch flags — agar mismatch tha to ye entry
+    // Daily Update List mein red + reason ke saath dikhegi.
+    final bool hasMismatch = _mortalityPhotoMismatch || _weightPhotoMismatch;
+    final List<String> mismatchReasons = [
+      if (_mortalityPhotoMismatch && _mortalityMismatchReason != null)
+        _mortalityMismatchReason!,
+      if (_weightPhotoMismatch && _weightMismatchReason != null)
+        _weightMismatchReason!,
+    ];
+
     setState(() => _isLoading = true);
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -4286,12 +4845,29 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           'date': dateInput,
           'weight': weightInput.isEmpty ? '0' : weightInput,
           'mortality': mortalityInput.isEmpty ? '0' : mortalityInput,
-          'feed': feedInput.isEmpty ? '0' : feedInput,
+          'feed': feedVal.toString(), // ✅ backward-compatible total bags
+          'feedStarterBags': starterBags,
+          'feedGrowerBags': growerBags,
+          'feedFinisherBags': finisherBags,
+          'feedStarterKgPerBag': starterKgPerBag,
+          'feedGrowerKgPerBag': growerKgPerBag,
+          'feedFinisherKgPerBag': finisherKgPerBag,
+          'feedTotalKg': totalFeedKg,
           'remainingFeed': remainingFeedInput.isEmpty
               ? '0'
               : remainingFeedInput,
           'enteredBy': widget.userRole,
           'timestamp': DateTime.now().toIso8601String(),
+          if (_mortalityPhotoBytes != null)
+            'mortalityPhotoBase64': base64Encode(_mortalityPhotoBytes!),
+          if (_weightPhotoBytes != null)
+            'weightPhotoBase64': base64Encode(_weightPhotoBytes!),
+          if (_remainingFeedPhotoBytes != null)
+            'remainingFeedPhotoBase64':
+                base64Encode(_remainingFeedPhotoBytes!),
+          'hasMismatch': hasMismatch,
+          if (mismatchReasons.isNotEmpty)
+            'mismatchReason': mismatchReasons.join(' | '),
         };
         for (var farmerItem in farmersList) {
           if (farmerItem['id'] == widget.farmerId) {
@@ -4308,8 +4884,17 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         await CompanyStore.instance.setString('companyFarmers', json.encode(farmersList)); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
         _weightController.clear();
         _mortalityController.clear();
-        _feedController.clear();
+        _feedStarterBagsController.clear();
+        _feedGrowerBagsController.clear();
+        _feedFinisherBagsController.clear();
         _remainingFeedController.clear();
+        _mortalityPhotoBytes = null;
+        _weightPhotoBytes = null;
+        _remainingFeedPhotoBytes = null;
+        _mortalityPhotoMismatch = false;
+        _weightPhotoMismatch = false;
+        _mortalityMismatchReason = null;
+        _weightMismatchReason = null;
         await _loadFreshBatchData();
       }
     } finally {
@@ -4614,6 +5199,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     int initialChicks = _liveBatchData['chicksCount'] ?? 0;
     int totalMortality = 0;
     int totalFeedBags = 0;
+    double totalFeedKgSum = 0.0; // ✅ NEW: bags ke saath KG bhi track karo
     int totalChicksSold = 0;
     double latestAvgWeight = 0.0;
     double totalWeightSoldKg = 0.0;
@@ -4640,7 +5226,14 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           latestAvgWeight = saleAvgWt;
       } else if (currentType == 'cost') {
         totalMortality += int.tryParse(entry['mortality'].toString()) ?? 0;
-        totalFeedBags += int.tryParse(entry['feed'].toString()) ?? 0;
+        int entryFeedBags = int.tryParse(entry['feed'].toString()) ?? 0;
+        totalFeedBags += entryFeedBags;
+        // ✅ Agar entry mein naya 'feedTotalKg' field hai (per-type
+        // per-bag-weight se calculate hua) to wahi use karo, warna purani
+        // entries ke liye 50 KG/bag standard fallback lagao.
+        totalFeedKgSum += (entry['feedTotalKg'] is num)
+            ? (entry['feedTotalKg'] as num).toDouble()
+            : entryFeedBags * 50.0;
         double wt = double.tryParse(entry['weight'].toString()) ?? 0.0;
         if (wt > 0.0) latestAvgWeight = wt;
         if (entry['remainingFeed'] != null && entry['remainingFeed'] != '0') {
@@ -4868,7 +5461,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   children: [
                     _buildStatBlock(
                       'Total Feed Bags',
-                      '$totalFeedBags Bags 📦',
+                      '$totalFeedBags Bags 📦\n(${totalFeedKgSum.toStringAsFixed(1)} KG)',
                     ),
                     _buildStatBlock(
                       'Mortality',
@@ -4916,15 +5509,15 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   children: [
                     _buildStatBlock(
                       'Expected Consumed',
-                      '${expectedConsumedBags.toStringAsFixed(1)} Bags 📉',
+                      '${expectedConsumedBags.toStringAsFixed(1)} Bags 📉\n(${totalExpectedConsumedKg.toStringAsFixed(1)} KG)',
                     ),
                     _buildStatBlock(
                       'Expected Balance',
-                      '${expectedRemainingBags.toStringAsFixed(1)} Bags 📊',
+                      '${expectedRemainingBags.toStringAsFixed(1)} Bags 📊\n(${(expectedRemainingBags * 50.0).toStringAsFixed(1)} KG)',
                     ),
                     _buildStatBlock(
                       'Actual Farm Stock',
-                      '$actualRemainingBags Bags 🚜',
+                      '$actualRemainingBags Bags 🚜\n(${(actualRemainingBagsNum * 50.0).toStringAsFixed(1)} KG)',
                     ),
                   ],
                 ),
@@ -5550,7 +6143,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                                             0
                                         ? '📦 Feed Correction ❌'
                                         : '📦 Feed Bags Arrived',
-                                    '${logRow['feed']} Bag',
+                                    '${logRow['feed']} Bag'
+                                    '${logRow['feedTotalKg'] is num ? ' (${(logRow['feedTotalKg'] as num).toStringAsFixed(1)} KG)' : ''}',
                                   ),
                                 ],
                               ),
@@ -5574,6 +6168,45 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                                       ),
                                     ),
                                   ],
+                                ),
+                              ],
+                              if (logRow['hasMismatch'] == true) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.red.shade300,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Icon(
+                                        Icons.error_outline,
+                                        size: 14,
+                                        color: Colors.red,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          '⚠️ Photo Mismatch: '
+                                          '${logRow['mismatchReason'] ?? 'Entered value photo se match nahi hua'}',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            color: Colors.red.shade800,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ],
