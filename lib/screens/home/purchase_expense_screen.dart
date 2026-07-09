@@ -4636,7 +4636,7 @@ class _FeedAllocationDetailScreenState
                 child: ElevatedButton(
                   onPressed: _save,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryGreen,
+                    backgroundColor: PurchaseExpenseScreen.primaryGreen,
                   ),
                   child: const Text(
                     'Save Changes',
