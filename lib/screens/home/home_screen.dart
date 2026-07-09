@@ -1348,12 +1348,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       if (gBags > 0) await _addFeedStock('Grower', gBags);
                       if (fBags > 0) await _addFeedStock('Finisher', fBags);
 
-                      String? historyJson = await CompanyStore.instance
-                          .getString('feedPurchaseHistory');
-                      List<dynamic> history = historyJson != null
-                          ? json.decode(historyJson)
-                          : [];
-
                       double sPerBag =
                           double.tryParse(starterPerBagCtrl.text.trim()) ?? 0;
                       double gPerBag =
@@ -1361,32 +1355,42 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       double fPerBag =
                           double.tryParse(finisherPerBagCtrl.text.trim()) ?? 0;
 
-                      history.insert(0, {
-                        'company': company,
-                        'starter': {
-                          'bags': sBags,
-                          'perBagPrice': sPerBag,
-                          'total': sBags * sPerBag,
-                        },
-                        'grower': {
-                          'bags': gBags,
-                          'perBagPrice': gPerBag,
-                          'total': gBags * gPerBag,
-                        },
-                        'finisher': {
-                          'bags': fBags,
-                          'perBagPrice': fPerBag,
-                          'total': fBags * fPerBag,
-                        },
-                        'grandTotal': grandTotal,
-                        'addedByRole': addedByRole,
-                        'addedByName': addedByName,
-                        'date': DateTime.now().toIso8601String(),
-                      });
-                      await CompanyStore.instance.setString(
-                        'feedPurchaseHistory',
-                        json.encode(history),
-                      );
+                      // ✅ NEW: Naya per-type running-stock system (Medicine
+                      // jaisa) — teeno type apni-apni persistent stock
+                      // entity mein add hote hain (purani combined-lot
+                      // 'feedPurchaseHistory' ab sirf migration ke liye
+                      // reference rehti hai, naye purchases isi mein jaate
+                      // hain).
+                      if (sBags > 0) {
+                        await addOrUpdateFeedPurchase(
+                          feedTypeId: 'starter',
+                          bags: sBags,
+                          perBagPrice: sPerBag,
+                          company: company,
+                          addedByName: addedByName,
+                          addedByRole: addedByRole,
+                        );
+                      }
+                      if (gBags > 0) {
+                        await addOrUpdateFeedPurchase(
+                          feedTypeId: 'grower',
+                          bags: gBags,
+                          perBagPrice: gPerBag,
+                          company: company,
+                          addedByName: addedByName,
+                          addedByRole: addedByRole,
+                        );
+                      }
+                      if (fBags > 0) {
+                        await addOrUpdateFeedPurchase(
+                          feedTypeId: 'finisher',
+                          bags: fBags,
+                          perBagPrice: fPerBag,
+                          company: company,
+                          addedByName: addedByName,
+                          addedByRole: addedByRole,
+                        );
+                      }
 
                       if (!mounted) return;
                       Navigator.pop(context);
@@ -2607,43 +2611,47 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       if (gBags > 0) await _addFeedStock('Grower', gBags);
                       if (fBags > 0) await _addFeedStock('Finisher', fBags);
 
-                      String? historyJson = await CompanyStore.instance
-                          .getString('feedPurchaseHistory');
-                      List<dynamic> history = historyJson != null
-                          ? json.decode(historyJson)
-                          : [];
-
                       double sPerBag =
                           double.tryParse(starterPerBagCtrl.text.trim()) ?? 0;
                       double gPerBag =
                           double.tryParse(growerPerBagCtrl.text.trim()) ?? 0;
                       double fPerBag =
                           double.tryParse(finisherPerBagCtrl.text.trim()) ?? 0;
+                      final addedByRole = await _getSessionRole();
+                      final addedByName = await _getSessionName();
 
-                      history.insert(0, {
-                        'company': company,
-                        'starter': {
-                          'bags': sBags,
-                          'perBagPrice': sPerBag,
-                          'total': sBags * sPerBag,
-                        },
-                        'grower': {
-                          'bags': gBags,
-                          'perBagPrice': gPerBag,
-                          'total': gBags * gPerBag,
-                        },
-                        'finisher': {
-                          'bags': fBags,
-                          'perBagPrice': fPerBag,
-                          'total': fBags * fPerBag,
-                        },
-                        'grandTotal': grandTotal,
-                        'date': DateTime.now().toIso8601String(),
-                      });
-                      await CompanyStore.instance.setString(
-                        'feedPurchaseHistory',
-                        json.encode(history),
-                      );
+                      // ✅ NEW: yahan se bhi naye per-type stock system mein
+                      // jaayega (Purchase flow jaisa hi, consistent).
+                      if (sBags > 0) {
+                        await addOrUpdateFeedPurchase(
+                          feedTypeId: 'starter',
+                          bags: sBags,
+                          perBagPrice: sPerBag,
+                          company: company,
+                          addedByName: addedByName,
+                          addedByRole: addedByRole,
+                        );
+                      }
+                      if (gBags > 0) {
+                        await addOrUpdateFeedPurchase(
+                          feedTypeId: 'grower',
+                          bags: gBags,
+                          perBagPrice: gPerBag,
+                          company: company,
+                          addedByName: addedByName,
+                          addedByRole: addedByRole,
+                        );
+                      }
+                      if (fBags > 0) {
+                        await addOrUpdateFeedPurchase(
+                          feedTypeId: 'finisher',
+                          bags: fBags,
+                          perBagPrice: fPerBag,
+                          company: company,
+                          addedByName: addedByName,
+                          addedByRole: addedByRole,
+                        );
+                      }
 
                       if (!mounted) return;
                       Navigator.pop(context);
