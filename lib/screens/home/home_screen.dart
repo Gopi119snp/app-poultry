@@ -5706,8 +5706,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: GestureDetector(
         onTap: onTap ?? () {},
         child: Container(
-          height: 80,
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          height: 88, // ✅ FIX: pehle 80 tha — "Purchase\nExpense" jaisa
+          // 2-line label overflow ho raha tha (6px), ab safe height hai
+          padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
