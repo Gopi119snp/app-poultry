@@ -53,6 +53,24 @@ String generateBatchId(Map<String, dynamic> farmer) {
   return '${prefix}001-LOT-${lotNumber.toString().padLeft(3, '0')}';
 }
 
+/// ✅ NEW: Purchase entries mein date ISO format ("2026-07-08T13:40...")
+/// mein save hoti hai, lekin batch ka "startDate" hamesha "dd/MM/yyyy"
+/// format mein hona chahiye (farmer_profile_screen.dart jaisa) — warna
+/// Batch Tracking Details screen mein overflow/galat calculation hoti hai.
+String formatDateForBatch(String? rawDate) {
+  if (rawDate == null || rawDate.trim().isEmpty) {
+    final now = DateTime.now();
+    return '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+  }
+  try {
+    final d = DateTime.parse(rawDate);
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  } catch (_) {
+    // Already "dd/MM/yyyy" jaisa kisi aur format mein ho, waisa hi rehne do
+    return rawDate;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 📦 STEP 1: ChicksPurchase DATA MODEL
 // ═══════════════════════════════════════════════════════════════════════════
@@ -373,6 +391,45 @@ class PurchaseExpenseScreen extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 20),
+
+                            // ✅ NEW: Batch ID badge — sirf Company allocation
+                            // jo kisi batch se linked hai
+                            if (allocType == 'Company' &&
+                                (thisAlloc['batchId']?.toString().isNotEmpty ??
+                                    false)) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.shade50,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.purple.shade200,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.badge_rounded,
+                                      size: 16,
+                                      color: Colors.purple.shade700,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Batch ID: ${thisAlloc['batchId']}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Colors.purple.shade800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
 
                             // Name Field
                             TextField(
@@ -1862,11 +1919,10 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                               'totalChicksCost':
                                                   (compQty * compRate)
                                                       .toStringAsFixed(2),
-                                              'startDate':
-                                                  purchaseEntry['date']
-                                                      ?.toString() ??
-                                                  DateTime.now()
-                                                      .toIso8601String(),
+                                              'startDate': formatDateForBatch(
+                                                purchaseEntry['date']
+                                                    ?.toString(),
+                                              ),
                                               'status': 'ACTIVE',
                                               'dailyEntries': [],
                                             });
@@ -2605,7 +2661,11 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
                                               if (alloc['allocatedOn'] !=
                                                       null ||
                                                   alloc['allocatedByName'] !=
-                                                      null)
+                                                      null ||
+                                                  (alloc['batchId']
+                                                          ?.toString()
+                                                          .isNotEmpty ??
+                                                      false))
                                                 Padding(
                                                   padding:
                                                       const EdgeInsets.only(
@@ -2616,6 +2676,24 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
                                                         CrossAxisAlignment
                                                             .start,
                                                     children: [
+                                                      // ✅ NEW: Batch ID (agar
+                                                      // is allocation se koi
+                                                      // farmer-batch linked hai)
+                                                      if (alloc['batchId']
+                                                              ?.toString()
+                                                              .isNotEmpty ??
+                                                          false)
+                                                        Text(
+                                                          '🏷️ Batch: ${alloc['batchId']}',
+                                                          style: TextStyle(
+                                                            fontSize: 10.5,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            color: Colors
+                                                                .purple
+                                                                .shade700,
+                                                          ),
+                                                        ),
                                                       if (alloc['allocatedByName'] !=
                                                               null &&
                                                           (alloc['allocatedByName']
@@ -3022,11 +3100,27 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
                                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                                 children: [
                                                   Expanded(
-                                                    child: Text(
-                                                      '🧑 ${a['farmerName'] ?? '-'}',
-                                                      overflow: TextOverflow.ellipsis,
-                                                      style: const TextStyle(
-                                                          fontSize: 12, fontWeight: FontWeight.w600),
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment.start,
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          '🧑 ${a['farmerName'] ?? '-'}',
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: const TextStyle(
+                                                              fontSize: 12, fontWeight: FontWeight.w600),
+                                                        ),
+                                                        // ✅ NEW: Batch ID
+                                                        if (a['batchId']?.toString().isNotEmpty ?? false)
+                                                          Text(
+                                                            '🏷️ ${a['batchId']}',
+                                                            style: TextStyle(
+                                                                fontSize: 10,
+                                                                fontWeight: FontWeight.bold,
+                                                                color: Colors.purple.shade700),
+                                                          ),
+                                                      ],
                                                     ),
                                                   ),
                                                   Text(parts.isEmpty ? '-' : parts,
@@ -3997,6 +4091,23 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
               child: Text('📦 Lot: $company',
                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
             ),
+            // ✅ NEW: Batch ID badge — jis farmer-batch mein ye feed gaya
+            if (_alloc?['batchId']?.toString().isNotEmpty ?? false) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: Text('🏷️ Batch: ${_alloc!['batchId']}',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.purple.shade800)),
+              ),
+            ],
             const SizedBox(height: 16),
             TextField(
               controller: _nameCtrl,
@@ -5421,6 +5532,16 @@ class _MedicineFarmerAllocationsListScreenState
                                         style: const TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.bold)),
+                                    // ✅ NEW: Batch ID
+                                    if (a['batchId']?.toString().isNotEmpty ?? false)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text('🏷️ Batch: ${a['batchId']}',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.purple.shade700)),
+                                      ),
                                     if (date.isNotEmpty)
                                       Padding(
                                         padding:
@@ -7361,6 +7482,23 @@ class _MedicineAllocationDetailScreenState
                       fontWeight: FontWeight.bold,
                       color: Colors.teal.shade900)),
             ),
+            // ✅ NEW: Batch ID badge — jis farmer-batch mein ye medicine gaya
+            if (_alloc?['batchId']?.toString().isNotEmpty ?? false) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: Text('🏷️ Batch: ${_alloc!['batchId']}',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.purple.shade800)),
+              ),
+            ],
             const SizedBox(height: 16),
             TextField(
               controller: _nameCtrl,
@@ -7631,11 +7769,14 @@ class _AllocateMedicineToFarmerScreenState
   void initState() {
     super.initState();
     _init();
-    _farmerSearchCtrl.addListener(() => setState(() {
-      _dropdownVisible = _farmerSearchCtrl.text.isNotEmpty;
-      _selectedFarmer = null;
-      _selectedFarmerId = null;
-    }));
+    // ✅ FIX: Pehle yahan _farmerSearchCtrl.addListener() tha jo controller
+    // ki HAR .text change par fire hota tha — including jab dropdown se
+    // farmer select karne par hum khud `_farmerSearchCtrl.text = option;`
+    // set karte the! Isse listener turant _selectedFarmer/_selectedFarmerId
+    // ko wapas null kar deta tha (race condition), aur Save button hamesha
+    // "Farmer Select Karein" bolta rehta tha chahe farmer select kiya ho.
+    // Ab TextField ke `onChanged` (neeche) mein hi reset hota hai — wo sirf
+    // real typing par fire hota hai, programmatic assignment par nahi.
     _medicineSearchCtrl.addListener(() => setState(() {
       _medicineDropdownVisible = _medicineSearchCtrl.text.isNotEmpty;
     }));
@@ -8005,6 +8146,11 @@ class _AllocateMedicineToFarmerScreenState
                           : null,
                       helperMaxLines: 2,
                     ),
+                    onChanged: (_) => setState(() {
+                      _dropdownVisible = _farmerSearchCtrl.text.isNotEmpty;
+                      _selectedFarmer = null;
+                      _selectedFarmerId = null;
+                    }),
                   ),
 
                   // Dropdown
