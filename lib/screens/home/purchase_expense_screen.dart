@@ -2821,6 +2821,177 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
 // ═══════════════════════════════════════════════════════════════════════════
 // 🌾 FEED HISTORY SCREEN — Lot list + Apna Farmer Allocation
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// 🌾 FEED STOCK SYSTEM — Medicine jaisa hi pattern: 3 FIXED running-stock
+// entities (Starter/Grower/Finisher). Har purchase isi mein add hota hai,
+// aur Farmer Allocation bhi isi se hoti hai (per-type Purchase History +
+// Farmer Allocations, jaisa Medicine mein hai).
+//
+// NOTE: Purani "Private Sales" (feedSalesHistory, lot-name se match) feature
+// yahan carry-forward nahi ki — Gopi ke spec mein sirf 2 sections maange the
+// (Purchase History + Farmer Allocations), Private Buyers nahi. Agar wo bhi
+// chahiye ho to sales_screen.dart dekhna padega (uploaded nahi hai abhi).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const List<String> kFeedTypeIds = ['starter', 'grower', 'finisher'];
+const Map<String, String> kFeedTypeNames = {
+  'starter': 'Starter Feed',
+  'grower': 'Grower Feed',
+  'finisher': 'Finisher Feed',
+};
+const Map<String, String> kFeedTypeEmoji = {
+  'starter': '🐣',
+  'grower': '🐥',
+  'finisher': '🐔',
+};
+
+/// Ek baar purane 'feedPurchaseHistory' lots ko naye 3-entity system mein
+/// migrate karta hai (Gopi ke confirm kiye anusaar) — allocations bhi split
+/// karke migrate hoti hain (ek purani allocation jisme S+G+F teeno ho, wo
+/// teeno type ki apni-apni list mein chali jaati hai). Dobara migration nahi
+/// chalta agar ek baar ho chuka ho.
+Future<List<Map<String, dynamic>>> ensureFeedStockMigrated() async {
+  List<Map<String, dynamic>> stock = await CompanyStore.instance.getJsonList(
+    'feedStockList',
+  );
+
+  for (final id in kFeedTypeIds) {
+    if (!stock.any((s) => s['id'] == id)) {
+      stock.add({
+        'id': id,
+        'name': kFeedTypeNames[id],
+        'unit': 'bag',
+        'totalBags': 0.0,
+        'weightedAvgCost': 0.0,
+        'purchaseHistory': [],
+        'allocations': [],
+      });
+    }
+  }
+
+  final bool migrationDone = stock.any((s) => s['migratedFromOldLots'] == true);
+  if (!migrationDone) {
+    List<Map<String, dynamic>> oldLots = await CompanyStore.instance
+        .getJsonList('feedPurchaseHistory');
+    for (final lot in oldLots) {
+      final String company = lot['company']?.toString() ?? '';
+      final String date =
+          lot['date']?.toString() ?? DateTime.now().toIso8601String();
+      final String addedByName = lot['addedByName']?.toString() ?? '';
+      final String addedByRole = lot['addedByRole']?.toString() ?? '';
+
+      for (final id in kFeedTypeIds) {
+        final typeData = lot[id] as Map?;
+        final double bags = (typeData?['bags'] as num?)?.toDouble() ?? 0.0;
+        final double perBagPrice =
+            (typeData?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+        if (bags <= 0) continue;
+
+        final entry = stock.firstWhere((s) => s['id'] == id);
+        final double oldTotal = (entry['totalBags'] as num?)?.toDouble() ?? 0.0;
+        final double oldAvg =
+            (entry['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+        final double newTotal = oldTotal + bags;
+        final double newAvg = newTotal > 0
+            ? ((oldTotal * oldAvg) + (bags * perBagPrice)) / newTotal
+            : perBagPrice;
+        entry['totalBags'] = newTotal;
+        entry['weightedAvgCost'] = newAvg;
+        final hist = (entry['purchaseHistory'] as List?) ?? [];
+        hist.add({
+          'id': '${DateTime.now().microsecondsSinceEpoch}_$id',
+          'company': company,
+          'bags': bags,
+          'perBagPrice': perBagPrice,
+          'date': date,
+          'addedByName': addedByName,
+          'addedByRole': addedByRole,
+          'migrated': true,
+        });
+        entry['purchaseHistory'] = hist;
+      }
+
+      final List<dynamic> oldAllocs = lot['allocations'] ?? [];
+      for (final a in oldAllocs) {
+        for (final id in kFeedTypeIds) {
+          final double qty = (a['${id}Qty'] as num?)?.toDouble() ?? 0.0;
+          if (qty <= 0) continue;
+          final entry = stock.firstWhere((s) => s['id'] == id);
+          final allocs = (entry['allocations'] as List?) ?? [];
+          allocs.add({
+            'id': '${a['id'] ?? DateTime.now().microsecondsSinceEpoch}_$id',
+            'farmerName': a['farmerName'],
+            'farmerId': a['farmerId'],
+            'batchId': a['batchId'],
+            'qty': qty,
+            'rate': a['${id}Rate'] ?? 0.0,
+            'allocatedOn': a['allocatedOn'],
+            'allocatedByName': a['allocatedByName'],
+            'allocatedByRole': a['allocatedByRole'],
+            'migrated': true,
+          });
+          entry['allocations'] = allocs;
+        }
+      }
+    }
+    for (final s in stock) {
+      s['migratedFromOldLots'] = true;
+    }
+  }
+
+  await CompanyStore.instance.saveJsonList('feedStockList', stock);
+  return stock;
+}
+
+double computeFeedRemaining(Map<String, dynamic> feedType) {
+  final double total = (feedType['totalBags'] as num?)?.toDouble() ?? 0.0;
+  double allocated = 0.0;
+  for (final a in ((feedType['allocations'] as List?) ?? [])) {
+    allocated += (a['qty'] as num?)?.toDouble() ?? 0.0;
+  }
+  return (total - allocated).clamp(0.0, double.infinity);
+}
+
+/// Feed purchase add karo — Medicine ke `addOrUpdateMedicinePurchase` jaisa
+/// hi weighted-average pattern, bas unit hamesha "bag" fixed hai.
+Future<void> addOrUpdateFeedPurchase({
+  required String feedTypeId,
+  required double bags,
+  required double perBagPrice,
+  required String company,
+  String addedByName = '',
+  String addedByRole = '',
+}) async {
+  List<Map<String, dynamic>> stock = await ensureFeedStockMigrated();
+  final idx = stock.indexWhere((s) => s['id'] == feedTypeId);
+  if (idx == -1) return;
+  final entry = stock[idx];
+  final double oldTotal = (entry['totalBags'] as num?)?.toDouble() ?? 0.0;
+  final double oldAvg = (entry['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+  final double newTotal = oldTotal + bags;
+  final double newAvg = newTotal > 0
+      ? ((oldTotal * oldAvg) + (bags * perBagPrice)) / newTotal
+      : perBagPrice;
+  entry['totalBags'] = newTotal;
+  entry['weightedAvgCost'] = newAvg;
+  final hist = (entry['purchaseHistory'] as List?) ?? [];
+  hist.add({
+    'id': DateTime.now().millisecondsSinceEpoch.toString(),
+    'company': company,
+    'bags': bags,
+    'perBagPrice': perBagPrice,
+    'date': DateTime.now().toIso8601String(),
+    'addedByName': addedByName,
+    'addedByRole': addedByRole,
+  });
+  entry['purchaseHistory'] = hist;
+  stock[idx] = entry;
+  await CompanyStore.instance.saveJsonList('feedStockList', stock);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🌾 FEED HISTORY SCREEN — Medicine jaisa 3 running-stock cards
+// ═══════════════════════════════════════════════════════════════════════════
 class FeedHistoryScreen extends StatefulWidget {
   final Future<void> Function() onFeedTap;
   const FeedHistoryScreen({super.key, required this.onFeedTap});
@@ -2830,501 +3001,341 @@ class FeedHistoryScreen extends StatefulWidget {
 }
 
 class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
-  List<Map<String, dynamic>> _entries = [];
-  // lotName -> {S, G, F} sold bags via private sales
-  Map<String, Map<String, double>> _soldPerLot = {};
-  // lotName -> list of private sale entries
-  Map<String, List<Map<String, dynamic>>> _privateSalesPerLot = {};
+  List<Map<String, dynamic>> _feedStock = [];
   bool _isLoading = true;
+  bool _changed = false;
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    _load();
   }
 
-  Future<void> _loadHistory() async {
+  Future<void> _load() async {
     setState(() => _isLoading = true);
-
-    // 1. Purchase lots load karo
-    final String? jsonStr =
-        await CompanyStore.instance.getString('feedPurchaseHistory');
-    List<Map<String, dynamic>> loaded = [];
-    if (jsonStr != null) {
-      try {
-        final List<dynamic> raw = json.decode(jsonStr);
-        loaded = raw.map((e) => Map<String, dynamic>.from(e)).toList();
-      } catch (_) {}
-    }
-
-    // 2. Feed private sales load karo (sales_screen se)
-    final String? salesJson =
-        await CompanyStore.instance.getString('feedSalesHistory');
-    Map<String, Map<String, double>> soldPerLot = {};
-    Map<String, List<Map<String, dynamic>>> privateSalesPerLot = {};
-    if (salesJson != null) {
-      try {
-        final List<dynamic> rawSales = json.decode(salesJson);
-        for (final sale in rawSales) {
-          final String lotName = sale['lotName']?.toString() ?? '';
-          if (lotName.isEmpty) continue;
-          soldPerLot[lotName] ??= {'S': 0.0, 'G': 0.0, 'F': 0.0};
-          soldPerLot[lotName]!['S'] = soldPerLot[lotName]!['S']! +
-              ((sale['starter']?['qty'] as num?)?.toDouble() ?? 0.0);
-          soldPerLot[lotName]!['G'] = soldPerLot[lotName]!['G']! +
-              ((sale['grower']?['qty'] as num?)?.toDouble() ?? 0.0);
-          soldPerLot[lotName]!['F'] = soldPerLot[lotName]!['F']! +
-              ((sale['finisher']?['qty'] as num?)?.toDouble() ?? 0.0);
-          privateSalesPerLot[lotName] ??= [];
-          privateSalesPerLot[lotName]!
-              .add(Map<String, dynamic>.from(sale as Map));
-        }
-      } catch (_) {}
-    }
-
+    final stock = await ensureFeedStockMigrated();
+    stock.sort(
+      (a, b) => kFeedTypeIds
+          .indexOf(a['id'])
+          .compareTo(kFeedTypeIds.indexOf(b['id'])),
+    );
     if (mounted) {
       setState(() {
-        _entries = loaded;
-        _soldPerLot = soldPerLot;
-        _privateSalesPerLot = privateSalesPerLot;
+        _feedStock = stock;
         _isLoading = false;
       });
     }
   }
 
-  // Farmers ko allocate ho chuki qty (dispatch)
-  Map<String, double> _allocatedSoFar(Map<String, dynamic> entry) {
-    final allocs = List<Map<String, dynamic>>.from(
-      (entry['allocations'] as List<dynamic>?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
-          [],
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) Get.back(result: _changed);
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.blue.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(result: _changed),
+          ),
+          title: const Row(
+            children: [
+              Text('🌾', style: TextStyle(fontSize: 18)),
+              SizedBox(width: 8),
+              Text('Feed Purchase'),
+            ],
+          ),
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await widget.onFeedTap();
+                        _changed = true;
+                        _load();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade700,
+                      ),
+                      icon: const Icon(Icons.add, color: Colors.white),
+                      label: const Text(
+                        'Naya Feed Purchase',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final result = await _showFeedAllocateToFarmerDialog(
+                          context,
+                          _feedStock,
+                        );
+                        if (result == true) {
+                          _changed = true;
+                          _load();
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade700,
+                      ),
+                      icon: const Icon(
+                        Icons.person_add_alt_1_rounded,
+                        color: Colors.white,
+                      ),
+                      label: const Text(
+                        'Allocate to Farmer',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ..._feedStock.map(
+                    (f) => _FeedRunningStockCard(
+                      feedType: f,
+                      onChanged: () {
+                        _changed = true;
+                        _load();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
-    double s = 0, g = 0, f = 0;
-    for (final a in allocs) {
-      s += (a['starterQty'] as num?)?.toDouble() ?? 0.0;
-      g += (a['growerQty'] as num?)?.toDouble() ?? 0.0;
-      f += (a['finisherQty'] as num?)?.toDouble() ?? 0.0;
-    }
-    return {'S': s, 'G': g, 'F': f};
   }
+}
 
-  void _openAllocationForm(Map<String, dynamic> entry) {
-    _showFeedAllocationDialog(context, entry, _loadHistory);
-  }
-
-  void _openAllocationDetail(Map<String, dynamic> entry, int allocIndex) async {
-    final result = await Get.to(
-      () => FeedAllocationDetailScreen(lotEntry: entry, allocIndex: allocIndex),
-    );
-    if (result == true) _loadHistory();
-  }
+// ── Running stock card (Medicine's _MedicineRunningLotCard jaisa) ──
+class _FeedRunningStockCard extends StatelessWidget {
+  final Map<String, dynamic> feedType;
+  final VoidCallback onChanged;
+  const _FeedRunningStockCard({
+    required this.feedType,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.blue.shade700,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
-          onPressed: () => Get.back(),
-        ),
-        title: const Row(
-          children: [
-            Text('🌾', style: TextStyle(fontSize: 18)),
-            SizedBox(width: 8),
-            Text('Feed Purchase'),
-          ],
-        ),
+    final String id = feedType['id']?.toString() ?? '';
+    final String name =
+        feedType['name']?.toString() ?? kFeedTypeNames[id] ?? id;
+    final String emoji = kFeedTypeEmoji[id] ?? '🌾';
+    final double total = (feedType['totalBags'] as num?)?.toDouble() ?? 0.0;
+    final double remaining = computeFeedRemaining(feedType);
+    final double avgCost =
+        (feedType['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+    final int purchaseCount =
+        ((feedType['purchaseHistory'] as List?) ?? []).length;
+    final int allocCount = ((feedType['allocations'] as List?) ?? []).length;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.blue.shade100),
       ),
-      body: Column(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  await widget.onFeedTap();
-                  _loadHistory();
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade700),
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text('Naya Feed Purchase',
-                    style: TextStyle(color: Colors.white)),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(14),
+                topRight: Radius.circular(14),
               ),
             ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _entries.isEmpty
-                    ? const Center(child: Text('Koi record nahi.'))
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: _entries.length,
-                        itemBuilder: (context, index) {
-                          final entry = _entries[index];
-                          final String company = entry['company']?.toString() ?? '-';
-                          final String addedByName = entry['addedByName']?.toString() ?? '';
-                          final String addedByRole = entry['addedByRole']?.toString() ?? '';
-                          final String lotDate = entry['date']?.toString() ?? '';
-
-                          final double sBags = (entry['starter']?['bags'] as num?)?.toDouble() ?? 0.0;
-                          final double gBags = (entry['grower']?['bags'] as num?)?.toDouble() ?? 0.0;
-                          final double fBags = (entry['finisher']?['bags'] as num?)?.toDouble() ?? 0.0;
-                          final double grandTotal = (entry['grandTotal'] as num?)?.toDouble() ?? 0.0;
-
-                          final allocs = List<Map<String, dynamic>>.from(
-                            (entry['allocations'] as List<dynamic>?)
-                                    ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
-                                [],
-                          );
-
-                          // Allocated to farmers
-                          final allocatedSoFar = _allocatedSoFar(entry);
-                          // Sold via private sales
-                          final soldSoFar = _soldPerLot[company] ?? {'S': 0.0, 'G': 0.0, 'F': 0.0};
-                          final List<Map<String, dynamic>> privateSales =
-                              _privateSalesPerLot[company] ?? [];
-
-                          // Remaining = purchased - farmer allocated - private sold
-                          final double sLeft = sBags - (allocatedSoFar['S'] ?? 0) - (soldSoFar['S'] ?? 0);
-                          final double gLeft = gBags - (allocatedSoFar['G'] ?? 0) - (soldSoFar['G'] ?? 0);
-                          final double fLeft = fBags - (allocatedSoFar['F'] ?? 0) - (soldSoFar['F'] ?? 0);
-                          final bool anyLeft = sLeft > 0 || gLeft > 0 || fLeft > 0;
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 14),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: Colors.blue.shade200, width: 1.2),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // ── Lot Header ──
-                                Container(
-                                  padding: const EdgeInsets.all(14),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
-                                    borderRadius: const BorderRadius.only(
-                                      topLeft: Radius.circular(14),
-                                      topRight: Radius.circular(14),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(company,
-                                                style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 14,
-                                                    color: Colors.blue.shade900)),
-                                            Text(
-                                              'S: ${sBags.toStringAsFixed(0)} | G: ${gBags.toStringAsFixed(0)} | F: ${fBags.toStringAsFixed(0)} Bag',
-                                              style: const TextStyle(fontSize: 12, color: Colors.black54),
-                                            ),
-                                            Text(
-                                              'Bacha: S ${sLeft.clamp(0, double.infinity).toStringAsFixed(0)} | G ${gLeft.clamp(0, double.infinity).toStringAsFixed(0)} | F ${fLeft.clamp(0, double.infinity).toStringAsFixed(0)} Bag',
-                                              style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: anyLeft ? Colors.green.shade700 : Colors.grey),
-                                            ),
-                                            if (addedByName.isNotEmpty)
-                                              Text(
-                                                '👤 ${addedByRole.isNotEmpty ? "$addedByRole: " : ""}$addedByName',
-                                                style: const TextStyle(fontSize: 11, color: Colors.black54),
-                                              ),
-                                            if (lotDate.isNotEmpty)
-                                              Text(
-                                                '🕒 ${formatHistoryDateTime(lotDate)}',
-                                                style: const TextStyle(fontSize: 11, color: Colors.black45),
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                      Text('₹${grandTotal.toStringAsFixed(2)}',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 15,
-                                              color: Colors.blue.shade900)),
-                                    ],
-                                  ),
-                                ),
-
-                                // ── Farmer Allocation List ──
-                                if (allocs.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text('🧑 Farmer Allocations:',
-                                            style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.grey.shade700)),
-                                        const SizedBox(height: 6),
-                                        ...allocs.asMap().entries.map((e) {
-                                          final i = e.key;
-                                          final a = e.value;
-                                          final parts = [
-                                            if (((a['starterQty'] as num?) ?? 0) > 0)
-                                              'S: ${(a['starterQty'] as num).toStringAsFixed(0)}',
-                                            if (((a['growerQty'] as num?) ?? 0) > 0)
-                                              'G: ${(a['growerQty'] as num).toStringAsFixed(0)}',
-                                            if (((a['finisherQty'] as num?) ?? 0) > 0)
-                                              'F: ${(a['finisherQty'] as num).toStringAsFixed(0)}',
-                                          ].join(' | ');
-                                          return InkWell(
-                                            borderRadius: BorderRadius.circular(8),
-                                            onTap: () => _openAllocationDetail(entry, i),
-                                            child: Container(
-                                              margin: const EdgeInsets.only(bottom: 6),
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 12, vertical: 8),
-                                              decoration: BoxDecoration(
-                                                color: Colors.blue.shade50,
-                                                borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(color: Colors.blue.shade200),
-                                              ),
-                                              child: Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                children: [
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment:
-                                                          CrossAxisAlignment.start,
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        Text(
-                                                          '🧑 ${a['farmerName'] ?? '-'}',
-                                                          overflow: TextOverflow.ellipsis,
-                                                          style: const TextStyle(
-                                                              fontSize: 12, fontWeight: FontWeight.w600),
-                                                        ),
-                                                        // ✅ NEW: Batch ID
-                                                        if (a['batchId']?.toString().isNotEmpty ?? false)
-                                                          Text(
-                                                            '🏷️ ${a['batchId']}',
-                                                            style: TextStyle(
-                                                                fontSize: 10,
-                                                                fontWeight: FontWeight.bold,
-                                                                color: Colors.purple.shade700),
-                                                          ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  Text(parts.isEmpty ? '-' : parts,
-                                                      style: const TextStyle(
-                                                          fontSize: 11, fontWeight: FontWeight.bold)),
-                                                  const SizedBox(width: 6),
-                                                  Icon(Icons.chevron_right_rounded,
-                                                      size: 16, color: Colors.grey.shade500),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        }),
-                                      ],
-                                    ),
-                                  ),
-
-                                // ── Private Sales Section (read-only, from sales_screen) ──
-                                if (privateSales.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text('🛒 Private Sales:',
-                                            style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.grey.shade700)),
-                                        const SizedBox(height: 6),
-                                        ...privateSales.map((sale) {
-                                          final parts = [
-                                            if (((sale['starter']?['qty'] as num?) ?? 0) > 0)
-                                              'S: ${(sale['starter']!['qty'] as num).toStringAsFixed(0)}',
-                                            if (((sale['grower']?['qty'] as num?) ?? 0) > 0)
-                                              'G: ${(sale['grower']!['qty'] as num).toStringAsFixed(0)}',
-                                            if (((sale['finisher']?['qty'] as num?) ?? 0) > 0)
-                                              'F: ${(sale['finisher']!['qty'] as num).toStringAsFixed(0)}',
-                                          ].join(' | ');
-                                          return Container(
-                                            margin: const EdgeInsets.only(bottom: 6),
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 8),
-                                            decoration: BoxDecoration(
-                                              color: Colors.green.shade50,
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: Colors.green.shade200),
-                                            ),
-                                            child: Row(
-                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    '🛒 ${sale['buyerName'] ?? '-'}',
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                        fontSize: 12, fontWeight: FontWeight.w600),
-                                                  ),
-                                                ),
-                                                Text(parts.isEmpty ? '-' : parts,
-                                                    style: TextStyle(
-                                                        fontSize: 11,
-                                                        fontWeight: FontWeight.bold,
-                                                        color: Colors.green.shade800)),
-                                              ],
-                                            ),
-                                          );
-                                        }),
-                                      ],
-                                    ),
-                                  ),
-
-                                // ── Allocate Button ──
-                                Padding(
-                                  padding: const EdgeInsets.all(14),
-                                  child: SizedBox(
-                                    width: double.infinity,
-                                    child: ElevatedButton.icon(
-                                      onPressed: anyLeft ? () => _openAllocationForm(entry) : null,
-                                      icon: const Icon(Icons.call_split_rounded, size: 18),
-                                      label: Text(
-                                        anyLeft ? 'Allocate Feed' : 'Fully Allocated',
-                                        style: const TextStyle(fontWeight: FontWeight.bold),
-                                      ),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor:
-                                            anyLeft ? Colors.blue.shade700 : Colors.grey.shade400,
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(10)),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+            child: Row(
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: Colors.blue.shade900,
+                        ),
                       ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Total Kharida: ${total.toStringAsFixed(0)} bag',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      Text(
+                        'Bacha: ${remaining.toStringAsFixed(0)} bag',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: remaining > 0
+                              ? Colors.green.shade700
+                              : Colors.grey,
+                        ),
+                      ),
+                      if (avgCost > 0)
+                        Text(
+                          'Avg Cost: ₹${avgCost.toStringAsFixed(2)} / bag',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black45,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                _navRow(
+                  icon: Icons.history_rounded,
+                  label: 'Purchase History ($purchaseCount baar kharida)',
+                  onTap: () async {
+                    await Get.to(
+                      () => FeedPurchaseHistoryScreen(feedTypeId: id),
+                    );
+                    onChanged();
+                  },
+                ),
+                const SizedBox(height: 8),
+                _navRow(
+                  icon: Icons.people_alt_rounded,
+                  label: 'Farmer Allocations ($allocCount)',
+                  onTap: () async {
+                    await Get.to(
+                      () => FeedFarmerAllocationsListScreen(feedTypeId: id),
+                    );
+                    onChanged();
+                  },
+                ),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _navRow({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.blue.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.blue.shade100),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: Colors.blue.shade700),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blue.shade900,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: Colors.blue.shade400),
+          ],
+        ),
       ),
     );
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🌾 FEED ALLOCATION DIALOG (ADD MODE) — Sirf Apna Farmer (Company), S/G/F qty
+// 🌾 ALLOCATE TO FARMER — single farmer, teeno type ek session mein optional
 // ═══════════════════════════════════════════════════════════════════════════
-Future<void> _showFeedAllocationDialog(
+Future<bool?> _showFeedAllocateToFarmerDialog(
   BuildContext context,
-  Map<String, dynamic> lotEntry,
-  VoidCallback onSaved,
+  List<Map<String, dynamic>> feedStock,
 ) async {
-  final String company = lotEntry['company']?.toString() ?? 'Lot';
-
-  // ── Purchase lots ki info ──
-  double sBags = (lotEntry['starter']?['bags'] as num?)?.toDouble() ?? 0.0;
-  double gBags = (lotEntry['grower']?['bags'] as num?)?.toDouble() ?? 0.0;
-  double fBags = (lotEntry['finisher']?['bags'] as num?)?.toDouble() ?? 0.0;
-  // Company ka purchase rate (per bag) — readonly info
-  double sPurchaseRate = (lotEntry['starter']?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
-  double gPurchaseRate = (lotEntry['grower']?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
-  double fPurchaseRate = (lotEntry['finisher']?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
-
-  // ── Farmer allocations already ho chuki ──
-  List<Map<String, dynamic>> savedAllocations = List<Map<String, dynamic>>.from(
-    (lotEntry['allocations'] as List<dynamic>?)
-            ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
-        [],
-  );
-  double allocS = 0, allocG = 0, allocF = 0;
-  for (final a in savedAllocations) {
-    allocS += (a['starterQty'] as num?)?.toDouble() ?? 0.0;
-    allocG += (a['growerQty'] as num?)?.toDouble() ?? 0.0;
-    allocF += (a['finisherQty'] as num?)?.toDouble() ?? 0.0;
+  double availFor(String id) {
+    final entry = feedStock.firstWhere((s) => s['id'] == id, orElse: () => {});
+    if (entry.isEmpty) return 0.0;
+    return computeFeedRemaining(entry);
   }
 
-  // ── Private sales bhi minus karo ──
-  double soldS = 0, soldG = 0, soldF = 0;
-  final String? salesJson = await CompanyStore.instance.getString('feedSalesHistory');
-  if (salesJson != null) {
-    try {
-      final List<dynamic> rawSales = json.decode(salesJson);
-      for (final sale in rawSales) {
-        if (sale['lotName']?.toString() == company) {
-          soldS += (sale['starter']?['qty'] as num?)?.toDouble() ?? 0.0;
-          soldG += (sale['grower']?['qty'] as num?)?.toDouble() ?? 0.0;
-          soldF += (sale['finisher']?['qty'] as num?)?.toDouble() ?? 0.0;
-        }
-      }
-    } catch (_) {}
+  double avgCostFor(String id) {
+    final entry = feedStock.firstWhere((s) => s['id'] == id, orElse: () => {});
+    return (entry['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
   }
 
-  double availS = (sBags - allocS - soldS).clamp(0.0, double.infinity);
-  double availG = (gBags - allocG - soldG).clamp(0.0, double.infinity);
-  double availF = (fBags - allocF - soldF).clamp(0.0, double.infinity);
+  final double availS = availFor('starter');
+  final double availG = availFor('grower');
+  final double availF = availFor('finisher');
 
-  // ── Settlement config se farmer billing rate load karo ──
-  // rule1SettlementConfig mein bigFeedRate (₹/kg) × bigKgPerBag = ₹/bag
-  double bigBillingPerBag = 42.0 * 50.0; // default fallback
-  double smBillingPerBag = 42.0 * 50.0;
+  double defaultBillingPerBag = 42.0 * 50.0;
+  double feedKgPerBagCfg = 50.0;
   try {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
     final String? r1Json = prefs.getString('rule1SettlementConfig');
     if (r1Json != null) {
       final Map<String, dynamic> r1 = json.decode(r1Json);
       final double bigFeedRate = (r1['bigFeedRate'] ?? 42.0).toDouble();
       final double bigKgPerBag = (r1['bigKgPerBag'] ?? 50.0).toDouble();
-      final double smFeedRate = (r1['smFeedRate'] ?? 42.0).toDouble();
-      final double smKgPerBag = (r1['smKgPerBag'] ?? 50.0).toDouble();
-      bigBillingPerBag = bigFeedRate * bigKgPerBag;
-      smBillingPerBag = smFeedRate * smKgPerBag;
+      defaultBillingPerBag = bigFeedRate * bigKgPerBag;
+      feedKgPerBagCfg = bigKgPerBag;
     }
   } catch (_) {}
-  // Default: Big Size rate use karo (most common)
-  double defaultBillingPerBag = bigBillingPerBag;
 
-  // ── Company farmers load karo ──
-  List<dynamic> rawFarmers = await CompanyStore.instance.getJsonList('companyFarmers');
+  List<dynamic> rawFarmers = await CompanyStore.instance.getJsonList(
+    'companyFarmers',
+  );
   List<String> farmerOptions = rawFarmers.map((f) {
     String name = f['name']?.toString() ?? 'Unknown';
     String mobile = f['phone']?.toString() ?? 'No Mobile';
     String location = f['district']?.toString() ?? 'No Location';
     return "$name - $mobile - $location";
   }).toList();
-  // ✅ NEW: display-string → farmerId map (batch link/create ke liye)
   final Map<String, String> farmerDisplayToId = {};
   for (int fi = 0; fi < rawFarmers.length; fi++) {
-    farmerDisplayToId[farmerOptions[fi]] = rawFarmers[fi]['id']?.toString() ?? '';
+    farmerDisplayToId[farmerOptions[fi]] =
+        rawFarmers[fi]['id']?.toString() ?? '';
   }
-  // ✅ NEW: Big/Small size ka kgPerBag — feed KG track karne ke liye
-  double bigKgPerBagCfg = 50.0;
-  double smKgPerBagCfg = 50.0;
-  try {
-    final SharedPreferences prefs2 = await SharedPreferences.getInstance();
-    final String? r1Json2 = prefs2.getString('rule1SettlementConfig');
-    if (r1Json2 != null) {
-      final Map<String, dynamic> r1b = json.decode(r1Json2);
-      bigKgPerBagCfg = (r1b['bigKgPerBag'] ?? 50.0).toDouble();
-      smKgPerBagCfg = (r1b['smKgPerBag'] ?? 50.0).toDouble();
-    }
-  } catch (_) {}
-  final double feedKgPerBagCfg = bigKgPerBagCfg > 0 ? bigKgPerBagCfg : smKgPerBagCfg;
 
   final farmerSearchCtrl = TextEditingController();
   String? selectedFarmer;
@@ -3332,13 +3343,19 @@ Future<void> _showFeedAllocationDialog(
   bool dropdownVisible = false;
 
   final starterQtyCtrl = TextEditingController();
-  final starterRateCtrl = TextEditingController(text: defaultBillingPerBag.toStringAsFixed(2));
+  final starterRateCtrl = TextEditingController(
+    text: defaultBillingPerBag.toStringAsFixed(2),
+  );
   final growerQtyCtrl = TextEditingController();
-  final growerRateCtrl = TextEditingController(text: defaultBillingPerBag.toStringAsFixed(2));
+  final growerRateCtrl = TextEditingController(
+    text: defaultBillingPerBag.toStringAsFixed(2),
+  );
   final finisherQtyCtrl = TextEditingController();
-  final finisherRateCtrl = TextEditingController(text: defaultBillingPerBag.toStringAsFixed(2));
+  final finisherRateCtrl = TextEditingController(
+    text: defaultBillingPerBag.toStringAsFixed(2),
+  );
 
-  showDialog(
+  return showDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (context) => Dialog.fullscreen(
@@ -3347,68 +3364,57 @@ Future<void> _showFeedAllocationDialog(
           return Scaffold(
             backgroundColor: const Color(0xFFF9FBF9),
             appBar: AppBar(
-              backgroundColor: Colors.blue.shade800,
+              backgroundColor: Colors.orange.shade800,
               elevation: 0,
               leading: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(context, false),
               ),
-              title: const Text('Feed Allocate Karo',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              title: const Text(
+                'Feed Allocate Karo',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
             ),
             body: Column(
               children: [
-                // ── TOP: Stock Box ──
                 Container(
                   padding: const EdgeInsets.all(16),
-                  color: Colors.blue.shade800,
+                  color: Colors.orange.shade800,
                   width: double.infinity,
-                  child: Row(
-                    children: [
-                      const Text('🌾', style: TextStyle(fontSize: 30)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Lot: $company',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14)),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Bacha: S ${availS.toStringAsFixed(0)} | G ${availG.toStringAsFixed(0)} | F ${availF.toStringAsFixed(0)} Bag',
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 13),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    'Bacha: S ${availS.toStringAsFixed(0)} | G ${availG.toStringAsFixed(0)} | F ${availF.toStringAsFixed(0)} Bag',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
-
-                // ── FIELDS ──
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Apna Farmer search
                         TextField(
                           controller: farmerSearchCtrl,
                           decoration: InputDecoration(
-                            labelText: 'Apna Farmer Search Karein (Naam, Mobile ya Jagah) *',
+                            labelText:
+                                'Apna Farmer Search Karein (Naam, Mobile ya Jagah) *',
                             prefixIcon: const Icon(Icons.search_rounded),
                             suffixIcon: selectedFarmer != null
-                                ? const Icon(Icons.check_circle_rounded, color: Colors.green)
+                                ? const Icon(
+                                    Icons.check_circle_rounded,
+                                    color: Colors.green,
+                                  )
                                 : null,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                             helperText: selectedFarmer != null
                                 ? '✅ Selected: $selectedFarmer'
                                 : 'Type karein aur neeche se select karein',
@@ -3420,73 +3426,100 @@ Future<void> _showFeedAllocationDialog(
                             selectedFarmerId = null;
                           }),
                         ),
-                        if (dropdownVisible && farmerSearchCtrl.text.isNotEmpty) ...[
+                        if (dropdownVisible &&
+                            farmerSearchCtrl.text.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Container(
                             constraints: const BoxConstraints(maxHeight: 160),
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              border: Border.all(color: Colors.blue.shade200),
+                              border: Border.all(color: Colors.orange.shade200),
                               borderRadius: BorderRadius.circular(10),
                               boxShadow: [
                                 BoxShadow(
-                                    color: Colors.black.withOpacity(0.08),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 3)),
+                                  color: Colors.black.withOpacity(0.08),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 3),
+                                ),
                               ],
                             ),
-                            child: Builder(builder: (ctx) {
-                              final query = farmerSearchCtrl.text.toLowerCase();
-                              final filtered = farmerOptions
-                                  .where((f) => f.toLowerCase().contains(query))
-                                  .toList();
-                              if (filtered.isEmpty) {
-                                return const Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: Text('Koi farmer nahi mila',
-                                      style: TextStyle(color: Colors.grey)),
-                                );
-                              }
-                              return ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: filtered.length,
-                                itemBuilder: (ctx2, fi) {
-                                  final option = filtered[fi];
-                                  return InkWell(
-                                    onTap: () => setModalState(() {
-                                      selectedFarmer = option;
-                                      selectedFarmerId = farmerDisplayToId[option];
-                                      farmerSearchCtrl.text = option;
-                                      dropdownVisible = false;
-                                    }),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 14, vertical: 10),
-                                      child: Text(option, style: const TextStyle(fontSize: 13)),
+                            child: Builder(
+                              builder: (ctx) {
+                                final query = farmerSearchCtrl.text
+                                    .toLowerCase();
+                                final filtered = farmerOptions
+                                    .where(
+                                      (f) => f.toLowerCase().contains(query),
+                                    )
+                                    .toList();
+                                if (filtered.isEmpty) {
+                                  return const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: Text(
+                                      'Koi farmer nahi mila',
+                                      style: TextStyle(color: Colors.grey),
                                     ),
                                   );
-                                },
-                              );
-                            }),
+                                }
+                                return ListView.builder(
+                                  shrinkWrap: true,
+                                  itemCount: filtered.length,
+                                  itemBuilder: (ctx2, fi) {
+                                    final option = filtered[fi];
+                                    return InkWell(
+                                      onTap: () => setModalState(() {
+                                        selectedFarmer = option;
+                                        selectedFarmerId =
+                                            farmerDisplayToId[option];
+                                        farmerSearchCtrl.text = option;
+                                        dropdownVisible = false;
+                                      }),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 10,
+                                        ),
+                                        child: Text(
+                                          option,
+                                          style: const TextStyle(fontSize: 13),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                           ),
                         ],
                         const SizedBox(height: 20),
-
-                        if (sBags > 0)
-                          _feedAllocInput('Starter', starterQtyCtrl, starterRateCtrl,
-                              availS, sPurchaseRate, setModalState),
-                        if (gBags > 0)
-                          _feedAllocInput('Grower', growerQtyCtrl, growerRateCtrl,
-                              availG, gPurchaseRate, setModalState),
-                        if (fBags > 0)
-                          _feedAllocInput('Finisher', finisherQtyCtrl, finisherRateCtrl,
-                              availF, fPurchaseRate, setModalState),
+                        _feedAllocInput(
+                          'Starter',
+                          starterQtyCtrl,
+                          starterRateCtrl,
+                          availS,
+                          avgCostFor('starter'),
+                          setModalState,
+                        ),
+                        _feedAllocInput(
+                          'Grower',
+                          growerQtyCtrl,
+                          growerRateCtrl,
+                          availG,
+                          avgCostFor('grower'),
+                          setModalState,
+                        ),
+                        _feedAllocInput(
+                          'Finisher',
+                          finisherQtyCtrl,
+                          finisherRateCtrl,
+                          availF,
+                          avgCostFor('finisher'),
+                          setModalState,
+                        ),
                       ],
                     ),
                   ),
                 ),
-
-                // ── SAVE BUTTON ──
                 Container(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                   color: Colors.white,
@@ -3494,63 +3527,92 @@ Future<void> _showFeedAllocationDialog(
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () async {
-                        final String farmerName = (selectedFarmer ?? farmerSearchCtrl.text).trim();
+                        final String farmerName =
+                            (selectedFarmer ?? farmerSearchCtrl.text).trim();
                         double sQty = double.tryParse(starterQtyCtrl.text) ?? 0.0;
                         double gQty = double.tryParse(growerQtyCtrl.text) ?? 0.0;
-                        double fQty = double.tryParse(finisherQtyCtrl.text) ?? 0.0;
+                        double fQty =
+                            double.tryParse(finisherQtyCtrl.text) ?? 0.0;
 
                         if (farmerName.isEmpty) {
-                          Get.snackbar('Error', 'Farmer select karein.',
-                              backgroundColor: Colors.red, colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Farmer select karein.',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
                         if (sQty <= 0 && gQty <= 0 && fQty <= 0) {
-                          Get.snackbar('Error', 'Kam se kam ek type ki quantity bharein.',
-                              backgroundColor: Colors.red, colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Kam se kam ek type ki quantity bharein.',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
                         if (sQty > availS) {
-                          Get.snackbar('Error',
-                              'Starter: sirf ${availS.toStringAsFixed(0)} bag available hai',
-                              backgroundColor: Colors.red, colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Starter: sirf ${availS.toStringAsFixed(0)} bag available hai',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
                         if (gQty > availG) {
-                          Get.snackbar('Error',
-                              'Grower: sirf ${availG.toStringAsFixed(0)} bag available hai',
-                              backgroundColor: Colors.red, colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Grower: sirf ${availG.toStringAsFixed(0)} bag available hai',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
                         if (fQty > availF) {
-                          Get.snackbar('Error',
-                              'Finisher: sirf ${availF.toStringAsFixed(0)} bag available hai',
-                              backgroundColor: Colors.red, colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Finisher: sirf ${availF.toStringAsFixed(0)} bag available hai',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
+                          return;
+                        }
+                        if (selectedFarmerId == null ||
+                            selectedFarmerId!.isEmpty) {
+                          Get.snackbar(
+                            'Farmer Select Karein ⚠️',
+                            'Kripya dropdown list se hi farmer select karein.',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
 
-                        // ✅ NEW: farmerId zaroori hai batch link karne ke liye
-                        if (selectedFarmerId == null || selectedFarmerId!.isEmpty) {
-                          Get.snackbar('Farmer Select Karein ⚠️',
-                              'Kripya dropdown list se hi farmer select karein.',
-                              backgroundColor: Colors.red, colorText: Colors.white);
-                          return;
-                        }
-
-                        // ✅ NEW: Farmer ka batch dhoondo (running ya back/completed)
                         List<Map<String, dynamic>> farmersForBatch =
-                            await CompanyStore.instance.getJsonList('companyFarmers');
+                            await CompanyStore.instance.getJsonList(
+                              'companyFarmers',
+                            );
                         Map<String, dynamic>? farmerMap;
                         int farmerIdxInList = -1;
                         for (int fi = 0; fi < farmersForBatch.length; fi++) {
-                          if (farmersForBatch[fi]['id']?.toString() == selectedFarmerId) {
-                            farmerMap = Map<String, dynamic>.from(farmersForBatch[fi]);
+                          if (farmersForBatch[fi]['id']?.toString() ==
+                              selectedFarmerId) {
+                            farmerMap = Map<String, dynamic>.from(
+                              farmersForBatch[fi],
+                            );
                             farmerIdxInList = fi;
                             break;
                           }
                         }
                         if (farmerMap == null) {
-                          Get.snackbar('Error', 'Farmer record nahi mila.',
-                              backgroundColor: Colors.red, colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Farmer record nahi mila.',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
 
@@ -3559,14 +3621,16 @@ Future<void> _showFeedAllocationDialog(
                         if (runningBatch != null) {
                           linkedBatchId = runningBatch['batchId']?.toString();
                         } else {
-                          // ✅ Koi running batch nahi — poochho: Naya ya Back-batch?
-                          final completedBatches = findCompletedBatches(farmerMap);
+                          final completedBatches = findCompletedBatches(
+                            farmerMap,
+                          );
                           final String? choice = await showDialog<String>(
                             context: context,
                             barrierDismissible: false,
                             builder: (ctx) => AlertDialog(
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14)),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
                               title: const Text('Batch Nahi Mila ⚠️'),
                               content: Text(
                                 '$farmerName ka koi RUNNING batch nahi hai.\n\n'
@@ -3575,21 +3639,28 @@ Future<void> _showFeedAllocationDialog(
                               ),
                               actions: [
                                 TextButton(
-                                  onPressed: () => Navigator.pop(ctx, 'cancel'),
-                                  child: const Text('Cancel',
-                                      style: TextStyle(color: Colors.grey)),
+                                  onPressed: () =>
+                                      Navigator.pop(ctx, 'cancel'),
+                                  child: const Text(
+                                    'Cancel',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
                                 ),
                                 if (completedBatches.isNotEmpty)
                                   TextButton(
-                                    onPressed: () => Navigator.pop(ctx, 'old'),
+                                    onPressed: () =>
+                                        Navigator.pop(ctx, 'old'),
                                     child: const Text('Purane Batch Ka'),
                                   ),
                                 ElevatedButton(
                                   onPressed: () => Navigator.pop(ctx, 'new'),
                                   style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.blue.shade800),
-                                  child: const Text('Naya Batch',
-                                      style: TextStyle(color: Colors.white)),
+                                    backgroundColor: Colors.blue.shade800,
+                                  ),
+                                  child: const Text(
+                                    'Naya Batch',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
                                 ),
                               ],
                             ),
@@ -3600,42 +3671,46 @@ Future<void> _showFeedAllocationDialog(
                           if (choice == 'old') {
                             final Map<String, dynamic>? picked =
                                 await showDialog<Map<String, dynamic>>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text('Batch Chuniye'),
-                                content: SizedBox(
-                                  width: double.maxFinite,
-                                  child: ListView.builder(
-                                    shrinkWrap: true,
-                                    itemCount: completedBatches.length,
-                                    itemBuilder: (c, bi) {
-                                      final b = completedBatches[bi];
-                                      return ListTile(
-                                        title: Text(b['batchId']?.toString() ?? '-'),
-                                        subtitle: Text(
-                                            '${b['chicksCount']} chicks | ${b['startDate'] ?? ''}'),
-                                        onTap: () => Navigator.pop(ctx, b),
-                                      );
-                                    },
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('Batch Chuniye'),
+                                    content: SizedBox(
+                                      width: double.maxFinite,
+                                      child: ListView.builder(
+                                        shrinkWrap: true,
+                                        itemCount: completedBatches.length,
+                                        itemBuilder: (c, bi) {
+                                          final b = completedBatches[bi];
+                                          return ListTile(
+                                            title: Text(
+                                              b['batchId']?.toString() ?? '-',
+                                            ),
+                                            subtitle: Text(
+                                              '${b['chicksCount']} chicks | ${b['startDate'] ?? ''}',
+                                            ),
+                                            onTap: () =>
+                                                Navigator.pop(ctx, b),
+                                          );
+                                        },
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                            );
+                                );
                             if (picked == null) return;
                             linkedBatchId = picked['batchId']?.toString();
                           }
-                          // choice == 'new' → linkedBatchId stays null (purana
-                          // behavior — allocation save hogi bina kisi batch link ke)
                         }
 
                         final String allocatedByRole =
                             await SessionService.currentRole ?? 'Owner';
                         final String allocatedByName =
                             await SessionService.currentName ?? '';
+                        final String groupId = DateTime.now()
+                            .millisecondsSinceEpoch
+                            .toString();
+                        final String allocDate = DateTime.now()
+                            .toIso8601String();
 
-                        // ✅ NEW: Agar batch mila (running ya back), to us batch ki
-                        // dailyEntries mein seedha cost-entry add karo — taaki
-                        // Batch Tracking Details/Daily Update List mein wahi se dikhe.
                         if (linkedBatchId != null && farmerIdxInList >= 0) {
                           final target = farmersForBatch[farmerIdxInList];
                           for (var b in (target['batches'] ?? [])) {
@@ -3643,8 +3718,8 @@ Future<void> _showFeedAllocationDialog(
                               final now = DateTime.now();
                               final dateStr =
                                   '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
-                              final int totalBags =
-                                  (sQty + gQty + fQty).toInt();
+                              final int totalBags = (sQty + gQty + fQty)
+                                  .toInt();
                               b['dailyEntries'] ??= [];
                               b['dailyEntries'].add({
                                 'type': 'cost',
@@ -3655,7 +3730,8 @@ Future<void> _showFeedAllocationDialog(
                                 'feedStarterBags': sQty.toInt(),
                                 'feedGrowerBags': gQty.toInt(),
                                 'feedFinisherBags': fQty.toInt(),
-                                'feedTotalKg': (sQty + gQty + fQty) * feedKgPerBagCfg,
+                                'feedTotalKg':
+                                    (sQty + gQty + fQty) * feedKgPerBagCfg,
                                 'remainingFeed': '0',
                                 'enteredBy': allocatedByRole,
                                 'timestamp': now.toIso8601String(),
@@ -3664,56 +3740,75 @@ Future<void> _showFeedAllocationDialog(
                               break;
                             }
                           }
-                          await CompanyStore.instance
-                              .saveJsonList('companyFarmers', farmersForBatch);
+                          await CompanyStore.instance.saveJsonList(
+                            'companyFarmers',
+                            farmersForBatch,
+                          );
                         }
 
-                        savedAllocations.add({
-                          'id': DateTime.now().millisecondsSinceEpoch.toString(),
-                          'farmerName': farmerName,
-                          'farmerId': selectedFarmerId,
-                          'batchId': linkedBatchId, // ✅ NEW: is batch ko gaya
-                          'starterQty': sQty,
-                          'starterRate': double.tryParse(starterRateCtrl.text) ?? 0.0,
-                          'growerQty': gQty,
-                          'growerRate': double.tryParse(growerRateCtrl.text) ?? 0.0,
-                          'finisherQty': fQty,
-                          'finisherRate': double.tryParse(finisherRateCtrl.text) ?? 0.0,
-                          'allocatedOn': DateTime.now().toIso8601String(),
-                          'allocatedByName': allocatedByName,
-                          'allocatedByRole': allocatedByRole,
-                        });
-
-                        final String? jsonStr =
-                            await CompanyStore.instance.getString('feedPurchaseHistory');
-                        List<dynamic> allEntries = [];
-                        if (jsonStr != null) {
-                          try {
-                            allEntries = json.decode(jsonStr);
-                          } catch (_) {}
+                        List<Map<String, dynamic>> stock =
+                            await ensureFeedStockMigrated();
+                        final Map<String, double> qtyByType = {
+                          'starter': sQty,
+                          'grower': gQty,
+                          'finisher': fQty,
+                        };
+                        final Map<String, TextEditingController> rateByType = {
+                          'starter': starterRateCtrl,
+                          'grower': growerRateCtrl,
+                          'finisher': finisherRateCtrl,
+                        };
+                        for (final id in kFeedTypeIds) {
+                          final qty = qtyByType[id] ?? 0.0;
+                          if (qty <= 0) continue;
+                          final idx = stock.indexWhere((s) => s['id'] == id);
+                          if (idx == -1) continue;
+                          final allocs =
+                              (stock[idx]['allocations'] as List?) ?? [];
+                          allocs.add({
+                            'id': '$groupId-$id',
+                            'groupId': groupId,
+                            'farmerName': farmerName,
+                            'farmerId': selectedFarmerId,
+                            'batchId': linkedBatchId,
+                            'qty': qty,
+                            'rate':
+                                double.tryParse(rateByType[id]!.text) ?? 0.0,
+                            'allocatedOn': allocDate,
+                            'allocatedByName': allocatedByName,
+                            'allocatedByRole': allocatedByRole,
+                          });
+                          stock[idx]['allocations'] = allocs;
                         }
-                        for (int i = 0; i < allEntries.length; i++) {
-                          if (allEntries[i]['date'] == lotEntry['date']) {
-                            allEntries[i]['allocations'] = savedAllocations;
-                            break;
-                          }
-                        }
-                        await CompanyStore.instance
-                            .setString('feedPurchaseHistory', json.encode(allEntries));
+                        await CompanyStore.instance.saveJsonList(
+                          'feedStockList',
+                          stock,
+                        );
 
-                        Navigator.pop(context);
-                        Get.snackbar('Saved ✅', 'Feed allocate ho gaya!',
-                            backgroundColor: Colors.green, colorText: Colors.white);
-                        onSaved();
+                        if (!context.mounted) return;
+                        Navigator.pop(context, true);
+                        Get.snackbar(
+                          'Saved ✅',
+                          'Feed allocate ho gaya!',
+                          backgroundColor: Colors.green,
+                          colorText: Colors.white,
+                        );
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade700,
+                        backgroundColor: Colors.orange.shade800,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
-                      child: const Text('Save Allocation',
-                          style: TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      child: const Text(
+                        'Save Allocation',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -3843,207 +3938,475 @@ Widget _feedAllocInput(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🌾 FEED ALLOCATION DETAIL SCREEN — Edit + Delete (with confirm popup)
+// 📜 FEED PURCHASE HISTORY SCREEN (per type)
 // ═══════════════════════════════════════════════════════════════════════════
-class FeedAllocationDetailScreen extends StatefulWidget {
-  final Map<String, dynamic> lotEntry;
-  final int allocIndex;
-  const FeedAllocationDetailScreen({
-    super.key,
-    required this.lotEntry,
-    required this.allocIndex,
-  });
+class FeedPurchaseHistoryScreen extends StatefulWidget {
+  final String feedTypeId;
+  const FeedPurchaseHistoryScreen({super.key, required this.feedTypeId});
 
   @override
-  State<FeedAllocationDetailScreen> createState() => _FeedAllocationDetailScreenState();
+  State<FeedPurchaseHistoryScreen> createState() =>
+      _FeedPurchaseHistoryScreenState();
 }
 
-class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen> {
-  bool _isEditMode = false;
+class _FeedPurchaseHistoryScreenState
+    extends State<FeedPurchaseHistoryScreen> {
+  List<Map<String, dynamic>> _history = [];
+  String _name = '';
   bool _isLoading = true;
-  Map<String, dynamic>? _currentLotEntry;
-  Map<String, dynamic>? _alloc;
-
-  final _nameCtrl = TextEditingController();
-  final _starterQtyCtrl = TextEditingController();
-  final _starterRateCtrl = TextEditingController();
-  final _growerQtyCtrl = TextEditingController();
-  final _growerRateCtrl = TextEditingController();
-  final _finisherQtyCtrl = TextEditingController();
-  final _finisherRateCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _loadAlloc();
+    _load();
   }
 
-  Future<void> _loadAlloc() async {
-    final String? jsonStr = await CompanyStore.instance.getString('feedPurchaseHistory');
-    List<dynamic> allEntries = [];
-    if (jsonStr != null) {
-      try {
-        allEntries = json.decode(jsonStr);
-      } catch (_) {}
-    }
-    Map<String, dynamic>? freshEntry;
-    for (final e in allEntries) {
-      if (e['date'] == widget.lotEntry['date']) {
-        freshEntry = Map<String, dynamic>.from(e);
-        break;
-      }
-    }
-    freshEntry ??= widget.lotEntry;
-    final allocs = List<Map<String, dynamic>>.from(
-      (freshEntry['allocations'] as List<dynamic>?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
-          [],
+  Future<void> _load() async {
+    setState(() => _isLoading = true);
+    final stock = await ensureFeedStockMigrated();
+    final entry = stock.firstWhere(
+      (s) => s['id'] == widget.feedTypeId,
+      orElse: () => {},
     );
-    final alloc = (widget.allocIndex >= 0 && widget.allocIndex < allocs.length)
-        ? allocs[widget.allocIndex]
-        : <String, dynamic>{};
-
-    _nameCtrl.text = alloc['farmerName']?.toString() ?? '';
-    _starterQtyCtrl.text = ((alloc['starterQty'] as num?) ?? 0).toString();
-    _starterRateCtrl.text = ((alloc['starterRate'] as num?) ?? 0).toString();
-    _growerQtyCtrl.text = ((alloc['growerQty'] as num?) ?? 0).toString();
-    _growerRateCtrl.text = ((alloc['growerRate'] as num?) ?? 0).toString();
-    _finisherQtyCtrl.text = ((alloc['finisherQty'] as num?) ?? 0).toString();
-    _finisherRateCtrl.text = ((alloc['finisherRate'] as num?) ?? 0).toString();
-
+    final hist = List<Map<String, dynamic>>.from(
+      ((entry['purchaseHistory'] as List?) ?? []).map(
+        (e) => Map<String, dynamic>.from(e as Map),
+      ),
+    );
+    hist.sort(
+      (a, b) =>
+          (b['date'] ?? '').toString().compareTo((a['date'] ?? '').toString()),
+    );
     if (mounted) {
       setState(() {
-        _currentLotEntry = freshEntry;
-        _alloc = alloc;
+        _history = hist;
+        _name = entry['name']?.toString() ?? kFeedTypeNames[widget.feedTypeId] ?? '';
         _isLoading = false;
       });
     }
   }
 
-  double _availFor(String type) {
-    final entry = _currentLotEntry!;
-    double purchased = (entry[type]?['bags'] as num?)?.toDouble() ?? 0.0;
-    final allocs = List<Map<String, dynamic>>.from(
-      (entry['allocations'] as List<dynamic>?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
-          [],
-    );
-    double allocatedElsewhere = 0;
-    final String key =
-        type == 'starter' ? 'starterQty' : (type == 'grower' ? 'growerQty' : 'finisherQty');
-    for (int i = 0; i < allocs.length; i++) {
-      if (i == widget.allocIndex) continue;
-      allocatedElsewhere += (allocs[i][key] as num?)?.toDouble() ?? 0.0;
-    }
-    return purchased - allocatedElsewhere;
-  }
-
-  Future<void> _save() async {
-    double sQty = double.tryParse(_starterQtyCtrl.text) ?? 0.0;
-    double gQty = double.tryParse(_growerQtyCtrl.text) ?? 0.0;
-    double fQty = double.tryParse(_finisherQtyCtrl.text) ?? 0.0;
-
-    if (sQty > _availFor('starter')) {
-      Get.snackbar('Error', 'Starter: sirf ${_availFor('starter').toStringAsFixed(0)} bag available hai',
-          backgroundColor: Colors.red, colorText: Colors.white);
-      return;
-    }
-    if (gQty > _availFor('grower')) {
-      Get.snackbar('Error', 'Grower: sirf ${_availFor('grower').toStringAsFixed(0)} bag available hai',
-          backgroundColor: Colors.red, colorText: Colors.white);
-      return;
-    }
-    if (fQty > _availFor('finisher')) {
-      Get.snackbar('Error', 'Finisher: sirf ${_availFor('finisher').toStringAsFixed(0)} bag available hai',
-          backgroundColor: Colors.red, colorText: Colors.white);
-      return;
-    }
-
-    final String? jsonStr = await CompanyStore.instance.getString('feedPurchaseHistory');
-    List<dynamic> allEntries = [];
-    if (jsonStr != null) {
-      try {
-        allEntries = json.decode(jsonStr);
-      } catch (_) {}
-    }
-    for (int i = 0; i < allEntries.length; i++) {
-      if (allEntries[i]['date'] == _currentLotEntry!['date']) {
-        List<dynamic> allocs = allEntries[i]['allocations'] ?? [];
-        if (widget.allocIndex >= 0 && widget.allocIndex < allocs.length) {
-          allocs[widget.allocIndex] = {
-            ...Map<String, dynamic>.from(allocs[widget.allocIndex]),
-            'farmerName': _nameCtrl.text.trim(),
-            'starterQty': sQty,
-            'starterRate': double.tryParse(_starterRateCtrl.text) ?? 0.0,
-            'growerQty': gQty,
-            'growerRate': double.tryParse(_growerRateCtrl.text) ?? 0.0,
-            'finisherQty': fQty,
-            'finisherRate': double.tryParse(_finisherRateCtrl.text) ?? 0.0,
-            'editedOn': DateTime.now().toIso8601String(),
-          };
-        }
-        allEntries[i]['allocations'] = allocs;
-        break;
-      }
-    }
-    await CompanyStore.instance.setString('feedPurchaseHistory', json.encode(allEntries));
-    Get.back(result: true);
-    Get.snackbar('Updated ✅', 'Allocation update ho gaya', backgroundColor: Colors.green, colorText: Colors.white);
-  }
-
-  Future<void> _confirmDelete() async {
-    final bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Karein?'),
-        content: const Text(
-            'Kya aap is farmer ki allocation info ko delete karna chahte hain? Yeh permanent hai.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Yes, Delete'),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.blue.shade700,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
           ),
-        ],
+          onPressed: () => Get.back(),
+        ),
+        title: Text(
+          '📜 $_name — Purchase History',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+        ),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _history.isEmpty
+          ? const Center(child: Text('Koi purchase record nahi.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _history.length,
+              itemBuilder: (context, i) {
+                final h = _history[i];
+                final double bags = (h['bags'] as num?)?.toDouble() ?? 0.0;
+                final double perBag =
+                    (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            h['company']?.toString() ?? '-',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            '₹${(bags * perBag).toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${bags.toStringAsFixed(0)} bag @ ₹${perBag.toStringAsFixed(2)}/bag',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      if ((h['addedByName']?.toString() ?? '').isNotEmpty)
+                        Text(
+                          '👤 ${h['addedByRole'] ?? ''}: ${h['addedByName']}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      if ((h['date']?.toString() ?? '').isNotEmpty)
+                        Text(
+                          '🕒 ${formatHistoryDateTime(h['date'].toString())}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black45,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🧑 FEED FARMER ALLOCATIONS LIST SCREEN (per type)
+// ═══════════════════════════════════════════════════════════════════════════
+class FeedFarmerAllocationsListScreen extends StatefulWidget {
+  final String feedTypeId;
+  const FeedFarmerAllocationsListScreen({super.key, required this.feedTypeId});
+
+  @override
+  State<FeedFarmerAllocationsListScreen> createState() =>
+      _FeedFarmerAllocationsListScreenState();
+}
+
+class _FeedFarmerAllocationsListScreenState
+    extends State<FeedFarmerAllocationsListScreen> {
+  List<Map<String, dynamic>> _allocs = [];
+  String _name = '';
+  bool _isLoading = true;
+  bool _changed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _isLoading = true);
+    final stock = await ensureFeedStockMigrated();
+    final entry = stock.firstWhere(
+      (s) => s['id'] == widget.feedTypeId,
+      orElse: () => {},
+    );
+    final allocs = List<Map<String, dynamic>>.from(
+      ((entry['allocations'] as List?) ?? []).map(
+        (e) => Map<String, dynamic>.from(e as Map),
       ),
     );
-
-    if (confirm == true) {
-      final String? jsonStr = await CompanyStore.instance.getString('feedPurchaseHistory');
-      List<dynamic> allEntries = [];
-      if (jsonStr != null) {
-        try {
-          allEntries = json.decode(jsonStr);
-        } catch (_) {}
-      }
-      for (int i = 0; i < allEntries.length; i++) {
-        if (allEntries[i]['date'] == _currentLotEntry!['date']) {
-          List<dynamic> allocs = allEntries[i]['allocations'] ?? [];
-          if (widget.allocIndex >= 0 && widget.allocIndex < allocs.length) {
-            allocs.removeAt(widget.allocIndex);
-          }
-          allEntries[i]['allocations'] = allocs;
-          break;
-        }
-      }
-      await CompanyStore.instance.setString('feedPurchaseHistory', json.encode(allEntries));
-      Get.back(result: true);
-      Get.snackbar('Deleted 🗑️', 'Farmer Allocation Delete Ho Gaya',
-          backgroundColor: Colors.red, colorText: Colors.white);
+    allocs.sort(
+      (a, b) => (b['allocatedOn'] ?? '').toString().compareTo(
+        (a['allocatedOn'] ?? '').toString(),
+      ),
+    );
+    if (mounted) {
+      setState(() {
+        _allocs = allocs;
+        _name = entry['name']?.toString() ?? kFeedTypeNames[widget.feedTypeId] ?? '';
+        _isLoading = false;
+      });
     }
   }
 
   @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _starterQtyCtrl.dispose();
-    _starterRateCtrl.dispose();
-    _growerQtyCtrl.dispose();
-    _growerRateCtrl.dispose();
-    _finisherQtyCtrl.dispose();
-    _finisherRateCtrl.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) Get.back(result: _changed);
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.blue.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(result: _changed),
+          ),
+          title: Text(
+            '🧑 $_name — Farmer Allocations',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _allocs.isEmpty
+            ? const Center(child: Text('Koi allocation nahi.'))
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _allocs.length,
+                itemBuilder: (context, i) {
+                  final a = _allocs[i];
+                  final String date = formatHistoryDateTime(
+                    a['allocatedOn']?.toString(),
+                  );
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () async {
+                      final result = await Get.to(
+                        () => FeedAllocationDetailScreen(
+                          feedTypeId: widget.feedTypeId,
+                          allocIndex: i,
+                        ),
+                      );
+                      if (result == true) {
+                        _changed = true;
+                        _load();
+                      }
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.shade100),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '🧑 ${a['farmerName'] ?? '-'}',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (a['batchId']?.toString().isNotEmpty ??
+                                    false)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      '🏷️ Batch: ${a['batchId']}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.purple.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                if (date.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 3),
+                                    child: Text(
+                                      date,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade500,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '${((a['qty'] as num?) ?? 0).toStringAsFixed(0)} bag',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: Colors.grey.shade500,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✏️ FEED ALLOCATION DETAIL SCREEN (per type, single farmer record) — Edit/Delete
+// ═══════════════════════════════════════════════════════════════════════════
+class FeedAllocationDetailScreen extends StatefulWidget {
+  final String feedTypeId;
+  final int allocIndex;
+  const FeedAllocationDetailScreen({
+    super.key,
+    required this.feedTypeId,
+    required this.allocIndex,
+  });
+
+  @override
+  State<FeedAllocationDetailScreen> createState() =>
+      _FeedAllocationDetailScreenState();
+}
+
+class _FeedAllocationDetailScreenState
+    extends State<FeedAllocationDetailScreen> {
+  Map<String, dynamic>? _feedType;
+  Map<String, dynamic>? _alloc;
+  bool _isEditMode = false;
+  bool _isLoading = true;
+
+  final _nameCtrl = TextEditingController();
+  final _qtyCtrl = TextEditingController();
+  final _rateCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _isLoading = true);
+    final stock = await ensureFeedStockMigrated();
+    final entry = stock.firstWhere(
+      (s) => s['id'] == widget.feedTypeId,
+      orElse: () => {},
+    );
+    final allocs = (entry['allocations'] as List?) ?? [];
+    if (widget.allocIndex < allocs.length) {
+      final alloc = Map<String, dynamic>.from(allocs[widget.allocIndex] as Map);
+      _nameCtrl.text = alloc['farmerName']?.toString() ?? '';
+      _qtyCtrl.text = ((alloc['qty'] as num?) ?? 0).toString();
+      _rateCtrl.text = ((alloc['rate'] as num?) ?? 0).toString();
+      if (mounted) {
+        setState(() {
+          _feedType = entry;
+          _alloc = alloc;
+          _isLoading = false;
+        });
+      }
+    } else {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  double _availForEdit() {
+    if (_feedType == null || _alloc == null) return 0.0;
+    final double remaining = computeFeedRemaining(_feedType!);
+    final double currentQty = (_alloc!['qty'] as num?)?.toDouble() ?? 0.0;
+    return remaining + currentQty;
+  }
+
+  Future<void> _save() async {
+    final double qty = double.tryParse(_qtyCtrl.text) ?? 0.0;
+    if (qty <= 0) {
+      Get.snackbar(
+        'Error',
+        'Sahi quantity daalein',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+    if (qty > _availForEdit()) {
+      Get.snackbar(
+        'Error',
+        'Sirf ${_availForEdit().toStringAsFixed(0)} bag available hai',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+    List<Map<String, dynamic>> stock = await CompanyStore.instance
+        .getJsonList('feedStockList');
+    final idx = stock.indexWhere((s) => s['id'] == widget.feedTypeId);
+    if (idx == -1) return;
+    final allocs = (stock[idx]['allocations'] as List?) ?? [];
+    if (widget.allocIndex < allocs.length) {
+      allocs[widget.allocIndex]['farmerName'] = _nameCtrl.text.trim();
+      allocs[widget.allocIndex]['qty'] = qty;
+      allocs[widget.allocIndex]['rate'] = double.tryParse(_rateCtrl.text) ?? 0.0;
+    }
+    stock[idx]['allocations'] = allocs;
+    await CompanyStore.instance.saveJsonList('feedStockList', stock);
+    if (!mounted) return;
+    Get.back(result: true);
+    Get.snackbar(
+      'Updated ✅',
+      'Allocation update ho gayi',
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+    );
+  }
+
+  Future<void> _delete() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Karein?'),
+        content: const Text(
+          'Ye allocation delete karna chahte hain? Ye undo nahi hoga.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Yes, Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    List<Map<String, dynamic>> stock = await CompanyStore.instance
+        .getJsonList('feedStockList');
+    final idx = stock.indexWhere((s) => s['id'] == widget.feedTypeId);
+    if (idx == -1) return;
+    final allocs = (stock[idx]['allocations'] as List?) ?? [];
+    if (widget.allocIndex < allocs.length) {
+      allocs.removeAt(widget.allocIndex);
+    }
+    stock[idx]['allocations'] = allocs;
+    await CompanyStore.instance.saveJsonList('feedStockList', stock);
+    if (!mounted) return;
+    Get.back(result: true);
+    Get.snackbar(
+      'Deleted ✅',
+      'Allocation delete ho gayi',
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+    );
   }
 
   @override
@@ -4051,32 +4414,58 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final entry = _currentLotEntry!;
-    final String company = entry['company']?.toString() ?? '-';
-    final bool hasStarter = ((entry['starter']?['bags'] as num?) ?? 0) > 0;
-    final bool hasGrower = ((entry['grower']?['bags'] as num?) ?? 0) > 0;
-    final bool hasFinisher = ((entry['finisher']?['bags'] as num?) ?? 0) > 0;
+    if (_alloc == null) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: () => Get.back(),
+          ),
+        ),
+        body: const Center(child: Text('Allocation nahi mila.')),
+      );
+    }
+
+    final double qty = double.tryParse(_qtyCtrl.text) ?? 0.0;
+    final double rate = double.tryParse(_rateCtrl.text) ?? 0.0;
+    final double avgCost =
+        (_feedType!['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+    final double cost = qty * avgCost;
+    final double billing = qty * rate;
+    final double profit = billing - cost;
+    final String feedName =
+        _feedType!['name']?.toString() ?? kFeedTypeNames[widget.feedTypeId] ?? '';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         backgroundColor: Colors.blue.shade700,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
           onPressed: () => Get.back(),
         ),
-        title: Text(_isEditMode ? 'Edit Allocation' : 'Farmer Allocation',
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        title: Text(
+          _isEditMode ? 'Edit Allocation' : 'Farmer Allocation',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: Icon(_isEditMode ? Icons.close_rounded : Icons.edit_rounded, color: Colors.white),
-            tooltip: _isEditMode ? 'Cancel Edit' : 'Edit Allocation',
+            icon: Icon(
+              _isEditMode ? Icons.close_rounded : Icons.edit_rounded,
+              color: Colors.white,
+            ),
             onPressed: () => setState(() => _isEditMode = !_isEditMode),
           ),
           IconButton(
             icon: const Icon(Icons.delete_rounded, color: Colors.white),
-            tooltip: 'Delete Allocation',
-            onPressed: _confirmDelete,
+            onPressed: _delete,
           ),
         ],
       ),
@@ -4087,25 +4476,39 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: Colors.blue.shade100, borderRadius: BorderRadius.circular(8)),
-              child: Text('📦 Lot: $company',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '🌾 $feedName',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade900,
+                ),
+              ),
             ),
-            // ✅ NEW: Batch ID badge — jis farmer-batch mein ye feed gaya
-            if (_alloc?['batchId']?.toString().isNotEmpty ?? false) ...[
+            if (_alloc!['batchId']?.toString().isNotEmpty ?? false) ...[
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.purple.shade50,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.purple.shade200),
                 ),
-                child: Text('🏷️ Batch: ${_alloc!['batchId']}',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple.shade800)),
+                child: Text(
+                  '🏷️ Batch: ${_alloc!['batchId']}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.purple.shade800,
+                  ),
+                ),
               ),
             ],
             const SizedBox(height: 16),
@@ -4115,44 +4518,133 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
               decoration: InputDecoration(
                 labelText: 'Farmer Ka Naam',
                 prefixIcon: const Icon(Icons.person_rounded),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
             const SizedBox(height: 16),
-            if (hasStarter) _allocDetailRow('Starter', _starterQtyCtrl, _starterRateCtrl,
-                _availFor('starter'),
-                purchaseRatePerBag: (entry['starter']?['perBagPrice'] as num?)?.toDouble() ?? 0.0),
-            if (hasGrower) _allocDetailRow('Grower', _growerQtyCtrl, _growerRateCtrl,
-                _availFor('grower'),
-                purchaseRatePerBag: (entry['grower']?['perBagPrice'] as num?)?.toDouble() ?? 0.0),
-            if (hasFinisher) _allocDetailRow('Finisher', _finisherQtyCtrl, _finisherRateCtrl,
-                _availFor('finisher'),
-                purchaseRatePerBag: (entry['finisher']?['perBagPrice'] as num?)?.toDouble() ?? 0.0),
-            const SizedBox(height: 12),
-            if (_alloc?['allocatedByName'] != null &&
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _qtyCtrl,
+                    enabled: _isEditMode,
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Quantity (Bag)',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _rateCtrl,
+                    enabled: _isEditMode,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Billing Rate (₹/Bag)',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Purchase Cost'),
+                      Text(
+                        '₹${cost.toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Billing/Sale Value'),
+                      Text(
+                        '₹${billing.toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        '📈 Margin / Profit',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        '₹${profit.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: profit >= 0
+                              ? Colors.blue.shade800
+                              : Colors.orange.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (_alloc!['allocatedByName'] != null &&
                 (_alloc!['allocatedByName'] as String).isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.only(top: 12),
                 child: Text(
-                    '👤 ${_alloc!['allocatedByRole'] ?? ''}: ${_alloc!['allocatedByName']}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  '👤 ${_alloc!['allocatedByRole'] ?? ''}: ${_alloc!['allocatedByName']}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
               ),
-            if (_alloc?['allocatedOn'] != null)
+            if (_alloc!['allocatedOn'] != null)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text('🕒 ${formatHistoryDateTime(_alloc!['allocatedOn']?.toString())}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                child: Text(
+                  '🕒 ${formatHistoryDateTime(_alloc!['allocatedOn']?.toString())}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
               ),
             if (_isEditMode) ...[
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _save,
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.shade700, padding: const EdgeInsets.symmetric(vertical: 14)),
-                  child: const Text('Save Changes',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    backgroundColor: primaryGreen,
+                  ),
+                  child: const Text(
+                    'Save Changes',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -4161,117 +4653,8 @@ class _FeedAllocationDetailScreenState extends State<FeedAllocationDetailScreen>
       ),
     );
   }
-
-  Widget _allocDetailRow(
-      String title,
-      TextEditingController qtyCtrl,
-      TextEditingController rateCtrl,
-      double avail, {
-      double purchaseRatePerBag = 0.0,
-    }) {
-    double qty = double.tryParse(qtyCtrl.text) ?? 0.0;
-    double billingRate = double.tryParse(rateCtrl.text) ?? 0.0;
-    bool isOver = _isEditMode && qty > avail;
-    double totalCost = qty * purchaseRatePerBag;
-    double totalBilling = qty * billingRate;
-    double profit = totalBilling - totalCost;
-    bool hasCalc = qty > 0 && billingRate > 0;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isOver ? Colors.red.shade50 : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: isOver ? Colors.red.shade300 : Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('🌾 $title',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900)),
-              if (_isEditMode)
-                Text('Max: ${avail.toStringAsFixed(0)} Bag',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: isOver ? Colors.red.shade700 : Colors.green.shade700,
-                        fontWeight: FontWeight.bold)),
-            ],
-          ),
-          if (purchaseRatePerBag > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 3, bottom: 3),
-              child: Text('Auto Cost: ₹${purchaseRatePerBag.toStringAsFixed(2)} / Bag',
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-            ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: qtyCtrl,
-                  enabled: _isEditMode,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                      labelText: 'Qty (Bag)',
-                      isDense: true,
-                      errorText: isOver ? 'Max ${avail.toStringAsFixed(0)}' : null),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: rateCtrl,
-                  enabled: _isEditMode,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
-                      labelText: 'Billing Rate (₹/Bag)', isDense: true),
-                ),
-              ),
-            ],
-          ),
-          if (hasCalc) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: BoxDecoration(
-                color: profit >= 0 ? Colors.blue.shade50 : Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: profit >= 0 ? Colors.blue.shade200 : Colors.orange.shade200),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Cost: ₹${totalCost.toStringAsFixed(0)}',
-                      style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                  Text('Bill: ₹${totalBilling.toStringAsFixed(0)}',
-                      style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                  Text(
-                    profit >= 0
-                        ? '📈 +₹${profit.toStringAsFixed(0)}'
-                        : '📉 -₹${profit.abs().toStringAsFixed(0)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: profit >= 0 ? Colors.blue.shade800 : Colors.orange.shade800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 }
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📋 CATEGORY HISTORY SCREEN (Feed, Medicine, Labour, Other ke liye)
