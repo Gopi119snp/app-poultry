@@ -2332,6 +2332,77 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
     if (mounted) setState(() => _isLoading = false);
   }
 
+  // ✅ NEW: Ek lot ko date se dobara fresh load karo (edit/delete ke baad
+  // sub-list screen refresh karne ke liye).
+  Future<ChicksPurchase?> _refetchByDate(String date) async {
+    await _loadHistory();
+    try {
+      return _entries.firstWhere((e) => e.date == date);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ✅ NEW: Farmer Allocation / Private Buyer summary row (Feed/Medicine
+  // jaisa hi look) — tap karke filtered sub-list khulti hai.
+  Widget _allocSummaryNavRow({
+    required IconData icon,
+    required String label,
+    required MaterialColor color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.shade100),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: color.shade700),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: color.shade900,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: color.shade400),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ NEW: Us lot ke sirf ek type (Company/Private) ke allocations ki
+  // filtered sub-list screen khulo — tap karke wahi purana edit/delete
+  // detail dialog khulta hai.
+  void _openFilteredAllocationList(
+    ChicksPurchase purchase,
+    String filterType,
+  ) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (routeContext) => _ChicksAllocSubListScreen(
+          initialPurchase: purchase,
+          filterType: filterType,
+          onShowAllocation: widget.onShowAllocation,
+          refetch: () => _refetchByDate(purchase.date),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2462,7 +2533,12 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
                               ),
                             ),
 
-                            // ── STEP 3: Allocation List (Loop) — TAP to view/edit ──
+                            // ── ✅ NEW: Ab inline mixed list nahi — 2 alag
+                            // buttons (Farmer Allocation / Private Buyer),
+                            // Feed/Medicine jaisa hi pattern. Tap karne par
+                            // us lot ke sirf usi type ke allocations ki list
+                            // khulti hai, aur wahan se tap karke same
+                            // edit/delete detail dialog khulta hai.
                             if (purchase.allocations.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.fromLTRB(
@@ -2472,261 +2548,28 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
                                   0,
                                 ),
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      'Allocations:',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.grey.shade700,
+                                    _allocSummaryNavRow(
+                                      icon: Icons.people_alt_rounded,
+                                      label:
+                                          'Farmer Allocation (${purchase.allocations.where((a) => a['type'] == 'Company').length})',
+                                      color: Colors.blue,
+                                      onTap: () => _openFilteredAllocationList(
+                                        purchase,
+                                        'Company',
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
-                                    ...purchase.allocations.asMap().entries.map((
-                                      entry,
-                                    ) {
-                                      final allocIndex = entry.key;
-                                      final alloc = entry.value;
-                                      return InkWell(
-                                        borderRadius: BorderRadius.circular(8),
-                                        onTap: () {
-                                          // Tap karo — Information Mode khulega
-                                          widget.onShowAllocation(
-                                            context,
-                                            purchase.toMap(),
-                                            _loadHistory,
-                                            isInformationMode: true,
-                                            entryIndex: allocIndex,
-                                          );
-                                        },
-                                        child: Container(
-                                          margin: const EdgeInsets.only(
-                                            bottom: 6,
-                                          ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 8,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: alloc['type'] == 'Company'
-                                                ? Colors.blue.shade50
-                                                : Colors.green.shade50,
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            border: Border.all(
-                                              color: alloc['type'] == 'Company'
-                                                  ? Colors.blue.shade200
-                                                  : Colors.green.shade200,
-                                            ),
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment
-                                                        .spaceBetween,
-                                                children: [
-                                                  // FIX 1: Expanded wrap — long names overflow nahi honge
-                                                  Expanded(
-                                                    child: Row(
-                                                      children: [
-                                                        Text(
-                                                          alloc['type'] ==
-                                                                  'Company'
-                                                              ? '🧑 '
-                                                              : '🛒 ',
-                                                          style:
-                                                              const TextStyle(
-                                                                fontSize: 14,
-                                                              ),
-                                                        ),
-                                                        Expanded(
-                                                          child: Text(
-                                                            '${alloc['name']} (${alloc['type']})',
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                            style:
-                                                                const TextStyle(
-                                                                  fontSize: 12,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w600,
-                                                                ),
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  // FIX 2: Right side — qty + pending badge (Private) + chevron
-                                                  Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      Text(
-                                                        '${(alloc['qty'] as num).toStringAsFixed(0)} Chicks',
-                                                        style: const TextStyle(
-                                                          fontSize: 12,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                      if (alloc['type'] ==
-                                                          'Private') ...[
-                                                        const SizedBox(
-                                                          width: 6,
-                                                        ),
-                                                        Builder(
-                                                          builder: (context) {
-                                                            double qty =
-                                                                (alloc['qty']
-                                                                        as num)
-                                                                    .toDouble();
-                                                            double rate =
-                                                                (alloc['rate']
-                                                                        as num?)
-                                                                    ?.toDouble() ??
-                                                                0.0;
-                                                            double paid =
-                                                                (alloc['paid']
-                                                                        as num?)
-                                                                    ?.toDouble() ??
-                                                                0.0;
-                                                            double pending =
-                                                                (qty * rate) -
-                                                                paid;
-                                                            return Container(
-                                                              padding:
-                                                                  const EdgeInsets.symmetric(
-                                                                    horizontal:
-                                                                        6,
-                                                                    vertical: 2,
-                                                                  ),
-                                                              decoration: BoxDecoration(
-                                                                color:
-                                                                    pending > 0
-                                                                    ? Colors
-                                                                          .red
-                                                                          .shade100
-                                                                    : Colors
-                                                                          .green
-                                                                          .shade100,
-                                                                borderRadius:
-                                                                    BorderRadius.circular(
-                                                                      4,
-                                                                    ),
-                                                              ),
-                                                              child: Text(
-                                                                pending > 0
-                                                                    ? 'Due: ₹${pending.toStringAsFixed(0)}'
-                                                                    : 'Paid',
-                                                                style: TextStyle(
-                                                                  fontSize: 10,
-                                                                  color:
-                                                                      pending >
-                                                                          0
-                                                                      ? Colors
-                                                                            .red
-                                                                            .shade900
-                                                                      : Colors
-                                                                            .green
-                                                                            .shade900,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold,
-                                                                ),
-                                                              ),
-                                                            );
-                                                          },
-                                                        ),
-                                                      ],
-                                                      const SizedBox(width: 6),
-                                                      Icon(
-                                                        Icons
-                                                            .chevron_right_rounded,
-                                                        size: 16,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade500,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              ),
-                                              // Date + Allocator row
-                                              if (alloc['allocatedOn'] !=
-                                                      null ||
-                                                  alloc['allocatedByName'] !=
-                                                      null ||
-                                                  (alloc['batchId']
-                                                          ?.toString()
-                                                          .isNotEmpty ??
-                                                      false))
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(
-                                                        top: 4,
-                                                      ),
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      // ✅ NEW: Batch ID (agar
-                                                      // is allocation se koi
-                                                      // farmer-batch linked hai)
-                                                      if (alloc['batchId']
-                                                              ?.toString()
-                                                              .isNotEmpty ??
-                                                          false)
-                                                        Text(
-                                                          '🏷️ Batch: ${alloc['batchId']}',
-                                                          style: TextStyle(
-                                                            fontSize: 10.5,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                            color: Colors
-                                                                .purple
-                                                                .shade700,
-                                                          ),
-                                                        ),
-                                                      if (alloc['allocatedByName'] !=
-                                                              null &&
-                                                          (alloc['allocatedByName']
-                                                                  as String)
-                                                              .isNotEmpty)
-                                                        Text(
-                                                          '👤 ${alloc['allocatedByRole'] != null && (alloc['allocatedByRole'] as String).isNotEmpty ? "${alloc['allocatedByRole']}: " : ""}${alloc['allocatedByName']}',
-                                                          style: TextStyle(
-                                                            fontSize: 10,
-                                                            color: Colors
-                                                                .grey
-                                                                .shade600,
-                                                          ),
-                                                        ),
-                                                      if (alloc['allocatedOn'] !=
-                                                          null)
-                                                        Text(
-                                                          '🕒 ${formatHistoryDateTime(alloc['allocatedOn']?.toString())}',
-                                                          style: TextStyle(
-                                                            fontSize: 10,
-                                                            color: Colors
-                                                                .grey
-                                                                .shade500,
-                                                          ),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    }),
+                                    const SizedBox(height: 8),
+                                    _allocSummaryNavRow(
+                                      icon: Icons.storefront_rounded,
+                                      label:
+                                          'Private Buyer (${purchase.allocations.where((a) => a['type'] == 'Private').length})',
+                                      color: Colors.green,
+                                      onTap: () => _openFilteredAllocationList(
+                                        purchase,
+                                        'Private',
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -2819,8 +2662,244 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🌾 FEED HISTORY SCREEN — Lot list + Apna Farmer Allocation
+// 🧾 CHICKS ALLOCATION SUB-LIST — Ek lot ke sirf ek type (Farmer/Private)
+// ke allocations ki filtered list. Tap karke wahi purana edit/delete detail
+// dialog khulta hai (widget.onShowAllocation), koi naya dialog nahi likha.
 // ═══════════════════════════════════════════════════════════════════════════
+class _ChicksAllocSubListScreen extends StatefulWidget {
+  final ChicksPurchase initialPurchase;
+  final String filterType; // 'Company' ya 'Private'
+  final void Function(
+    BuildContext context,
+    Map<String, dynamic> entry,
+    VoidCallback onSaved, {
+    bool isInformationMode,
+    int entryIndex,
+  })
+  onShowAllocation;
+  final Future<ChicksPurchase?> Function() refetch;
+
+  const _ChicksAllocSubListScreen({
+    required this.initialPurchase,
+    required this.filterType,
+    required this.onShowAllocation,
+    required this.refetch,
+  });
+
+  @override
+  State<_ChicksAllocSubListScreen> createState() =>
+      _ChicksAllocSubListScreenState();
+}
+
+class _ChicksAllocSubListScreenState
+    extends State<_ChicksAllocSubListScreen> {
+  late ChicksPurchase _purchase;
+
+  @override
+  void initState() {
+    super.initState();
+    _purchase = widget.initialPurchase;
+  }
+
+  Future<void> _reload() async {
+    final fresh = await widget.refetch();
+    if (fresh != null && mounted) {
+      setState(() => _purchase = fresh);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isFarmer = widget.filterType == 'Company';
+    final List<MapEntry<int, Map<String, dynamic>>> filtered = [];
+    for (int i = 0; i < _purchase.allocations.length; i++) {
+      if (_purchase.allocations[i]['type'] == widget.filterType) {
+        filtered.add(MapEntry(i, _purchase.allocations[i]));
+      }
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.orange.shade800,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          isFarmer ? '🧑 Farmer Allocations' : '🛒 Private Buyers',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+        ),
+      ),
+      body: filtered.isEmpty
+          ? const Center(child: Text('Koi record nahi.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: filtered.length,
+              itemBuilder: (context, idx) {
+                final allocIndex = filtered[idx].key;
+                final alloc = filtered[idx].value;
+                double pending = 0.0;
+                if (!isFarmer) {
+                  double qty = (alloc['qty'] as num?)?.toDouble() ?? 0.0;
+                  double rate = (alloc['rate'] as num?)?.toDouble() ?? 0.0;
+                  double paid = (alloc['paid'] as num?)?.toDouble() ?? 0.0;
+                  pending = (qty * rate) - paid;
+                }
+                return InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    widget.onShowAllocation(
+                      context,
+                      _purchase.toMap(),
+                      _reload,
+                      isInformationMode: true,
+                      entryIndex: allocIndex,
+                    );
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isFarmer
+                          ? Colors.blue.shade50
+                          : Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isFarmer
+                            ? Colors.blue.shade200
+                            : Colors.green.shade200,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Text(
+                                    isFarmer ? '🧑 ' : '🛒 ',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      '${alloc['name']}',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${(alloc['qty'] as num).toStringAsFixed(0)} Chicks',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (!isFarmer) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: pending > 0
+                                          ? Colors.red.shade100
+                                          : Colors.green.shade100,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      pending > 0
+                                          ? 'Due: ₹${pending.toStringAsFixed(0)}'
+                                          : 'Paid',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: pending > 0
+                                            ? Colors.red.shade900
+                                            : Colors.green.shade900,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(width: 6),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 16,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        if (alloc['batchId']?.toString().isNotEmpty ?? false)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '🏷️ Batch: ${alloc['batchId']}',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple.shade700,
+                              ),
+                            ),
+                          ),
+                        if ((alloc['allocatedByName']?.toString() ?? '')
+                            .isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              '👤 ${alloc['allocatedByRole'] != null && (alloc['allocatedByRole'] as String).isNotEmpty ? "${alloc['allocatedByRole']}: " : ""}${alloc['allocatedByName']}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ),
+                        if (alloc['allocatedOn'] != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              '🕒 ${formatHistoryDateTime(alloc['allocatedOn']?.toString())}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 🌾 FEED STOCK SYSTEM — Medicine jaisa hi pattern: 3 FIXED running-stock
 // entities (Starter/Grower/Finisher). Har purchase isi mein add hota hai,
@@ -2865,6 +2944,7 @@ Future<List<Map<String, dynamic>>> ensureFeedStockMigrated() async {
         'weightedAvgCost': 0.0,
         'purchaseHistory': [],
         'allocations': [],
+        'privateSales': [],
       });
     }
   }
@@ -2949,7 +3029,43 @@ double computeFeedRemaining(Map<String, dynamic> feedType) {
   for (final a in ((feedType['allocations'] as List?) ?? [])) {
     allocated += (a['qty'] as num?)?.toDouble() ?? 0.0;
   }
-  return (total - allocated).clamp(0.0, double.infinity);
+  double sold = 0.0;
+  for (final s in ((feedType['privateSales'] as List?) ?? [])) {
+    sold += (s['qty'] as num?)?.toDouble() ?? 0.0;
+  }
+  return (total - allocated - sold).clamp(0.0, double.infinity);
+}
+
+/// ✅ NEW: Private (non-farmer) feed sale record karo — sales_screen.dart
+/// se call hota hai. Medicine ke private-buyer pattern jaisa, bas ab feed
+/// bhi persistent per-type stock (feedStockList) se link hai, lot se nahi.
+Future<void> recordFeedPrivateSale({
+  required String feedTypeId,
+  required String buyerName,
+  required String mobile,
+  required double qty,
+  required double rate,
+  required double paidAmount,
+  String addedByName = '',
+  String addedByRole = '',
+}) async {
+  List<Map<String, dynamic>> stock = await ensureFeedStockMigrated();
+  final idx = stock.indexWhere((s) => s['id'] == feedTypeId);
+  if (idx == -1) return;
+  final sales = (stock[idx]['privateSales'] as List?) ?? [];
+  sales.add({
+    'id': DateTime.now().millisecondsSinceEpoch.toString(),
+    'buyerName': buyerName,
+    'mobile': mobile,
+    'qty': qty,
+    'rate': rate,
+    'paidAmount': paidAmount,
+    'date': DateTime.now().toIso8601String(),
+    'addedByName': addedByName,
+    'addedByRole': addedByRole,
+  });
+  stock[idx]['privateSales'] = sales;
+  await CompanyStore.instance.saveJsonList('feedStockList', stock);
 }
 
 /// Feed purchase add karo — Medicine ke `addOrUpdateMedicinePurchase` jaisa
@@ -3147,6 +3263,8 @@ class _FeedRunningStockCard extends StatelessWidget {
     final int purchaseCount =
         ((feedType['purchaseHistory'] as List?) ?? []).length;
     final int allocCount = ((feedType['allocations'] as List?) ?? []).length;
+    final int privateSaleCount =
+        ((feedType['privateSales'] as List?) ?? []).length;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -3238,6 +3356,16 @@ class _FeedRunningStockCard extends StatelessWidget {
                       () => FeedFarmerAllocationsListScreen(feedTypeId: id),
                     );
                     onChanged();
+                  },
+                ),
+                const SizedBox(height: 8),
+                _navRow(
+                  icon: Icons.storefront_rounded,
+                  label: 'Private Buyers ($privateSaleCount)',
+                  onTap: () async {
+                    await Get.to(
+                      () => FeedPrivateBuyersListScreen(feedTypeId: id),
+                    );
                   },
                 ),
               ],
@@ -4255,6 +4383,194 @@ class _FeedFarmerAllocationsListScreenState
                 },
               ),
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🛒 FEED PRIVATE BUYERS LIST SCREEN (per type) — Read-only, koi edit/delete
+// nahi (jaisa Gopi ne maanga: "purchase mein bas wahan data dekhe").
+// ═══════════════════════════════════════════════════════════════════════════
+class FeedPrivateBuyersListScreen extends StatefulWidget {
+  final String feedTypeId;
+  const FeedPrivateBuyersListScreen({super.key, required this.feedTypeId});
+
+  @override
+  State<FeedPrivateBuyersListScreen> createState() =>
+      _FeedPrivateBuyersListScreenState();
+}
+
+class _FeedPrivateBuyersListScreenState
+    extends State<FeedPrivateBuyersListScreen> {
+  List<Map<String, dynamic>> _sales = [];
+  String _name = '';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _isLoading = true);
+    final stock = await ensureFeedStockMigrated();
+    final entry = stock.firstWhere(
+      (s) => s['id'] == widget.feedTypeId,
+      orElse: () => {},
+    );
+    final sales = List<Map<String, dynamic>>.from(
+      ((entry['privateSales'] as List?) ?? []).map(
+        (e) => Map<String, dynamic>.from(e as Map),
+      ),
+    );
+    sales.sort(
+      (a, b) =>
+          (b['date'] ?? '').toString().compareTo((a['date'] ?? '').toString()),
+    );
+    if (mounted) {
+      setState(() {
+        _sales = sales;
+        _name = entry['name']?.toString() ?? kFeedTypeNames[widget.feedTypeId] ?? '';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.blue.shade700,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () => Get.back(),
+        ),
+        title: Text(
+          '🛒 $_name — Private Buyers',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _sales.isEmpty
+          ? const Center(child: Text('Koi private buyer nahi.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _sales.length,
+              itemBuilder: (context, i) {
+                final s = _sales[i];
+                final double qty = (s['qty'] as num?)?.toDouble() ?? 0.0;
+                final double rate = (s['rate'] as num?)?.toDouble() ?? 0.0;
+                final double paid =
+                    (s['paidAmount'] as num?)?.toDouble() ?? 0.0;
+                final double total = qty * rate;
+                final double due = (total - paid).clamp(0.0, double.infinity);
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.blue.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '🛒 ${s['buyerName'] ?? '-'}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            '₹${total.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${qty.toStringAsFixed(0)} bag @ ₹${rate.toStringAsFixed(2)}/bag',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      if ((s['mobile']?.toString() ?? '').isNotEmpty)
+                        Text(
+                          '📞 ${s['mobile']}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: due > 0
+                                ? Colors.red.shade50
+                                : Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            due > 0
+                                ? 'Due: ₹${due.toStringAsFixed(0)}'
+                                : '✅ Paid',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                              color: due > 0
+                                  ? Colors.red.shade800
+                                  : Colors.green.shade800,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if ((s['addedByName']?.toString() ?? '').isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            '👤 ${s['addedByRole'] ?? ''}: ${s['addedByName']}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ),
+                      if ((s['date']?.toString() ?? '').isNotEmpty)
+                        Text(
+                          '🕒 ${formatHistoryDateTime(s['date'].toString())}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black45,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
     );
   }
 }
