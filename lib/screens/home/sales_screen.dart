@@ -4,6 +4,13 @@ import 'package:get/get.dart';
 import 'dart:convert';
 import 'package:poultrypro/services/company_store.dart';
 import 'package:poultrypro/services/session_service.dart';
+import 'purchase_expense_screen.dart'
+    show
+        ensureFeedStockMigrated,
+        computeFeedRemaining,
+        recordFeedPrivateSale,
+        kFeedTypeNames,
+        kFeedTypeIds;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 💰 SALES SCREEN — 4 Categories: Chicks, Feed, Medicine, Chicken
@@ -1432,6 +1439,12 @@ class _FeedSaleCard extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 // 📝 ADD PRIVATE FEED SALE SCREEN
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// 📝 ADD PRIVATE FEED SALE SCREEN — ✅ REWRITTEN: Ab persistent feedStockList
+// (Starter/Grower/Finisher) se link hai, purane "Purchase Lot" dropdown ki
+// zaroorat nahi (Farmer Allocation jaisa hi pattern). Bag-only (Kg-conversion
+// hata diya, simple aur consistent rakhne ke liye).
+// ═══════════════════════════════════════════════════════════════════════════
 class AddPrivateFeedSaleScreen extends StatefulWidget {
   final Map<String, dynamic>? existingSale;
   const AddPrivateFeedSaleScreen({super.key, this.existingSale});
@@ -1442,10 +1455,8 @@ class AddPrivateFeedSaleScreen extends StatefulWidget {
 }
 
 class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
-  List<Map<String, dynamic>> _purchaseLots = [];
-  Map<String, dynamic>? _selectedLot;
-  // Available bags after deducting sales (per lot)
-  Map<String, Map<String, double>> _availableBags = {}; // lotCompany -> {S,G,F}
+  List<Map<String, dynamic>> _feedStock = [];
+  bool _isLoading = true;
 
   final _buyerNameCtrl = TextEditingController();
   final _mobileCtrl = TextEditingController();
@@ -1453,23 +1464,42 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
 
   final _starterQtyCtrl = TextEditingController();
   final _starterRateCtrl = TextEditingController();
-  String _starterUnit = 'Bag';
-
   final _growerQtyCtrl = TextEditingController();
   final _growerRateCtrl = TextEditingController();
-  String _growerUnit = 'Bag';
-
   final _finisherQtyCtrl = TextEditingController();
   final _finisherRateCtrl = TextEditingController();
-  String _finisherUnit = 'Bag';
 
-  // Edit mode support
   final bool _isEditMode;
   final Map<String, dynamic>? _existingSale;
 
   _AddPrivateFeedSaleScreenState({Map<String, dynamic>? existingSale})
     : _isEditMode = existingSale != null,
       _existingSale = existingSale;
+
+  double _availFor(String id, {double addBackCurrentQty = 0.0}) {
+    final entry = _feedStock.firstWhere(
+      (s) => s['id'] == id,
+      orElse: () => {},
+    );
+    if (entry.isEmpty) return 0.0;
+    return computeFeedRemaining(entry) + addBackCurrentQty;
+  }
+
+  double _avgCostFor(String id) {
+    final entry = _feedStock.firstWhere(
+      (s) => s['id'] == id,
+      orElse: () => {},
+    );
+    return (entry['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  double _totalBagsFor(String id) {
+    final entry = _feedStock.firstWhere(
+      (s) => s['id'] == id,
+      orElse: () => {},
+    );
+    return (entry['totalBags'] as num?)?.toDouble() ?? 0.0;
+  }
 
   @override
   void initState() {
@@ -1478,106 +1508,33 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
   }
 
   Future<void> _loadData() async {
-    // Load purchase lots
-    final String? purchaseJson = await CompanyStore.instance.getString(
-      'feedPurchaseHistory',
-    );
-    List<Map<String, dynamic>> lots = [];
-    if (purchaseJson != null) {
-      try {
-        final List<dynamic> raw = json.decode(purchaseJson);
-        lots = raw.map((e) => Map<String, dynamic>.from(e)).toList();
-      } catch (_) {}
+    setState(() => _isLoading = true);
+    final stock = await ensureFeedStockMigrated();
+
+    if (_isEditMode && _existingSale != null) {
+      _buyerNameCtrl.text = _existingSale!['buyerName']?.toString() ?? '';
+      _mobileCtrl.text = _existingSale!['mobile']?.toString() ?? '';
+      _paidCtrl.text = (_existingSale!['paidAmount'] as num?)?.toString() ?? '0';
+      _starterQtyCtrl.text =
+          (_existingSale!['starter']?['qty'] as num?)?.toString() ?? '0';
+      _starterRateCtrl.text =
+          (_existingSale!['starter']?['saleRate'] as num?)?.toString() ?? '0';
+      _growerQtyCtrl.text =
+          (_existingSale!['grower']?['qty'] as num?)?.toString() ?? '0';
+      _growerRateCtrl.text =
+          (_existingSale!['grower']?['saleRate'] as num?)?.toString() ?? '0';
+      _finisherQtyCtrl.text =
+          (_existingSale!['finisher']?['qty'] as num?)?.toString() ?? '0';
+      _finisherRateCtrl.text =
+          (_existingSale!['finisher']?['saleRate'] as num?)?.toString() ?? '0';
     }
 
-    // Load existing sales to calculate sold bags per lot
-    final String? salesJson = await CompanyStore.instance.getString(
-      'feedSalesHistory',
-    );
-    List<Map<String, dynamic>> sales = [];
-    if (salesJson != null) {
-      try {
-        final List<dynamic> raw = json.decode(salesJson);
-        sales = raw.map((e) => Map<String, dynamic>.from(e)).toList();
-      } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _feedStock = stock;
+        _isLoading = false;
+      });
     }
-
-    // Calculate sold bags per lot (excluding current sale in edit mode)
-    Map<String, Map<String, double>> soldPerLot = {};
-    for (final sale in sales) {
-      // Skip the sale being edited
-      if (_isEditMode && sale['id'] == _existingSale!['id']) continue;
-      final String lotName = sale['lotName']?.toString() ?? '';
-      soldPerLot[lotName] ??= {'S': 0, 'G': 0, 'F': 0};
-      soldPerLot[lotName]!['S'] =
-          (soldPerLot[lotName]!['S'] ?? 0) +
-          ((sale['starter']?['qty'] as num?)?.toDouble() ?? 0);
-      soldPerLot[lotName]!['G'] =
-          (soldPerLot[lotName]!['G'] ?? 0) +
-          ((sale['grower']?['qty'] as num?)?.toDouble() ?? 0);
-      soldPerLot[lotName]!['F'] =
-          (soldPerLot[lotName]!['F'] ?? 0) +
-          ((sale['finisher']?['qty'] as num?)?.toDouble() ?? 0);
-    }
-
-    // Calculate available = purchased - sold
-    Map<String, Map<String, double>> available = {};
-    for (final lot in lots) {
-      final String lotName = lot['company']?.toString() ?? '';
-      final double purchasedS =
-          (lot['starter']?['bags'] as num?)?.toDouble() ?? 0;
-      final double purchasedG =
-          (lot['grower']?['bags'] as num?)?.toDouble() ?? 0;
-      final double purchasedF =
-          (lot['finisher']?['bags'] as num?)?.toDouble() ?? 0;
-      final double soldS = soldPerLot[lotName]?['S'] ?? 0;
-      final double soldG = soldPerLot[lotName]?['G'] ?? 0;
-      final double soldF = soldPerLot[lotName]?['F'] ?? 0;
-      available[lotName] = {
-        'S': (purchasedS - soldS).clamp(0.0, double.infinity),
-        'G': (purchasedG - soldG).clamp(0.0, double.infinity),
-        'F': (purchasedF - soldF).clamp(0.0, double.infinity),
-      };
-    }
-
-    setState(() {
-      _purchaseLots = lots;
-      _availableBags = available;
-
-      // Edit mode: pre-fill fields
-      if (_isEditMode && _existingSale != null) {
-        _buyerNameCtrl.text = _existingSale!['buyerName']?.toString() ?? '';
-        _mobileCtrl.text = _existingSale!['mobile']?.toString() ?? '';
-        _paidCtrl.text =
-            (_existingSale!['paidAmount'] as num?)?.toString() ?? '0';
-        _starterQtyCtrl.text =
-            (_existingSale!['starter']?['qty'] as num?)?.toString() ?? '0';
-        _starterRateCtrl.text =
-            (_existingSale!['starter']?['saleRate'] as num?)?.toString() ?? '0';
-        _starterUnit = _existingSale!['starter']?['unit']?.toString() ?? 'Bag';
-        _growerQtyCtrl.text =
-            (_existingSale!['grower']?['qty'] as num?)?.toString() ?? '0';
-        _growerRateCtrl.text =
-            (_existingSale!['grower']?['saleRate'] as num?)?.toString() ?? '0';
-        _growerUnit = _existingSale!['grower']?['unit']?.toString() ?? 'Bag';
-        _finisherQtyCtrl.text =
-            (_existingSale!['finisher']?['qty'] as num?)?.toString() ?? '0';
-        _finisherRateCtrl.text =
-            (_existingSale!['finisher']?['saleRate'] as num?)?.toString() ??
-            '0';
-        _finisherUnit =
-            _existingSale!['finisher']?['unit']?.toString() ?? 'Bag';
-
-        // Select the lot matching existing sale
-        final String existingLotName =
-            _existingSale!['lotName']?.toString() ?? '';
-        try {
-          _selectedLot = lots.firstWhere(
-            (l) => (l['company']?.toString() ?? '') == existingLotName,
-          );
-        } catch (_) {}
-      }
-    });
   }
 
   @override
@@ -1595,20 +1552,9 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
   }
 
   Map<String, double> _calculateFinancials() {
-    if (_selectedLot == null)
-      return {'totalSale': 0, 'totalCost': 0, 'profit': 0, 'due': 0};
-
-    double bagWeight = (_selectedLot!['bagWeight'] as num?)?.toDouble() ?? 50.0;
-
-    double getCost(
-      TextEditingController qtyC,
-      String unit,
-      Map<String, dynamic>? lotData,
-    ) {
+    double getCost(String id, TextEditingController qtyC) {
       double qty = double.tryParse(qtyC.text) ?? 0.0;
-      double pRatePerBag = (lotData?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
-      double pRate = unit == 'Kg' ? (pRatePerBag / bagWeight) : pRatePerBag;
-      return qty * pRate;
+      return qty * _avgCostFor(id);
     }
 
     double getSale(TextEditingController qtyC, TextEditingController rateC) {
@@ -1618,9 +1564,9 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
     }
 
     double totalCost =
-        getCost(_starterQtyCtrl, _starterUnit, _selectedLot?['starter']) +
-        getCost(_growerQtyCtrl, _growerUnit, _selectedLot?['grower']) +
-        getCost(_finisherQtyCtrl, _finisherUnit, _selectedLot?['finisher']);
+        getCost('starter', _starterQtyCtrl) +
+        getCost('grower', _growerQtyCtrl) +
+        getCost('finisher', _finisherQtyCtrl);
 
     double totalSale =
         getSale(_starterQtyCtrl, _starterRateCtrl) +
@@ -1638,11 +1584,11 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
     };
   }
 
-  void _saveSale() async {
-    if (_buyerNameCtrl.text.isEmpty || _selectedLot == null) {
+  Future<void> _saveSale() async {
+    if (_buyerNameCtrl.text.trim().isEmpty) {
       Get.snackbar(
         'Error',
-        'Buyer Name aur Lot select karna zaroori hai',
+        'Buyer Name bharna zaroori hai',
         backgroundColor: Colors.red,
         colorText: Colors.white,
       );
@@ -1659,61 +1605,127 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
       return;
     }
 
-    // ── Available bags validation ──
-    final String lotName = _selectedLot!['company']?.toString() ?? '';
-    final Map<String, double> avail =
-        _availableBags[lotName] ?? {'S': 0, 'G': 0, 'F': 0};
     final double enteredS = double.tryParse(_starterQtyCtrl.text) ?? 0.0;
     final double enteredG = double.tryParse(_growerQtyCtrl.text) ?? 0.0;
     final double enteredF = double.tryParse(_finisherQtyCtrl.text) ?? 0.0;
 
-    // Edit mode mein 0 always allow hai (pehle ki value hatane ke liye)
-    // Sirf tab rokna hai jab entered > available aur entered > 0
-    if (enteredS > 0 && enteredS > (avail['S'] ?? 0)) {
+    // Edit mode mein apni khud ki purani qty wapas jod ke available nikalo
+    double prevS = 0, prevG = 0, prevF = 0;
+    if (_isEditMode && _existingSale != null) {
+      prevS = (_existingSale!['starter']?['qty'] as num?)?.toDouble() ?? 0.0;
+      prevG = (_existingSale!['grower']?['qty'] as num?)?.toDouble() ?? 0.0;
+      prevF = (_existingSale!['finisher']?['qty'] as num?)?.toDouble() ?? 0.0;
+    }
+    final double availS = _availFor('starter', addBackCurrentQty: prevS);
+    final double availG = _availFor('grower', addBackCurrentQty: prevG);
+    final double availF = _availFor('finisher', addBackCurrentQty: prevF);
+
+    if (enteredS > 0 && enteredS > availS) {
       Get.snackbar(
         'Error',
-        'Starter: sirf ${avail['S']?.toStringAsFixed(0)} bag available hai',
+        'Starter: sirf ${availS.toStringAsFixed(0)} bag available hai',
         backgroundColor: Colors.red,
         colorText: Colors.white,
       );
       return;
     }
-    if (enteredG > 0 && enteredG > (avail['G'] ?? 0)) {
+    if (enteredG > 0 && enteredG > availG) {
       Get.snackbar(
         'Error',
-        'Grower: sirf ${avail['G']?.toStringAsFixed(0)} bag available hai',
+        'Grower: sirf ${availG.toStringAsFixed(0)} bag available hai',
         backgroundColor: Colors.red,
         colorText: Colors.white,
       );
       return;
     }
-    if (enteredF > 0 && enteredF > (avail['F'] ?? 0)) {
+    if (enteredF > 0 && enteredF > availF) {
       Get.snackbar(
         'Error',
-        'Finisher: sirf ${avail['F']?.toStringAsFixed(0)} bag available hai',
+        'Finisher: sirf ${availF.toStringAsFixed(0)} bag available hai',
         backgroundColor: Colors.red,
         colorText: Colors.white,
       );
       return;
     }
 
-    // ── Session se added by ──
     final String addedByName = await SessionService.currentName ?? '';
     final String addedByRole = await SessionService.currentRole ?? '';
+    final double paid = double.tryParse(_paidCtrl.text) ?? 0.0;
+    final double totalSale = fin['totalSale'] ?? 0.0;
 
+    // ✅ NEW: Har type ke persistent stock (feedStockList) mein
+    // privateSales record karo — paid amount proportionally split hota
+    // hai har type ke sale-value ke hisaab se.
+    final String groupId = _isEditMode
+        ? (_existingSale!['id']?.toString() ??
+              DateTime.now().millisecondsSinceEpoch.toString())
+        : DateTime.now().millisecondsSinceEpoch.toString();
+
+    if (_isEditMode) {
+      // Purane group-linked privateSales records har type se hata do,
+      // fir fresh values se dobara add karo (edit = delete+recreate).
+      List<Map<String, dynamic>> stock = await CompanyStore.instance
+          .getJsonList('feedStockList');
+      for (final id in kFeedTypeIds) {
+        final idx = stock.indexWhere((s) => s['id'] == id);
+        if (idx == -1) continue;
+        final sales = (stock[idx]['privateSales'] as List?) ?? [];
+        sales.removeWhere((s) => s['groupId']?.toString() == groupId);
+        stock[idx]['privateSales'] = sales;
+      }
+      await CompanyStore.instance.saveJsonList('feedStockList', stock);
+    }
+
+    final Map<String, double> qtyByType = {
+      'starter': enteredS,
+      'grower': enteredG,
+      'finisher': enteredF,
+    };
+    final Map<String, TextEditingController> rateByType = {
+      'starter': _starterRateCtrl,
+      'grower': _growerRateCtrl,
+      'finisher': _finisherRateCtrl,
+    };
+    for (final id in kFeedTypeIds) {
+      final qty = qtyByType[id] ?? 0.0;
+      if (qty <= 0) continue;
+      final rate = double.tryParse(rateByType[id]!.text) ?? 0.0;
+      final double lineValue = qty * rate;
+      final double paidShare = totalSale > 0
+          ? paid * (lineValue / totalSale)
+          : 0.0;
+
+      List<Map<String, dynamic>> stock = await CompanyStore.instance
+          .getJsonList('feedStockList');
+      final idx = stock.indexWhere((s) => s['id'] == id);
+      if (idx == -1) continue;
+      final sales = (stock[idx]['privateSales'] as List?) ?? [];
+      sales.add({
+        'id': '$groupId-$id',
+        'groupId': groupId,
+        'buyerName': _buyerNameCtrl.text.trim(),
+        'mobile': _mobileCtrl.text.trim(),
+        'qty': qty,
+        'rate': rate,
+        'paidAmount': paidShare,
+        'date': DateTime.now().toIso8601String(),
+        'addedByName': addedByName,
+        'addedByRole': addedByRole,
+      });
+      stock[idx]['privateSales'] = sales;
+      await CompanyStore.instance.saveJsonList('feedStockList', stock);
+    }
+
+    // ✅ Backward-compat: Sales tab ki global "Feed Sales" list
+    // ('feedSalesHistory') mein bhi combined-entry save karte rahenge,
+    // taaki wo list pehle jaisa hi kaam kare.
     final Map<String, dynamic> newSale = {
-      'id': _isEditMode
-          ? _existingSale!['id']
-          : DateTime.now().millisecondsSinceEpoch.toString(),
-      'date': _isEditMode
-          ? _existingSale!['date']
-          : DateTime.now().toIso8601String(),
+      'id': groupId,
+      'date': _isEditMode ? _existingSale!['date'] : DateTime.now().toIso8601String(),
       'editedAt': _isEditMode ? DateTime.now().toIso8601String() : null,
       'buyerName': _buyerNameCtrl.text.trim(),
       'mobile': _mobileCtrl.text.trim(),
-      'lotName': _selectedLot!['company'] ?? 'Unknown Lot',
-      'bagWeightApplied':
-          (_selectedLot!['bagWeight'] as num?)?.toDouble() ?? 50.0,
+      'lotName': '',
       'addedByName': _isEditMode
           ? (_existingSale!['addedByName'] ?? addedByName)
           : addedByName,
@@ -1722,25 +1734,13 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
           : addedByRole,
       'editedByName': _isEditMode ? addedByName : null,
       'editedByRole': _isEditMode ? addedByRole : null,
-      'starter': {
-        'qty': enteredS,
-        'unit': _starterUnit,
-        'saleRate': double.tryParse(_starterRateCtrl.text) ?? 0.0,
-      },
-      'grower': {
-        'qty': enteredG,
-        'unit': _growerUnit,
-        'saleRate': double.tryParse(_growerRateCtrl.text) ?? 0.0,
-      },
-      'finisher': {
-        'qty': enteredF,
-        'unit': _finisherUnit,
-        'saleRate': double.tryParse(_finisherRateCtrl.text) ?? 0.0,
-      },
+      'starter': {'qty': enteredS, 'unit': 'Bag', 'saleRate': double.tryParse(_starterRateCtrl.text) ?? 0.0},
+      'grower': {'qty': enteredG, 'unit': 'Bag', 'saleRate': double.tryParse(_growerRateCtrl.text) ?? 0.0},
+      'finisher': {'qty': enteredF, 'unit': 'Bag', 'saleRate': double.tryParse(_finisherRateCtrl.text) ?? 0.0},
       'totalSaleAmount': fin['totalSale'],
       'totalCostAmount': fin['totalCost'],
       'profitAmount': fin['profit'],
-      'paidAmount': double.tryParse(_paidCtrl.text) ?? 0.0,
+      'paidAmount': paid,
       'dueAmount': fin['due'],
     };
 
@@ -1750,12 +1750,8 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
     List<dynamic> salesList = existingSales != null
         ? json.decode(existingSales)
         : [];
-
     if (_isEditMode) {
-      // Replace existing sale
-      final int idx = salesList.indexWhere(
-        (s) => s['id'] == _existingSale!['id'],
-      );
+      final int idx = salesList.indexWhere((s) => s['id'] == groupId);
       if (idx != -1) {
         salesList[idx] = newSale;
       } else {
@@ -1764,18 +1760,16 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
     } else {
       salesList.insert(0, newSale);
     }
-
     await CompanyStore.instance.setString(
       'feedSalesHistory',
       json.encode(salesList),
     );
 
+    if (!mounted) return;
     Get.back(result: true);
     Get.snackbar(
       _isEditMode ? 'Updated ✅' : 'Success ✅',
-      _isEditMode
-          ? 'Feed Sale Update Ho Gaya'
-          : 'Feed Sale Record Save Ho Gaya',
+      _isEditMode ? 'Feed Sale Update Ho Gaya' : 'Feed Sale Record Save Ho Gaya',
       backgroundColor: Colors.green,
       colorText: Colors.white,
     );
@@ -1805,268 +1799,199 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── LOT SELECTION ──
-            DropdownButtonFormField<Map<String, dynamic>>(
-              decoration: InputDecoration(
-                labelText: 'Purchase Lot Select Karein *',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              items: _purchaseLots
-                  .map(
-                    (lot) => DropdownMenuItem(
-                      value: lot,
-                      child: Text(
-                        '${lot['company']} (${lot['date']?.toString().split('T')[0] ?? ''})',
-                        overflow: TextOverflow.ellipsis,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _buyerNameCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Buyer Name *',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                  )
-                  .toList(),
-              onChanged: (val) => setState(() => _selectedLot = val),
-            ),
-            const SizedBox(height: 16),
-
-            // ── BUYER INFO ──
-            TextField(
-              controller: _buyerNameCtrl,
-              decoration: InputDecoration(
-                labelText: 'Buyer Name *',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _mobileCtrl,
-              keyboardType: TextInputType.phone,
-              maxLength: 10,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(10),
-              ],
-              decoration: InputDecoration(
-                labelText: 'Mobile Number',
-                counterText: '',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // ── FEED SECTIONS ──
-            if (_selectedLot != null) ...[
-              _buildFeedInputSection(
-                'Starter',
-                'S',
-                _starterQtyCtrl,
-                _starterRateCtrl,
-                _starterUnit,
-                (val) => setState(() => _starterUnit = val!),
-                _selectedLot?['starter'],
-              ),
-              _buildFeedInputSection(
-                'Grower',
-                'G',
-                _growerQtyCtrl,
-                _growerRateCtrl,
-                _growerUnit,
-                (val) => setState(() => _growerUnit = val!),
-                _selectedLot?['grower'],
-              ),
-              _buildFeedInputSection(
-                'Finisher',
-                'F',
-                _finisherQtyCtrl,
-                _finisherRateCtrl,
-                _finisherUnit,
-                (val) => setState(() => _finisherUnit = val!),
-                _selectedLot?['finisher'],
-              ),
-            ] else
-              const Padding(
-                padding: EdgeInsets.all(20),
-                child: Center(
-                  child: Text(
-                    'Rate Auto-fill karne ke liye Lot select karein',
-                    style: TextStyle(color: Colors.grey),
                   ),
-                ),
-              ),
-
-            const Divider(thickness: 2),
-            const SizedBox(height: 12),
-
-            // ── PAYMENT ──
-            TextField(
-              controller: _paidCtrl,
-              keyboardType: TextInputType.number,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: 'Advance / Cash Mila (₹)',
-                prefixIcon: const Icon(
-                  Icons.currency_rupee,
-                  color: Colors.green,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // ── LIVE CALCULATION DASHBOARD ──
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue.shade200),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Total Sale Bill:'),
-                      Text(
-                        '₹${fin['totalSale']!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _mobileCtrl,
+                    keyboardType: TextInputType.phone,
+                    maxLength: 10,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(10),
+                    ],
+                    decoration: InputDecoration(
+                      labelText: 'Mobile Number',
+                      counterText: '',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _feedSaleInputSection(
+                    'Starter',
+                    'starter',
+                    _starterQtyCtrl,
+                    _starterRateCtrl,
+                  ),
+                  _feedSaleInputSection(
+                    'Grower',
+                    'grower',
+                    _growerQtyCtrl,
+                    _growerRateCtrl,
+                  ),
+                  _feedSaleInputSection(
+                    'Finisher',
+                    'finisher',
+                    _finisherQtyCtrl,
+                    _finisherRateCtrl,
+                  ),
+                  const Divider(thickness: 2),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _paidCtrl,
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Advance / Cash Mila (₹)',
+                      prefixIcon: const Icon(
+                        Icons.currency_rupee,
+                        color: Colors.green,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total Sale Bill:'),
+                            Text(
+                              '₹${fin['totalSale']!.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total Purchase Cost:'),
+                            Text('₹${fin['totalCost']!.toStringAsFixed(2)}'),
+                          ],
+                        ),
+                        const Divider(),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              fin['profit']! >= 0 ? 'Profit 📈' : 'Loss 📉',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: fin['profit']! >= 0
+                                    ? Colors.green
+                                    : Colors.red,
+                              ),
+                            ),
+                            Text(
+                              '₹${fin['profit']!.abs().toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: fin['profit']! >= 0
+                                    ? Colors.green
+                                    : Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Due (Udhaar) ⏳:',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange,
+                              ),
+                            ),
+                            Text(
+                              '₹${fin['due']!.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: _saveSale,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade800,
+                      ),
+                      child: const Text(
+                        'Save Feed Sale',
+                        style: TextStyle(
+                          color: Colors.white,
                           fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Total Purchase Cost:'),
-                      Text('₹${fin['totalCost']!.toStringAsFixed(2)}'),
-                    ],
-                  ),
-                  const Divider(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        fin['profit']! >= 0 ? 'Profit 📈' : 'Loss 📉',
-                        style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: fin['profit']! >= 0
-                              ? Colors.green
-                              : Colors.red,
                         ),
                       ),
-                      Text(
-                        '₹${fin['profit']!.abs().toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: fin['profit']! >= 0
-                              ? Colors.green
-                              : Colors.red,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Due (Udhaar) ⏳:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange,
-                        ),
-                      ),
-                      Text(
-                        '₹${fin['due']!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange,
-                        ),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
-            const SizedBox(height: 30),
-
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _saveSale,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade800,
-                ),
-                child: const Text(
-                  'Save Feed Sale',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 40),
-          ],
-        ),
-      ),
     );
   }
 
-  Widget _buildFeedInputSection(
+  Widget _feedSaleInputSection(
     String title,
-    String typeKey, // 'S', 'G', 'F'
+    String typeId,
     TextEditingController qtyCtrl,
     TextEditingController rateCtrl,
-    String currentUnit,
-    ValueChanged<String?> onUnitChanged,
-    Map<String, dynamic>? lotData,
   ) {
-    double pRatePerBag = (lotData?['perBagPrice'] as num?)?.toDouble() ?? 0.0;
-    double bagW = (_selectedLot!['bagWeight'] as num?)?.toDouble() ?? 50.0;
-    double pRate = currentUnit == 'Kg' ? (pRatePerBag / bagW) : pRatePerBag;
-
-    // Available = purchased - already sold from this lot
-    final String lotName = _selectedLot!['company']?.toString() ?? '';
-    final double availBags = _availableBags[lotName]?[typeKey] ?? 0.0;
-    final double purchasedBags = (lotData?['bags'] as num?)?.toDouble() ?? 0.0;
-    final double soldBags = purchasedBags - availBags;
-
+    final double avgCost = _avgCostFor(typeId);
+    final double totalBags = _totalBagsFor(typeId);
+    final double availBags = _availFor(typeId);
     double enteredQty = double.tryParse(qtyCtrl.text) ?? 0.0;
-    bool isExceeded =
-        currentUnit == 'Bag' && enteredQty > availBags && availBags >= 0;
+    bool isExceeded = enteredQty > availBags;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 20),
+      margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: purchasedBags == 0
-            ? Colors.grey.shade100
-            : isExceeded
-            ? Colors.red.shade50
-            : Colors.white,
+        color: isExceeded ? Colors.red.shade50 : Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: purchasedBags == 0
-              ? Colors.grey.shade300
-              : isExceeded
-              ? Colors.red.shade300
-              : Colors.grey.shade300,
+          color: isExceeded ? Colors.red.shade300 : Colors.grey.shade300,
         ),
       ),
       child: Column(
@@ -2080,161 +2005,84 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15,
-                  color: purchasedBags == 0
-                      ? Colors.grey
-                      : Colors.blue.shade900,
+                  color: Colors.blue.shade900,
                 ),
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  if (purchasedBags > 0)
+                  if (avgCost > 0)
                     Text(
-                      'Auto Cost: ₹${pRate.toStringAsFixed(2)} / $currentUnit',
+                      'Auto Cost: ₹${avgCost.toStringAsFixed(2)} / Bag',
                       style: const TextStyle(fontSize: 10, color: Colors.grey),
                     ),
-                  if (purchasedBags > 0) ...[
-                    Text(
-                      'Kharida: ${purchasedBags.toStringAsFixed(0)} Bag',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: Colors.black45,
-                      ),
+                  Text(
+                    'Kharida: ${totalBags.toStringAsFixed(0)} Bag',
+                    style: const TextStyle(fontSize: 10, color: Colors.black45),
+                  ),
+                  Text(
+                    'Bacha: ${availBags.toStringAsFixed(0)} Bag',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isExceeded
+                          ? Colors.red.shade700
+                          : Colors.green.shade700,
                     ),
-                    if (soldBags > 0)
-                      Text(
-                        'Becha: ${soldBags.toStringAsFixed(0)} Bag',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.orange.shade700,
-                        ),
-                      ),
-                    Text(
-                      'Bacha: ${availBags.toStringAsFixed(0)} Bag',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: isExceeded
-                            ? Colors.red.shade700
-                            : Colors.green.shade700,
-                      ),
-                    ),
-                  ] else
-                    Text(
-                      'Is lot mein nahi aaya',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey.shade500,
-                      ),
-                    ),
+                  ),
                 ],
               ),
             ],
           ),
-          if (purchasedBags == 0 && !_isEditMode)
+          if (isExceeded)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                '⚠️ Is lot mein $title nahi hai — add nahi kar sakte',
+                '⚠️ Sirf ${availBags.toStringAsFixed(0)} bag available hai!',
                 style: TextStyle(
                   fontSize: 11,
-                  color: Colors.grey.shade500,
-                  fontStyle: FontStyle.italic,
+                  color: Colors.red.shade700,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            )
-          else if (purchasedBags == 0 && _isEditMode)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '⚠️ Is lot mein $title nahi tha — 0 karo aur save karo',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.orange.shade700,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: qtyCtrl,
-                    onChanged: (_) => setState(() {}),
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Qty (0 karo)',
-                      isDense: true,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else ...[
-            if (isExceeded)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  '⚠️ Sirf ${availBags.toStringAsFixed(0)} bag available hai!',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.red.shade700,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    controller: qtyCtrl,
-                    onChanged: (_) => setState(() {}),
-                    keyboardType: TextInputType.number,
-                    enabled: purchasedBags > 0,
-                    decoration: InputDecoration(
-                      labelText: 'Qty',
-                      isDense: true,
-                      errorText: isExceeded
-                          ? 'Max ${availBags.toStringAsFixed(0)}'
-                          : null,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 1,
-                  child: DropdownButtonFormField<String>(
-                    value: currentUnit,
-                    decoration: const InputDecoration(isDense: true),
-                    items: ['Bag', 'Kg']
-                        .map((u) => DropdownMenuItem(value: u, child: Text(u)))
-                        .toList(),
-                    onChanged: onUnitChanged,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    controller: rateCtrl,
-                    onChanged: (_) => setState(() {}),
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Sale Rate',
-                      isDense: true,
-                    ),
-                  ),
-                ),
-              ],
             ),
-          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: qtyCtrl,
+                  onChanged: (_) => setState(() {}),
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Qty (Bag)',
+                    isDense: true,
+                    errorText: isExceeded
+                        ? 'Max ${availBags.toStringAsFixed(0)}'
+                        : null,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: rateCtrl,
+                  onChanged: (_) => setState(() {}),
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Sale Rate (₹/Bag)',
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 }
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📋 FEED SALE DETAIL SCREEN — Full info + Edit button
