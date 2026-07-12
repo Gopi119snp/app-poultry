@@ -164,7 +164,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     if (costRaw != null && costRaw.isNotEmpty) {
       try {
         final decoded = jsonDecode(costRaw) as Map<String, dynamic>;
-        _fallbackChickPrice = (decoded['chickPricePerPiece'] ?? 45.0).toDouble();
+        _fallbackChickPrice = (decoded['chickPricePerPiece'] ?? 45.0)
+            .toDouble();
         _fallbackFeedRate = (decoded['feedRatePerKg'] ?? 38.0).toDouble();
         _fallbackAdminCost = (decoded['adminCostPerKg'] ?? 2.0).toDouble();
         _fallbackKgPerBag = (decoded['kgPerBag'] ?? 50.0).toDouble();
@@ -209,14 +210,25 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
   }
 
   DateTime? _parseDdMmYyyy(dynamic raw) {
+    if (raw == null) return null;
+    final String s = raw.toString().trim();
+    if (s.isEmpty) return null;
     try {
-      final parts = raw.toString().split('/');
-      if (parts.length != 3) return null;
-      return DateTime(
-        int.parse(parts[2]),
-        int.parse(parts[1]),
-        int.parse(parts[0]),
-      );
+      final parts = s.split('/');
+      if (parts.length == 3) {
+        return DateTime(
+          int.parse(parts[2]),
+          int.parse(parts[1]),
+          int.parse(parts[0]),
+        );
+      }
+    } catch (_) {}
+    // ✅ FIX: Agar "dd/MM/yyyy" format mein parse nahi hua (e.g. purane
+    // corrupt-format batches jinka startDate ISO string mein save ho gaya
+    // tha), to ISO format bhi try karo — warna DateTime.now() par fallback
+    // hoke sirf "1 din" ki list ban jaati thi.
+    try {
+      return DateTime.parse(s);
     } catch (_) {
       return null;
     }
@@ -323,24 +335,25 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       final ratesToday = _resolveCostRates(manualWeightKg ?? autoWeightKg);
 
       if (remainingFeedBagsToday != null) {
-        lastActualRemainingFeedKg = remainingFeedBagsToday * ratesToday.kgPerBag;
+        lastActualRemainingFeedKg =
+            remainingFeedBagsToday * ratesToday.kgPerBag;
         remainingFeedEverReported = true;
       }
 
       // ── Feed Stock in Farm (kg) — deliveries (jitni baar bhi aayi) minus
       // ab tak consume hua feed ─────────────────────────────────────────
-      cumulativeFeedDeliveredKg +=
-          feedBagsDeliveredToday * ratesToday.kgPerBag;
+      cumulativeFeedDeliveredKg += feedBagsDeliveredToday * ratesToday.kgPerBag;
       final double feedStockKg =
           (cumulativeFeedDeliveredKg - cumulativeFeedConsumedKg).clamp(
-        0,
-        double.infinity,
-      );
+            0,
+            double.infinity,
+          );
 
       // ── FCR — Cumulative, dono Automatic aur Manual weight ke basis pe ──
       final double autoBiomassKg = liveChicks * autoWeightKg;
-      final double autoFcr =
-          autoBiomassKg > 0 ? cumulativeFeedConsumedKg / autoBiomassKg : 0.0;
+      final double autoFcr = autoBiomassKg > 0
+          ? cumulativeFeedConsumedKg / autoBiomassKg
+          : 0.0;
 
       double? manualFcr;
       if (manualWeightKg != null && manualWeightKg > 0) {
@@ -359,8 +372,9 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       final double cumulativeAdminCost = autoBiomassKg * ratesToday.adminCost;
       final double cumulativeProductionCost =
           cumulativeChickCost + cumulativeFeedCost + cumulativeAdminCost;
-      final double costPerKg =
-          autoBiomassKg > 0 ? cumulativeProductionCost / autoBiomassKg : 0.0;
+      final double costPerKg = autoBiomassKg > 0
+          ? cumulativeProductionCost / autoBiomassKg
+          : 0.0;
 
       // ── 🚨 Fraud Risk Assessment (Feed-per-Bird + Purchase Reconciliation) ──
       final FraudRiskAssessment fraud = FraudRiskEngine.assess(
@@ -403,8 +417,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       Get.snackbar(
         'Rule 1 Active Hai',
         'Abhi Cost/Kg "Rule 1 (Big/Small Auto Size)" ke saved rates se aa '
-        'raha hai. Yeh fallback settings sirf tab use hoti hain jab Rule 2 '
-        'ho ya koi rule set na ho.',
+            'raha hai. Yeh fallback settings sirf tab use hoti hain jab Rule 2 '
+            'ho ya koi rule set na ho.',
         backgroundColor: Colors.blue.shade700,
         colorText: Colors.white,
         snackPosition: SnackPosition.BOTTOM,
@@ -418,7 +432,9 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       text: _fallbackChickPrice.toString(),
     );
     final feedCtrl = TextEditingController(text: _fallbackFeedRate.toString());
-    final adminCtrl = TextEditingController(text: _fallbackAdminCost.toString());
+    final adminCtrl = TextEditingController(
+      text: _fallbackAdminCost.toString(),
+    );
 
     showModalBottomSheet(
       context: context,
@@ -450,28 +466,40 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: chickCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 labelText: 'Chick Price / Piece (₹)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: feedCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 labelText: 'Feed Rate / Kg (₹)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: adminCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 labelText: 'Admin Cost / Kg (₹)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -519,7 +547,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                 },
                 child: const Text(
                   'Save Karo',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
@@ -560,7 +591,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: color.withOpacity(0.6),
+                  color: color.withValues(alpha: 0.6),
                   blurRadius: 4,
                   spreadRadius: 0.5,
                 ),
@@ -607,7 +638,9 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     }
     return Container(
       padding: EdgeInsets.symmetric(
-          horizontal: 9 * _tableScale, vertical: 5 * _tableScale),
+        horizontal: 9 * _tableScale,
+        vertical: 5 * _tableScale,
+      ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: gradientColors,
@@ -617,12 +650,12 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: glowColor.withOpacity(0.45),
+            color: glowColor.withValues(alpha: 0.45),
             blurRadius: 6,
             offset: const Offset(0, 3),
           ),
           BoxShadow(
-            color: Colors.white.withOpacity(0.6),
+            color: Colors.white.withValues(alpha: 0.6),
             blurRadius: 1,
             offset: const Offset(0, -1),
           ),
@@ -669,20 +702,26 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: primaryGreen.withOpacity(0.4),
+                    color: primaryGreen.withValues(alpha: 0.4),
                     blurRadius: 6,
                     offset: const Offset(0, 3),
                   ),
                 ],
               ),
-              child: const Icon(Icons.edit_calendar_rounded,
-                  color: Colors.white, size: 18),
+              child: const Icon(
+                Icons.edit_calendar_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Entry — $dateStr (Din ${row.day})',
-                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
@@ -709,16 +748,22 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Mortality (is din ki nayi entry)',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: weightCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   labelText: 'Avg Weight (kg)',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -727,7 +772,9 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Remaining Feed Bags (optional)',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -749,9 +796,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: primaryGreen,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
               elevation: 4,
-              shadowColor: primaryGreen.withOpacity(0.6),
+              shadowColor: primaryGreen.withValues(alpha: 0.6),
             ),
             onPressed: () => _saveDayEntry(
               dialogContext: context,
@@ -763,7 +811,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
             ),
             child: const Text(
               'Save Karo',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -969,7 +1020,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
             ),
             boxShadow: [
               BoxShadow(
-                color: primaryGreen.withOpacity(0.45),
+                color: primaryGreen.withValues(alpha: 0.45),
                 blurRadius: 14,
                 offset: const Offset(0, 6),
               ),
@@ -994,18 +1045,20 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.15),
+                    color: Colors.white.withValues(alpha: 0.15),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
+                        color: Colors.black.withValues(alpha: 0.2),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
                     ],
                   ),
                   child: IconButton(
-                    icon: const Icon(Icons.settings_rounded,
-                        color: Colors.white),
+                    icon: const Icon(
+                      Icons.settings_rounded,
+                      color: Colors.white,
+                    ),
                     tooltip: 'Cost Settings',
                     onPressed: _showCostConfigSheet,
                   ),
@@ -1037,7 +1090,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.blue.shade100.withOpacity(0.9),
+                            color: Colors.blue.shade100.withValues(alpha: 0.9),
                             blurRadius: 10,
                             offset: const Offset(0, 5),
                           ),
@@ -1060,7 +1113,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                               gradient: LinearGradient(
                                 colors: [
                                   Colors.blue.shade300,
-                                  Colors.blue.shade600
+                                  Colors.blue.shade600,
                                 ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
@@ -1084,9 +1137,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                   ? 'Cost/Kg abhi "Rule 1 (Big/Small Auto Size)" ke saved rates se aa raha hai (weight ke hisaab se auto).'
                                   : 'Cost/Kg abhi ⚙️ Fallback Settings se aa raha hai (Rule 2 mein cost fields nahi hain abhi).',
                               style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: Colors.blue.shade900,
-                                  height: 1.3),
+                                fontSize: 11.5,
+                                color: Colors.blue.shade900,
+                                height: 1.3,
+                              ),
                             ),
                           ),
                         ],
@@ -1099,13 +1153,15 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.06),
+                            color: Colors.black.withValues(alpha: 0.06),
                             blurRadius: 8,
                             offset: const Offset(0, 4),
                           ),
@@ -1116,8 +1172,11 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.zoom_in_rounded,
-                                  size: 16, color: primaryGreen),
+                              Icon(
+                                Icons.zoom_in_rounded,
+                                size: 16,
+                                color: primaryGreen,
+                              ),
                               const SizedBox(width: 6),
                               const Text(
                                 'List Zoom',
@@ -1134,15 +1193,20 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                               _zoomButton(
                                 icon: Icons.remove_rounded,
                                 onTap: () => setState(() {
-                                  _tableScale =
-                                      (_tableScale - 0.1).clamp(0.5, 1.8);
+                                  _tableScale = (_tableScale - 0.1).clamp(
+                                    0.5,
+                                    1.8,
+                                  );
                                 }),
                               ),
                               Container(
                                 margin: const EdgeInsets.symmetric(
-                                    horizontal: 10),
+                                  horizontal: 10,
+                                ),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 5),
+                                  horizontal: 12,
+                                  vertical: 5,
+                                ),
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: [primaryGreen, accentGreen],
@@ -1150,7 +1214,9 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                   borderRadius: BorderRadius.circular(20),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: primaryGreen.withOpacity(0.35),
+                                      color: primaryGreen.withValues(
+                                        alpha: 0.35,
+                                      ),
                                       blurRadius: 6,
                                       offset: const Offset(0, 3),
                                     ),
@@ -1168,8 +1234,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                               _zoomButton(
                                 icon: Icons.add_rounded,
                                 onTap: () => setState(() {
-                                  _tableScale =
-                                      (_tableScale + 0.1).clamp(0.5, 1.8);
+                                  _tableScale = (_tableScale + 0.1).clamp(
+                                    0.5,
+                                    1.8,
+                                  );
                                 }),
                               ),
                             ],
@@ -1190,7 +1258,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                         border: Border.all(color: Colors.green.shade100),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.green.shade100.withOpacity(0.8),
+                            color: Colors.green.shade100.withValues(alpha: 0.8),
                             blurRadius: 8,
                             offset: const Offset(0, 4),
                           ),
@@ -1206,9 +1274,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                               'Kisi bhi din ki ROW par TAP karke Mortality/Weight/Feed add karo. '
                               'Side mein scroll karke saare columns bhi dekh sakte ho.',
                               style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: Colors.green.shade900,
-                                  height: 1.3),
+                                fontSize: 11.5,
+                                color: Colors.green.shade900,
+                                height: 1.3,
+                              ),
                             ),
                           ),
                         ],
@@ -1228,7 +1297,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                 borderRadius: BorderRadius.circular(16),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.12),
+                                    color: Colors.black.withValues(alpha: 0.12),
                                     blurRadius: 16,
                                     offset: const Offset(0, 8),
                                   ),
@@ -1266,210 +1335,195 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                       DataColumn(label: Text('Total Mort.')),
                                       DataColumn(label: Text('Mort. %')),
                                       DataColumn(
-                                          label: Text('Daily Feed (kg)')),
+                                        label: Text('Daily Feed (kg)'),
+                                      ),
                                       DataColumn(
-                                          label: Text('Total Feed (kg)')),
+                                        label: Text('Total Feed (kg)'),
+                                      ),
                                       DataColumn(
-                                          label: Text('Feed Stock (kg)')),
+                                        label: Text('Feed Stock (kg)'),
+                                      ),
                                       DataColumn(label: Text('Wt Auto (kg)')),
-                                      DataColumn(
-                                          label: Text('Wt Manual (kg)')),
+                                      DataColumn(label: Text('Wt Manual (kg)')),
                                       DataColumn(label: Text('FCR Auto')),
                                       DataColumn(label: Text('FCR Manual')),
                                       DataColumn(label: Text('Cost/Kg (₹)')),
                                     ],
-                                    rows: _rows
-                                        .asMap()
-                                        .entries
-                                        .map(
-                                          (entry) {
-                                            final i = entry.key;
-                                            final r = entry.value;
-                                            final bool isHigh =
-                                                r.fraud.riskLevel == 'high';
-                                            final bool isEven = i % 2 == 0;
-                                            final bool isEditable =
-                                                _isEditableDate(r.date);
-                                            return DataRow(
-                                              color: WidgetStateProperty.all(
-                                                r.hasMismatch
-                                                    ? Colors.red.shade100
-                                                    : (isHigh
-                                                        ? Colors.red.shade50
-                                                        : (isEven
-                                                            ? Colors.white
-                                                            : lightGreen
-                                                                .withOpacity(
-                                                                    0.5))),
-                                              ),
-                                              onSelectChanged: isEditable
-                                                  ? (_) =>
-                                                      _showEditDayDialog(r)
-                                                  : (_) {
-                                                      Get.snackbar(
-                                                        'Locked 🔒',
-                                                        'Sirf Aaj + pichle 2 din tak hi entry edit ho sakti hai.',
-                                                        backgroundColor:
-                                                            Colors
-                                                                .grey.shade700,
-                                                        colorText:
-                                                            Colors.white,
-                                                        snackPosition:
-                                                            SnackPosition
-                                                                .BOTTOM,
+                                    rows: _rows.asMap().entries.map((entry) {
+                                      final i = entry.key;
+                                      final r = entry.value;
+                                      final bool isHigh =
+                                          r.fraud.riskLevel == 'high';
+                                      final bool isEven = i % 2 == 0;
+                                      final bool isEditable = _isEditableDate(
+                                        r.date,
+                                      );
+                                      return DataRow(
+                                        color: WidgetStateProperty.all(
+                                          r.hasMismatch
+                                              ? Colors.red.shade100
+                                              : (isHigh
+                                                    ? Colors.red.shade50
+                                                    : (isEven
+                                                          ? Colors.white
+                                                          : lightGreen
+                                                                .withValues(
+                                                                  alpha: 0.5,
+                                                                ))),
+                                        ),
+                                        onSelectChanged: isEditable
+                                            ? (_) => _showEditDayDialog(r)
+                                            : (_) {
+                                                Get.snackbar(
+                                                  'Locked 🔒',
+                                                  'Sirf Aaj + pichle 2 din tak hi entry edit ho sakti hai.',
+                                                  backgroundColor:
+                                                      Colors.grey.shade700,
+                                                  colorText: Colors.white,
+                                                  snackPosition:
+                                                      SnackPosition.BOTTOM,
+                                                );
+                                              },
+                                        cells: [
+                                          DataCell(
+                                            isEditable
+                                                ? _editButton(
+                                                    () => _showEditDayDialog(r),
+                                                  )
+                                                : _lockedButton(),
+                                          ),
+                                          DataCell(_riskBadge(r.fraud)),
+                                          DataCell(
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(_fmtDate(r.date)),
+                                                if (r.hasMismatch) ...[
+                                                  const SizedBox(width: 4),
+                                                  InkWell(
+                                                    onTap: () {
+                                                      showDialog(
+                                                        context: context,
+                                                        builder: (ctx) => AlertDialog(
+                                                          title: const Text(
+                                                            '⚠️ Photo Mismatch',
+                                                          ),
+                                                          content: Text(
+                                                            r.mismatchReason ??
+                                                                'Entered value photo se match nahi hui thi.',
+                                                          ),
+                                                          actions: [
+                                                            TextButton(
+                                                              onPressed: () =>
+                                                                  Navigator.pop(
+                                                                    ctx,
+                                                                  ),
+                                                              child: const Text(
+                                                                'OK',
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
                                                       );
                                                     },
-                                              cells: [
-                                                DataCell(
-                                                  isEditable
-                                                      ? _editButton(
-                                                          () =>
-                                                              _showEditDayDialog(
-                                                                  r),
-                                                        )
-                                                      : _lockedButton(),
-                                                ),
-                                                DataCell(_riskBadge(r.fraud)),
-                                                DataCell(
-                                                  Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      Text(_fmtDate(r.date)),
-                                                      if (r.hasMismatch) ...[
-                                                        const SizedBox(
-                                                            width: 4),
-                                                        InkWell(
-                                                          onTap: () {
-                                                            showDialog(
-                                                              context:
-                                                                  context,
-                                                              builder: (ctx) =>
-                                                                  AlertDialog(
-                                                                title: const Text(
-                                                                    '⚠️ Photo Mismatch'),
-                                                                content: Text(
-                                                                  r.mismatchReason ??
-                                                                      'Entered value photo se match nahi hui thi.',
-                                                                ),
-                                                                actions: [
-                                                                  TextButton(
-                                                                    onPressed: () =>
-                                                                        Navigator.pop(
-                                                                            ctx),
-                                                                    child: const Text(
-                                                                        'OK'),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            );
-                                                          },
-                                                          child: const Icon(
-                                                            Icons
-                                                                .warning_amber_rounded,
-                                                            size: 15,
-                                                            color: Colors.red,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ],
-                                                  ),
-                                                ),
-                                                DataCell(Text('${r.day}')),
-                                                DataCell(
-                                                    Text('${r.liveChicks}')),
-                                                DataCell(
-                                                  Text(
-                                                    '${r.mortalityToday}',
-                                                    style: TextStyle(
-                                                      color: r.mortalityToday >
-                                                              0
-                                                          ? Colors.red
-                                                          : Colors.black87,
-                                                      fontWeight:
-                                                          r.mortalityToday > 0
-                                                              ? FontWeight.bold
-                                                              : FontWeight
-                                                                  .normal,
+                                                    child: const Icon(
+                                                      Icons
+                                                          .warning_amber_rounded,
+                                                      size: 15,
+                                                      color: Colors.red,
                                                     ),
                                                   ),
-                                                ),
-                                                DataCell(Text(
-                                                    '${r.totalMortality}')),
-                                                DataCell(
-                                                  _alertText(
-                                                    '${r.mortalityPercent.toStringAsFixed(2)}%',
-                                                    PerformanceAlertEngine
-                                                        .evaluateMortality(
-                                                      r.mortalityPercent,
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                          DataCell(Text('${r.day}')),
+                                          DataCell(Text('${r.liveChicks}')),
+                                          DataCell(
+                                            Text(
+                                              '${r.mortalityToday}',
+                                              style: TextStyle(
+                                                color: r.mortalityToday > 0
+                                                    ? Colors.red
+                                                    : Colors.black87,
+                                                fontWeight: r.mortalityToday > 0
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(Text('${r.totalMortality}')),
+                                          DataCell(
+                                            _alertText(
+                                              '${r.mortalityPercent.toStringAsFixed(2)}%',
+                                              PerformanceAlertEngine.evaluateMortality(
+                                                r.mortalityPercent,
+                                                _performanceConfig,
+                                                dayNumber: r.day,
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              r.dailyFeedKg.toStringAsFixed(2),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              r.totalFeedKg.toStringAsFixed(2),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              r.feedStockKg.toStringAsFixed(2),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              r.autoWeightKg.toStringAsFixed(3),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              r.manualWeightKg != null
+                                                  ? r.manualWeightKg!
+                                                        .toStringAsFixed(3)
+                                                  : '—',
+                                            ),
+                                          ),
+                                          DataCell(
+                                            _alertText(
+                                              r.autoFcr.toStringAsFixed(3),
+                                              r.autoFcr > 0
+                                                  ? PerformanceAlertEngine.evaluateFcr(
+                                                      r.autoFcr,
+                                                      _performanceConfig,
+                                                      dayNumber: r.day,
+                                                    )
+                                                  : null,
+                                            ),
+                                          ),
+                                          DataCell(
+                                            r.manualFcr != null
+                                                ? _alertText(
+                                                    r.manualFcr!
+                                                        .toStringAsFixed(3),
+                                                    PerformanceAlertEngine.evaluateFcr(
+                                                      r.manualFcr!,
                                                       _performanceConfig,
                                                       dayNumber: r.day,
                                                     ),
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  Text(r.dailyFeedKg
-                                                      .toStringAsFixed(2)),
-                                                ),
-                                                DataCell(
-                                                  Text(r.totalFeedKg
-                                                      .toStringAsFixed(2)),
-                                                ),
-                                                DataCell(
-                                                  Text(r.feedStockKg
-                                                      .toStringAsFixed(2)),
-                                                ),
-                                                DataCell(
-                                                  Text(r.autoWeightKg
-                                                      .toStringAsFixed(3)),
-                                                ),
-                                                DataCell(
-                                                  Text(
-                                                    r.manualWeightKg != null
-                                                        ? r.manualWeightKg!
-                                                            .toStringAsFixed(3)
-                                                        : '—',
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  _alertText(
-                                                    r.autoFcr
-                                                        .toStringAsFixed(3),
-                                                    r.autoFcr > 0
-                                                        ? PerformanceAlertEngine
-                                                            .evaluateFcr(
-                                                            r.autoFcr,
-                                                            _performanceConfig,
-                                                            dayNumber: r.day,
-                                                          )
-                                                        : null,
-                                                  ),
-                                                ),
-                                                DataCell(
-                                                  r.manualFcr != null
-                                                      ? _alertText(
-                                                          r.manualFcr!
-                                                              .toStringAsFixed(
-                                                                  3),
-                                                          PerformanceAlertEngine
-                                                              .evaluateFcr(
-                                                            r.manualFcr!,
-                                                            _performanceConfig,
-                                                            dayNumber: r.day,
-                                                          ),
-                                                        )
-                                                      : const Text('—'),
-                                                ),
-                                                DataCell(
-                                                  Text(
-                                                    '₹${r.costPerKg.toStringAsFixed(2)}',
-                                                  ),
-                                                ),
-                                              ],
-                                            );
-                                          },
-                                        )
-                                        .toList(),
+                                                  )
+                                                : const Text('—'),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              '₹${r.costPerKg.toStringAsFixed(2)}',
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    }).toList(),
                                   ),
                                 ),
                               ),
@@ -1494,7 +1548,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black.withValues(alpha: 0.15),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
@@ -1561,7 +1615,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: primaryGreen.withOpacity(0.4),
+              color: primaryGreen.withValues(alpha: 0.4),
               blurRadius: 5,
               offset: const Offset(0, 2),
             ),

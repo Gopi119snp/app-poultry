@@ -17,6 +17,7 @@ import 'sales_screen.dart';
 import 'feed_consumption_rule_screen.dart';
 import 'weight_growth_rule_screen.dart';
 import 'performance_alert_rule_screen.dart';
+import 'accounts_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String ownerName;
@@ -3483,14 +3484,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         r1BigKgPerBagCtrl.text = (r1['bigKgPerBag'] ?? 50.0).toString();
         r1BigTargetCostCtrl.text = (r1['bigTargetCost'] ?? 85.0).toString();
         r1BigBaseCommCtrl.text = (r1['bigBaseComm'] ?? 8.0).toString();
-        r1BigSavingsShareCtrl.text =
-            (r1['bigSavingsShare'] ?? 50.0).toString();
-        r1BigExceededShareCtrl.text =
-            (r1['bigExceededShare'] ?? 50.0).toString();
-        r1BigRateBonusThreshCtrl.text =
-            (r1['bigRateBonusThresh'] ?? 110.0).toString();
-        r1BigRateBonusShareCtrl.text =
-            (r1['bigRateBonusShare'] ?? 10.0).toString();
+        r1BigSavingsShareCtrl.text = (r1['bigSavingsShare'] ?? 50.0).toString();
+        r1BigExceededShareCtrl.text = (r1['bigExceededShare'] ?? 50.0)
+            .toString();
+        r1BigRateBonusThreshCtrl.text = (r1['bigRateBonusThresh'] ?? 110.0)
+            .toString();
+        r1BigRateBonusShareCtrl.text = (r1['bigRateBonusShare'] ?? 10.0)
+            .toString();
         r1BigMedicineInProdCost = r1['bigMedicineInProd'] ?? true;
 
         r1SmFeedRateCtrl.text = (r1['smFeedRate'] ?? 42.0).toString();
@@ -3499,14 +3499,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         r1SmKgPerBagCtrl.text = (r1['smKgPerBag'] ?? 50.0).toString();
         r1SmTargetCostCtrl.text = (r1['smTargetCost'] ?? 90.0).toString();
         r1SmBaseCommCtrl.text = (r1['smBaseComm'] ?? 10.0).toString();
-        r1SmSavingsShareCtrl.text =
-            (r1['smSavingsShare'] ?? 50.0).toString();
-        r1SmExceededShareCtrl.text =
-            (r1['smExceededShare'] ?? 50.0).toString();
-        r1SmRateBonusThreshCtrl.text =
-            (r1['smRateBonusThresh'] ?? 120.0).toString();
-        r1SmRateBonusShareCtrl.text =
-            (r1['smRateBonusShare'] ?? 10.0).toString();
+        r1SmSavingsShareCtrl.text = (r1['smSavingsShare'] ?? 50.0).toString();
+        r1SmExceededShareCtrl.text = (r1['smExceededShare'] ?? 50.0).toString();
+        r1SmRateBonusThreshCtrl.text = (r1['smRateBonusThresh'] ?? 120.0)
+            .toString();
+        r1SmRateBonusShareCtrl.text = (r1['smRateBonusShare'] ?? 10.0)
+            .toString();
         r1SmMedicineInProdCost = r1['smMedicineInProd'] ?? true;
       } catch (e) {
         debugPrint('[SettlementWizard] rule1 load failed: $e');
@@ -3989,9 +3987,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.bold,
-                      color: isEditable
-                          ? Colors.orange.shade900
-                          : primaryGreen,
+                      color: isEditable ? Colors.orange.shade900 : primaryGreen,
                     ),
                   ),
                 ),
@@ -4011,7 +4007,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                     child: const Text(
                       'Edit Karo',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
               ],
@@ -4488,9 +4487,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.bold,
-                      color: isEditable
-                          ? Colors.orange.shade900
-                          : primaryGreen,
+                      color: isEditable ? Colors.orange.shade900 : primaryGreen,
                     ),
                   ),
                 ),
@@ -4510,7 +4507,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                     child: const Text(
                       'Edit Karo',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
               ],
@@ -4820,7 +4820,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 iconBg: const Color(0xFFFFF3E0),
                 iconColor: Colors.orange.shade800,
                 title: 'Feed Consumption Rule',
-                subtitle: 'Daily feed formula apni company ke hisaab se set karo',
+                subtitle:
+                    'Daily feed formula apni company ke hisaab se set karo',
                 badgeText: 'Configure',
                 badgeColor: Colors.orange.shade50,
                 badgeTextColor: Colors.orange.shade800,
@@ -4860,7 +4861,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 iconBg: const Color(0xFFFFEBEE),
                 iconColor: Colors.red.shade700,
                 title: 'Performance Alert Rule',
-                subtitle: 'FCR aur Mortality ke Red/Green/Yellow limits set karo',
+                subtitle:
+                    'FCR aur Mortality ke Red/Green/Yellow limits set karo',
                 badgeText: 'Configure',
                 badgeColor: Colors.red.shade50,
                 badgeTextColor: Colors.red.shade700,
@@ -5331,6 +5333,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       Icons.account_balance_wallet,
                       'Accounts',
                       Colors.purple,
+                      onTap: () {
+                        Get.to(() => const AccountsScreen());
+                      },
                     ),
                   ],
                 ),

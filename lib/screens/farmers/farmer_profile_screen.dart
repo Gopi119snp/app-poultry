@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
 import 'batch_detail_screen.dart';
 import 'batch_create_screen.dart';
+import 'farmer_report_screen.dart';
 
 class FarmerProfileScreen extends StatefulWidget {
   final Map<String, dynamic> farmer;
@@ -87,8 +88,9 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
   }
 
   Future<void> _loadUploadedChequeNumbers() async {
-    final farmersList =
-        await CompanyStore.instance.getJsonList('companyFarmers');
+    final farmersList = await CompanyStore.instance.getJsonList(
+      'companyFarmers',
+    );
     for (var f in farmersList) {
       if (f['id'] == widget.farmer['id']) {
         List<dynamic> saved = f['uploadedChequeNumbers'] ?? [];
@@ -116,8 +118,9 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
   }
 
   Future<void> _checkActiveBatchStatus() async {
-    final farmersList =
-        await CompanyStore.instance.getJsonList('companyFarmers');
+    final farmersList = await CompanyStore.instance.getJsonList(
+      'companyFarmers',
+    );
     int minLiftingDays =
         await CompanyStore.instance.getInt('minLiftingDays') ?? 23;
     int maxLiftingDays =
@@ -130,39 +133,37 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
         break;
       }
     }
-      if (foundFarmer != null) {
-        if (!mounted) return;
-        setState(
-          () => _currentFarmer = Map<String, dynamic>.from(foundFarmer!),
-        );
-        if (_currentFarmer['batches'] != null) {
-          final List<dynamic> batches = _currentFarmer['batches'];
-          Map<String, dynamic>? activeBatch;
-          for (var b in batches) {
-            String bStatus = b['status'].toString().toUpperCase();
-            if (bStatus == 'ACTIVE' ||
-                bStatus == 'LIFTING READY' ||
-                bStatus == 'PARTIAL LIFTED') {
-              activeBatch = b as Map<String, dynamic>;
-              break;
-            }
-          }
-          if (activeBatch != null) {
-            if (!mounted) return;
-            int daysOld = _calculateDaysOld(activeBatch['startDate'] ?? '');
-            if (activeBatch['status'].toString().toUpperCase() == 'ACTIVE' &&
-                daysOld >= minLiftingDays &&
-                daysOld <= maxLiftingDays) {
-              activeBatch['status'] = 'LIFTING READY';
-            }
-            setState(() {
-              _hasActiveBatch = true;
-              _activeBatchData = Map<String, dynamic>.from(activeBatch!);
-            });
-            return;
+    if (foundFarmer != null) {
+      if (!mounted) return;
+      setState(() => _currentFarmer = Map<String, dynamic>.from(foundFarmer!));
+      if (_currentFarmer['batches'] != null) {
+        final List<dynamic> batches = _currentFarmer['batches'];
+        Map<String, dynamic>? activeBatch;
+        for (var b in batches) {
+          String bStatus = b['status'].toString().toUpperCase();
+          if (bStatus == 'ACTIVE' ||
+              bStatus == 'LIFTING READY' ||
+              bStatus == 'PARTIAL LIFTED') {
+            activeBatch = b as Map<String, dynamic>;
+            break;
           }
         }
+        if (activeBatch != null) {
+          if (!mounted) return;
+          int daysOld = _calculateDaysOld(activeBatch['startDate'] ?? '');
+          if (activeBatch['status'].toString().toUpperCase() == 'ACTIVE' &&
+              daysOld >= minLiftingDays &&
+              daysOld <= maxLiftingDays) {
+            activeBatch['status'] = 'LIFTING READY';
+          }
+          setState(() {
+            _hasActiveBatch = true;
+            _activeBatchData = Map<String, dynamic>.from(activeBatch!);
+          });
+          return;
+        }
       }
+    }
     if (!mounted) return;
     setState(() {
       _hasActiveBatch = false;
@@ -180,8 +181,9 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
       );
       if (f == null) return;
       setState(() => _isLoading = true);
-      List<Map<String, dynamic>> list =
-          await CompanyStore.instance.getJsonList('companyFarmers');
+      List<Map<String, dynamic>> list = await CompanyStore.instance.getJsonList(
+        'companyFarmers',
+      );
       for (var farmer in list) {
         if (farmer['id'] == widget.farmer['id']) {
           farmer['hasPhoto'] = true;
@@ -213,8 +215,9 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
       );
       if (f == null) return;
       setState(() => _isLoading = true);
-      List<Map<String, dynamic>> list =
-          await CompanyStore.instance.getJsonList('companyFarmers');
+      List<Map<String, dynamic>> list = await CompanyStore.instance.getJsonList(
+        'companyFarmers',
+      );
       for (var farmer in list) {
         if (farmer['id'] == widget.farmer['id']) {
           farmer['hasSignature'] = true;
@@ -389,8 +392,7 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
       );
       return;
     }
-    var farmersList =
-        await CompanyStore.instance.getJsonList('companyFarmers');
+    var farmersList = await CompanyStore.instance.getJsonList('companyFarmers');
     for (var f in farmersList) {
       if (f['id'] == widget.farmer['id']) {
         for (var b in (f['batches'] ?? [])) {
@@ -398,8 +400,8 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
             b['chicksCount'] = int.parse(chicksCount);
             b['startDate'] = startDate;
             double rate = double.tryParse(b['chicksRate'].toString()) ?? 40.0;
-            b['totalChicksCost'] =
-                (int.parse(chicksCount) * rate).toStringAsFixed(2);
+            b['totalChicksCost'] = (int.parse(chicksCount) * rate)
+                .toStringAsFixed(2);
             break;
           }
         }
@@ -432,8 +434,7 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
       );
       return;
     }
-    var farmersList =
-        await CompanyStore.instance.getJsonList('companyFarmers');
+    var farmersList = await CompanyStore.instance.getJsonList('companyFarmers');
     for (var f in farmersList) {
       if (f['id'] == widget.farmer['id']) {
         if (f['batches'] == null) f['batches'] = [];
@@ -681,8 +682,9 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
     }
     try {
       setState(() => _isLoading = true);
-      var farmersList =
-          await CompanyStore.instance.getJsonList('companyFarmers');
+      var farmersList = await CompanyStore.instance.getJsonList(
+        'companyFarmers',
+      );
       for (var f in farmersList) {
         if (f['id'] == widget.farmer['id']) {
           f['name'] = name;
@@ -819,8 +821,9 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
     }
     try {
       setState(() => _isLoading = true);
-      var farmersList =
-          await CompanyStore.instance.getJsonList('companyFarmers');
+      var farmersList = await CompanyStore.instance.getJsonList(
+        'companyFarmers',
+      );
       for (var f in farmersList) {
         if (f['id'] == widget.farmer['id']) {
           f['bankName'] = bankName;
@@ -1398,7 +1401,9 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
                     ? _buildBatchTab()
                     : _currentTab == 2
                     ? _buildDocumentTab()
-                    : _buildBankTab(),
+                    : _currentTab == 3
+                    ? _buildBankTab()
+                    : _buildReportTab(),
               ),
             ],
           ),
@@ -1560,6 +1565,7 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
           _buildTabItem('Batch', 1),
           _buildTabItem('Document', 2),
           _buildTabItem('Bank', 3),
+          _buildTabItem('Report', 4),
         ],
       ),
     );
@@ -2536,6 +2542,11 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
         ],
       ),
     );
+  }
+
+  // ── REPORT TAB ────────────────────────────────────────────────────────────
+  Widget _buildReportTab() {
+    return FarmerReportScreen(farmer: _currentFarmer);
   }
 
   // ── HELPER WIDGETS ─────────────────────────────────────────────────────────

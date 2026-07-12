@@ -1259,8 +1259,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                                         alloc['farmerInfo'] =
                                                             option;
                                                         alloc['farmerId'] =
-                                                            farmerDisplayToId[
-                                                                option];
+                                                            farmerDisplayToId[option];
                                                         (alloc['farmerSearchCtrl']
                                                                     as TextEditingController)
                                                                 .text =
@@ -1893,8 +1892,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                         final String? farmerId = a['farmerId']
                                             ?.toString();
                                         for (var f in farmersForBatchWrite) {
-                                          if (f['id']?.toString() ==
-                                              farmerId) {
+                                          if (f['id']?.toString() == farmerId) {
                                             if (f['batches'] == null) {
                                               f['batches'] = [];
                                             }
@@ -2386,10 +2384,7 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
   // ✅ NEW: Us lot ke sirf ek type (Company/Private) ke allocations ki
   // filtered sub-list screen khulo — tap karke wahi purana edit/delete
   // detail dialog khulta hai.
-  void _openFilteredAllocationList(
-    ChicksPurchase purchase,
-    String filterType,
-  ) {
+  void _openFilteredAllocationList(ChicksPurchase purchase, String filterType) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -2691,8 +2686,7 @@ class _ChicksAllocSubListScreen extends StatefulWidget {
       _ChicksAllocSubListScreenState();
 }
 
-class _ChicksAllocSubListScreenState
-    extends State<_ChicksAllocSubListScreen> {
+class _ChicksAllocSubListScreenState extends State<_ChicksAllocSubListScreen> {
   late ChicksPurchase _purchase;
 
   @override
@@ -2898,7 +2892,6 @@ class _ChicksAllocSubListScreenState
     );
   }
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🌾 FEED STOCK SYSTEM — Medicine jaisa hi pattern: 3 FIXED running-stock
@@ -3657,8 +3650,10 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                       onPressed: () async {
                         final String farmerName =
                             (selectedFarmer ?? farmerSearchCtrl.text).trim();
-                        double sQty = double.tryParse(starterQtyCtrl.text) ?? 0.0;
-                        double gQty = double.tryParse(growerQtyCtrl.text) ?? 0.0;
+                        double sQty =
+                            double.tryParse(starterQtyCtrl.text) ?? 0.0;
+                        double gQty =
+                            double.tryParse(growerQtyCtrl.text) ?? 0.0;
                         double fQty =
                             double.tryParse(finisherQtyCtrl.text) ?? 0.0;
 
@@ -3767,8 +3762,7 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                               ),
                               actions: [
                                 TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(ctx, 'cancel'),
+                                  onPressed: () => Navigator.pop(ctx, 'cancel'),
                                   child: const Text(
                                     'Cancel',
                                     style: TextStyle(color: Colors.grey),
@@ -3776,8 +3770,7 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                                 ),
                                 if (completedBatches.isNotEmpty)
                                   TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(ctx, 'old'),
+                                    onPressed: () => Navigator.pop(ctx, 'old'),
                                     child: const Text('Purane Batch Ka'),
                                   ),
                                 ElevatedButton(
@@ -3797,33 +3790,32 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                           if (choice == null || choice == 'cancel') return;
 
                           if (choice == 'old') {
-                            final Map<String, dynamic>? picked =
-                                await showDialog<Map<String, dynamic>>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Batch Chuniye'),
-                                    content: SizedBox(
-                                      width: double.maxFinite,
-                                      child: ListView.builder(
-                                        shrinkWrap: true,
-                                        itemCount: completedBatches.length,
-                                        itemBuilder: (c, bi) {
-                                          final b = completedBatches[bi];
-                                          return ListTile(
-                                            title: Text(
-                                              b['batchId']?.toString() ?? '-',
-                                            ),
-                                            subtitle: Text(
-                                              '${b['chicksCount']} chicks | ${b['startDate'] ?? ''}',
-                                            ),
-                                            onTap: () =>
-                                                Navigator.pop(ctx, b),
-                                          );
-                                        },
-                                      ),
-                                    ),
+                            final Map<String, dynamic>?
+                            picked = await showDialog<Map<String, dynamic>>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Batch Chuniye'),
+                                content: SizedBox(
+                                  width: double.maxFinite,
+                                  child: ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: completedBatches.length,
+                                    itemBuilder: (c, bi) {
+                                      final b = completedBatches[bi];
+                                      return ListTile(
+                                        title: Text(
+                                          b['batchId']?.toString() ?? '-',
+                                        ),
+                                        subtitle: Text(
+                                          '${b['chicksCount']} chicks | ${b['startDate'] ?? ''}',
+                                        ),
+                                        onTap: () => Navigator.pop(ctx, b),
+                                      );
+                                    },
                                   ),
-                                );
+                                ),
+                              ),
+                            );
                             if (picked == null) return;
                             linkedBatchId = picked['batchId']?.toString();
                           }
@@ -3902,6 +3894,15 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                             'qty': qty,
                             'rate':
                                 double.tryParse(rateByType[id]!.text) ?? 0.0,
+                            // ✅ NEW: Is waqt ka actual purchase avg cost
+                            // snapshot karke save karo — taaki baad mein
+                            // naye feed purchase se is batch ka calculated
+                            // income retroactively na badle (report screen
+                            // isi field ko cost basis maanega).
+                            'costAtAllocation':
+                                (stock[idx]['weightedAvgCost'] as num?)
+                                    ?.toDouble() ??
+                                0.0,
                             'allocatedOn': allocDate,
                             'allocatedByName': allocatedByName,
                             'allocatedByRole': allocatedByRole,
@@ -3950,12 +3951,13 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
 }
 
 Widget _feedAllocInput(
-    String title,
-    TextEditingController qtyCtrl,
-    TextEditingController rateCtrl,
-    double avail,
-    double purchaseRatePerBag,
-    StateSetter setModalState) {
+  String title,
+  TextEditingController qtyCtrl,
+  TextEditingController rateCtrl,
+  double avail,
+  double purchaseRatePerBag,
+  StateSetter setModalState,
+) {
   double qty = double.tryParse(qtyCtrl.text) ?? 0.0;
   double billingRate = double.tryParse(rateCtrl.text) ?? 0.0;
   bool isOver = qty > avail;
@@ -3972,7 +3974,9 @@ Widget _feedAllocInput(
     decoration: BoxDecoration(
       color: isOver ? Colors.red.shade50 : Colors.white,
       borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: isOver ? Colors.red.shade300 : Colors.grey.shade300),
+      border: Border.all(
+        color: isOver ? Colors.red.shade300 : Colors.grey.shade300,
+      ),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3981,14 +3985,22 @@ Widget _feedAllocInput(
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('🌾 $title',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900)),
-            Text('Bacha: ${avail.toStringAsFixed(0)} Bag',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: isOver ? Colors.red.shade700 : Colors.green.shade700,
-                    fontWeight: FontWeight.bold)),
+            Text(
+              '🌾 $title',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Colors.blue.shade900,
+              ),
+            ),
+            Text(
+              'Bacha: ${avail.toStringAsFixed(0)} Bag',
+              style: TextStyle(
+                fontSize: 11,
+                color: isOver ? Colors.red.shade700 : Colors.green.shade700,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
         // Purchase rate info (readonly)
@@ -4007,7 +4019,9 @@ Widget _feedAllocInput(
             Expanded(
               child: TextField(
                 controller: qtyCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 onChanged: (_) => setModalState(() {}),
                 decoration: InputDecoration(
                   labelText: 'Qty (Bag)',
@@ -4020,10 +4034,14 @@ Widget _feedAllocInput(
             Expanded(
               child: TextField(
                 controller: rateCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 onChanged: (_) => setModalState(() {}),
                 decoration: const InputDecoration(
-                    labelText: 'Billing Rate (₹/Bag)', isDense: true),
+                  labelText: 'Billing Rate (₹/Bag)',
+                  isDense: true,
+                ),
               ),
             ),
           ],
@@ -4037,15 +4055,22 @@ Widget _feedAllocInput(
               color: profit >= 0 ? Colors.blue.shade50 : Colors.orange.shade50,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                  color: profit >= 0 ? Colors.blue.shade200 : Colors.orange.shade200),
+                color: profit >= 0
+                    ? Colors.blue.shade200
+                    : Colors.orange.shade200,
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Cost: ₹${totalCost.toStringAsFixed(0)}',
-                    style: const TextStyle(fontSize: 11, color: Colors.black54)),
-                Text('Bill: ₹${totalBilling.toStringAsFixed(0)}',
-                    style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                Text(
+                  'Cost: ₹${totalCost.toStringAsFixed(0)}',
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+                Text(
+                  'Bill: ₹${totalBilling.toStringAsFixed(0)}',
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                ),
                 Text(
                   profit >= 0
                       ? '📈 +₹${profit.toStringAsFixed(0)}'
@@ -4053,7 +4078,9 @@ Widget _feedAllocInput(
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: profit >= 0 ? Colors.blue.shade800 : Colors.orange.shade800,
+                    color: profit >= 0
+                        ? Colors.blue.shade800
+                        : Colors.orange.shade800,
                   ),
                 ),
               ],
@@ -4077,8 +4104,7 @@ class FeedPurchaseHistoryScreen extends StatefulWidget {
       _FeedPurchaseHistoryScreenState();
 }
 
-class _FeedPurchaseHistoryScreenState
-    extends State<FeedPurchaseHistoryScreen> {
+class _FeedPurchaseHistoryScreenState extends State<FeedPurchaseHistoryScreen> {
   List<Map<String, dynamic>> _history = [];
   String _name = '';
   bool _isLoading = true;
@@ -4108,7 +4134,10 @@ class _FeedPurchaseHistoryScreenState
     if (mounted) {
       setState(() {
         _history = hist;
-        _name = entry['name']?.toString() ?? kFeedTypeNames[widget.feedTypeId] ?? '';
+        _name =
+            entry['name']?.toString() ??
+            kFeedTypeNames[widget.feedTypeId] ??
+            '';
         _isLoading = false;
       });
     }
@@ -4256,7 +4285,10 @@ class _FeedFarmerAllocationsListScreenState
     if (mounted) {
       setState(() {
         _allocs = allocs;
-        _name = entry['name']?.toString() ?? kFeedTypeNames[widget.feedTypeId] ?? '';
+        _name =
+            entry['name']?.toString() ??
+            kFeedTypeNames[widget.feedTypeId] ??
+            '';
         _isLoading = false;
       });
     }
@@ -4431,7 +4463,10 @@ class _FeedPrivateBuyersListScreenState
     if (mounted) {
       setState(() {
         _sales = sales;
-        _name = entry['name']?.toString() ?? kFeedTypeNames[widget.feedTypeId] ?? '';
+        _name =
+            entry['name']?.toString() ??
+            kFeedTypeNames[widget.feedTypeId] ??
+            '';
         _isLoading = false;
       });
     }
@@ -4661,15 +4696,17 @@ class _FeedAllocationDetailScreenState
       );
       return;
     }
-    List<Map<String, dynamic>> stock = await CompanyStore.instance
-        .getJsonList('feedStockList');
+    List<Map<String, dynamic>> stock = await CompanyStore.instance.getJsonList(
+      'feedStockList',
+    );
     final idx = stock.indexWhere((s) => s['id'] == widget.feedTypeId);
     if (idx == -1) return;
     final allocs = (stock[idx]['allocations'] as List?) ?? [];
     if (widget.allocIndex < allocs.length) {
       allocs[widget.allocIndex]['farmerName'] = _nameCtrl.text.trim();
       allocs[widget.allocIndex]['qty'] = qty;
-      allocs[widget.allocIndex]['rate'] = double.tryParse(_rateCtrl.text) ?? 0.0;
+      allocs[widget.allocIndex]['rate'] =
+          double.tryParse(_rateCtrl.text) ?? 0.0;
     }
     stock[idx]['allocations'] = allocs;
     await CompanyStore.instance.saveJsonList('feedStockList', stock);
@@ -4699,14 +4736,18 @@ class _FeedAllocationDetailScreenState
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Yes, Delete', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Yes, Delete',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
     );
     if (confirm != true) return;
-    List<Map<String, dynamic>> stock = await CompanyStore.instance
-        .getJsonList('feedStockList');
+    List<Map<String, dynamic>> stock = await CompanyStore.instance.getJsonList(
+      'feedStockList',
+    );
     final idx = stock.indexWhere((s) => s['id'] == widget.feedTypeId);
     if (idx == -1) return;
     final allocs = (stock[idx]['allocations'] as List?) ?? [];
@@ -4750,7 +4791,9 @@ class _FeedAllocationDetailScreenState
     final double billing = qty * rate;
     final double profit = billing - cost;
     final String feedName =
-        _feedType!['name']?.toString() ?? kFeedTypeNames[widget.feedTypeId] ?? '';
+        _feedType!['name']?.toString() ??
+        kFeedTypeNames[widget.feedTypeId] ??
+        '';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -4970,7 +5013,6 @@ class _FeedAllocationDetailScreenState
     );
   }
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📋 CATEGORY HISTORY SCREEN (Feed, Medicine, Labour, Other ke liye)
@@ -5254,14 +5296,8 @@ class _PurchaseCategoryCard extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Base unit groups — sirf liquid units convertible hain
-const Map<String, double> _unitToMl = {
-  'ml': 1.0,
-  'liter': 1000.0,
-};
-const Map<String, double> _unitToGram = {
-  'gram': 1.0,
-  'kg': 1000.0,
-};
+const Map<String, double> _unitToMl = {'ml': 1.0, 'liter': 1000.0};
+const Map<String, double> _unitToGram = {'gram': 1.0, 'kg': 1000.0};
 
 /// kisi bhi qty ko base unit mein convert karo
 /// Returns null if conversion not possible (different groups)
@@ -5290,7 +5326,14 @@ double? convertFromBase(double qtyInBase, String baseUnit, String toUnit) {
 }
 
 /// Available unit options list
-const List<String> kMedicineUnits = ['ml', 'liter', 'gram', 'kg', 'packet', 'dabba'];
+const List<String> kMedicineUnits = [
+  'ml',
+  'liter',
+  'gram',
+  'kg',
+  'packet',
+  'dabba',
+];
 
 /// Units jo ek doosre mein convert ho sakti hain
 bool canConvert(String unit1, String unit2) {
@@ -5325,22 +5368,22 @@ double? priceToBase(double pricePerTarget, String target, String base) =>
 
 /// Ek medicine ka abhi "bacha hua" (remaining) base qty nikalta hai:
 /// total purchase − farmer allocations − private sales
-Future<double> computeMedicineRemainingBaseQty(
-  Map<String, dynamic> med,
-) async {
+Future<double> computeMedicineRemainingBaseQty(Map<String, dynamic> med) async {
   final String mId = med['id']?.toString() ?? '';
   final double totalBase = (med['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
 
   double allocBase = 0;
   for (final a in (med['allocations'] as List<dynamic>? ?? [])) {
-    allocBase += (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+    allocBase +=
+        (a['qtyInBaseUnit'] as num?)?.toDouble() ??
         (a['qty'] as num?)?.toDouble() ??
         0.0;
   }
 
   double soldBase = 0;
-  final String? salesJson =
-      await CompanyStore.instance.getString('medicineSalesHistory');
+  final String? salesJson = await CompanyStore.instance.getString(
+    'medicineSalesHistory',
+  );
   if (salesJson != null) {
     try {
       final List<dynamic> rawSales = json.decode(salesJson);
@@ -5348,7 +5391,8 @@ Future<double> computeMedicineRemainingBaseQty(
         final List<dynamic> items = sale['items'] as List<dynamic>? ?? [];
         for (final item in items) {
           if (item['medicineId']?.toString() != mId) continue;
-          soldBase += (item['qtyInBaseUnit'] as num?)?.toDouble() ??
+          soldBase +=
+              (item['qtyInBaseUnit'] as num?)?.toDouble() ??
               (item['qty'] as num?)?.toDouble() ??
               0.0;
         }
@@ -5377,8 +5421,9 @@ Future<void> addOrUpdateMedicinePurchase({
   String addedByName = '',
   String addedByRole = '',
 }) async {
-  final String? stockJson =
-      await CompanyStore.instance.getString('medicineStockList');
+  final String? stockJson = await CompanyStore.instance.getString(
+    'medicineStockList',
+  );
   List<dynamic> all = [];
   if (stockJson != null) {
     try {
@@ -5388,8 +5433,7 @@ Future<void> addOrUpdateMedicinePurchase({
 
   final int idx = all.indexWhere(
     (m) =>
-        m['name']?.toString().toLowerCase().trim() ==
-        name.toLowerCase().trim(),
+        m['name']?.toString().toLowerCase().trim() == name.toLowerCase().trim(),
   );
 
   final String newHistId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -5425,15 +5469,13 @@ Future<void> addOrUpdateMedicinePurchase({
           'date': DateTime.now().toIso8601String(),
           'addedByName': addedByName,
           'addedByRole': addedByRole,
-        }
+        },
       ],
     };
     all.insert(0, newMed);
   } else {
     // ── SAME medicine pehle se hai — bache hue stock ke saath average karo ──
-    final Map<String, dynamic> med = Map<String, dynamic>.from(
-      all[idx] as Map,
-    );
+    final Map<String, dynamic> med = Map<String, dynamic>.from(all[idx] as Map);
     final String baseUnit = med['unit']?.toString() ?? unit;
 
     final double remainingBase = await computeMedicineRemainingBaseQty(med);
@@ -5451,11 +5493,11 @@ Future<void> addOrUpdateMedicinePurchase({
     final double newRemainingTotal = remainingBase + qtyBase;
     final double newAvgCost = newRemainingTotal > 0
         ? ((remainingBase * oldAvgCost) + (qtyBase * perBaseActual)) /
-            newRemainingTotal
+              newRemainingTotal
         : perBaseActual;
     final double newFarmerRate = newRemainingTotal > 0
         ? ((remainingBase * oldFarmerRate) + (qtyBase * perBaseFarmer)) /
-            newRemainingTotal
+              newRemainingTotal
         : perBaseFarmer;
 
     med['totalBaseQty'] = oldTotalBase + qtyBase; // record ke liye cumulative
@@ -5497,7 +5539,7 @@ class MedicineHistoryScreen extends StatefulWidget {
 
 class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
   List<Map<String, dynamic>> _medicines = [];
-  Map<String, double> _soldBaseQty  = {};
+  Map<String, double> _soldBaseQty = {};
   Map<String, double> _availBaseQty = {}; // mId → available base qty
   // mId → list of {buyerName, qty, unit, saleId, mobile, date}
   Map<String, List<Map<String, dynamic>>> _privateSalesByMed = {};
@@ -5513,8 +5555,9 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
     setState(() => _isLoading = true);
 
     // 1. Medicine stock
-    final String? stockJson =
-        await CompanyStore.instance.getString('medicineStockList');
+    final String? stockJson = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
     List<Map<String, dynamic>> meds = [];
     if (stockJson != null) {
       try {
@@ -5524,8 +5567,9 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
     }
 
     // 2. Private sales — sold qty per medicine + buyer-wise breakdown
-    final String? salesJson =
-        await CompanyStore.instance.getString('medicineSalesHistory');
+    final String? salesJson = await CompanyStore.instance.getString(
+      'medicineSalesHistory',
+    );
     Map<String, double> soldMap = {};
     Map<String, List<Map<String, dynamic>>> privateSalesMap = {};
     if (salesJson != null) {
@@ -5538,17 +5582,20 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
             if (mId.isEmpty) continue;
             final double qBase =
                 (item['qtyInBaseUnit'] as num?)?.toDouble() ??
-                (item['qty']           as num?)?.toDouble() ?? 0.0;
+                (item['qty'] as num?)?.toDouble() ??
+                0.0;
             soldMap[mId] = (soldMap[mId] ?? 0.0) + qBase;
 
             (privateSalesMap[mId] ??= []).add({
-              'saleId'    : sale['id']?.toString() ?? '',
-              'buyerName' : sale['buyerName']?.toString() ?? '-',
-              'mobile'    : sale['mobile']?.toString() ?? '',
-              'qty'       : (item['qty'] as num?)?.toDouble() ?? 0.0,
-              'unit'      : item['saleUnit']?.toString() ??
-                            item['unit']?.toString() ?? '',
-              'date'      : sale['date']?.toString() ?? '',
+              'saleId': sale['id']?.toString() ?? '',
+              'buyerName': sale['buyerName']?.toString() ?? '-',
+              'mobile': sale['mobile']?.toString() ?? '',
+              'qty': (item['qty'] as num?)?.toDouble() ?? 0.0,
+              'unit':
+                  item['saleUnit']?.toString() ??
+                  item['unit']?.toString() ??
+                  '',
+              'date': sale['date']?.toString() ?? '',
             });
           }
         }
@@ -5560,25 +5607,27 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
     for (final med in meds) {
       final String mId = med['id']?.toString() ?? '';
       if (mId.isEmpty) continue;
-      final double total =
-          (med['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
+      final double total = (med['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
       double allocBase = 0;
       for (final a in (med['allocations'] as List<dynamic>? ?? [])) {
-        allocBase += (a['qtyInBaseUnit'] as num?)?.toDouble() ??
-                     (a['qty']           as num?)?.toDouble() ?? 0.0;
+        allocBase +=
+            (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+            (a['qty'] as num?)?.toDouble() ??
+            0.0;
       }
-      availMap[mId] =
-          (total - allocBase - (soldMap[mId] ?? 0.0))
-              .clamp(0.0, double.infinity);
+      availMap[mId] = (total - allocBase - (soldMap[mId] ?? 0.0)).clamp(
+        0.0,
+        double.infinity,
+      );
     }
 
     if (mounted) {
       setState(() {
-        _medicines    = meds;
-        _soldBaseQty  = soldMap;
+        _medicines = meds;
+        _soldBaseQty = soldMap;
         _availBaseQty = availMap;
         _privateSalesByMed = privateSalesMap;
-        _isLoading    = false;
+        _isLoading = false;
       });
     }
   }
@@ -5586,13 +5635,15 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
   /// Farmer allocations ka total base qty
   double _allocatedBaseQty(Map<String, dynamic> med) {
     final allocs = List<Map<String, dynamic>>.from(
-      (med['allocations'] as List<dynamic>?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
+      (med['allocations'] as List<dynamic>?)?.map(
+            (e) => Map<String, dynamic>.from(e as Map),
+          ) ??
           [],
     );
     double total = 0;
     for (final a in allocs) {
-      total += (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+      total +=
+          (a['qtyInBaseUnit'] as num?)?.toDouble() ??
           (a['qty'] as num?)?.toDouble() ??
           0.0;
     }
@@ -5607,16 +5658,22 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
         backgroundColor: Colors.teal.shade700,
         leading: IconButton(
           icon: const Icon(
-              Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
           onPressed: () => Get.back(),
         ),
         title: const Row(
           children: [
             Text('💊', style: TextStyle(fontSize: 18)),
             SizedBox(width: 8),
-            Text('Medicine Purchase',
-                style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold)),
+            Text(
+              'Medicine Purchase',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ),
@@ -5633,10 +5690,13 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
                   _loadData();
                 },
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal.shade700),
+                  backgroundColor: Colors.teal.shade700,
+                ),
                 icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text('Naya Medicine Add Karo',
-                    style: TextStyle(color: Colors.white)),
+                label: const Text(
+                  'Naya Medicine Add Karo',
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ),
           ),
@@ -5650,10 +5710,12 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
                 onPressed: _medicines.isEmpty
                     ? null
                     : () async {
-                        await Get.to(() => AllocateMedicineToFarmerScreen(
-                          medicines: _medicines,
-                          availBaseQty: _availBaseQty,
-                        ));
+                        await Get.to(
+                          () => AllocateMedicineToFarmerScreen(
+                            medicines: _medicines,
+                            availBaseQty: _availBaseQty,
+                          ),
+                        );
                         _loadData();
                       },
                 style: ElevatedButton.styleFrom(
@@ -5661,9 +5723,13 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
                   disabledBackgroundColor: Colors.grey.shade300,
                 ),
                 icon: const Icon(Icons.person_add_rounded, color: Colors.white),
-                label: const Text('Allocate to Farmer',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold)),
+                label: const Text(
+                  'Allocate to Farmer',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ),
@@ -5671,36 +5737,37 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _medicines.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text('💊',
-                                style: TextStyle(fontSize: 52)),
-                            const SizedBox(height: 12),
-                            Text('Koi medicine record nahi.',
-                                style: TextStyle(
-                                    color: Colors.grey.shade600,
-                                    fontSize: 14)),
-                          ],
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('💊', style: TextStyle(fontSize: 52)),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Koi medicine record nahi.',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 14,
+                          ),
                         ),
-                      )
-                    : ListView.builder(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: _medicines.length,
-                        itemBuilder: (ctx, index) {
-                          final med = _medicines[index];
-                          final String mId = med['id']?.toString() ?? '';
-                          return _MedicineRunningLotCard(
-                            med: med,
-                            soldBaseQty: _soldBaseQty[mId] ?? 0.0,
-                            allocatedBaseQty: _allocatedBaseQty(med),
-                            privateSales: _privateSalesByMed[mId] ?? const [],
-                            onRefresh: _loadData,
-                          );
-                        },
-                      ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: _medicines.length,
+                    itemBuilder: (ctx, index) {
+                      final med = _medicines[index];
+                      final String mId = med['id']?.toString() ?? '';
+                      return _MedicineRunningLotCard(
+                        med: med,
+                        soldBaseQty: _soldBaseQty[mId] ?? 0.0,
+                        allocatedBaseQty: _allocatedBaseQty(med),
+                        privateSales: _privateSalesByMed[mId] ?? const [],
+                        onRefresh: _loadData,
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -5738,21 +5805,21 @@ class _MedicineRunningLotCard extends StatelessWidget {
         (med['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
     final double currentFarmerRate =
         (med['currentFarmerRate'] as num?)?.toDouble() ?? 0.0;
-    final double leftBaseQty =
-        (totalBaseQty - allocatedBaseQty - soldBaseQty)
-            .clamp(0.0, double.infinity);
+    final double leftBaseQty = (totalBaseQty - allocatedBaseQty - soldBaseQty)
+        .clamp(0.0, double.infinity);
     final bool anyLeft = leftBaseQty > 0;
 
     final List<Map<String, dynamic>> purchaseHistory =
         List<Map<String, dynamic>>.from(
-      (med['purchaseHistory'] as List<dynamic>?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
-          [],
-    );
-    final List<Map<String, dynamic>> allocs =
-        List<Map<String, dynamic>>.from(
-      (med['allocations'] as List<dynamic>?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
+          (med['purchaseHistory'] as List<dynamic>?)?.map(
+                (e) => Map<String, dynamic>.from(e as Map),
+              ) ??
+              [],
+        );
+    final List<Map<String, dynamic>> allocs = List<Map<String, dynamic>>.from(
+      (med['allocations'] as List<dynamic>?)?.map(
+            (e) => Map<String, dynamic>.from(e as Map),
+          ) ??
           [],
     );
 
@@ -5785,24 +5852,32 @@ class _MedicineRunningLotCard extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Text('💊 $name',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                  color: Colors.teal.shade900)),
+                          Text(
+                            '💊 $name',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Colors.teal.shade900,
+                            ),
+                          ),
                           if (nickName.isNotEmpty) ...[
                             const SizedBox(width: 6),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.teal.shade100,
                                 borderRadius: BorderRadius.circular(5),
                               ),
-                              child: Text('"$nickName"',
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.teal.shade800)),
+                              child: Text(
+                                '"$nickName"',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.teal.shade800,
+                                ),
+                              ),
                             ),
                           ],
                         ],
@@ -5811,30 +5886,34 @@ class _MedicineRunningLotCard extends StatelessWidget {
                       Text(
                         'Total Kharida: ${totalBaseQty.toStringAsFixed(2)} $unit',
                         style: const TextStyle(
-                            fontSize: 12, color: Colors.black54),
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
                       ),
                       Text(
                         'Bacha: ${leftBaseQty.toStringAsFixed(2)} $unit',
                         style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: anyLeft
-                                ? Colors.green.shade700
-                                : Colors.grey),
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: anyLeft ? Colors.green.shade700 : Colors.grey,
+                        ),
                       ),
                       if (weightedAvgCost > 0)
                         Text(
                           'Avg Cost: ₹${weightedAvgCost.toStringAsFixed(2)} / $unit',
                           style: TextStyle(
-                              fontSize: 11, color: Colors.grey.shade600),
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                          ),
                         ),
                       if (currentFarmerRate > 0)
                         Text(
                           'Farmer Rate: ₹${currentFarmerRate.toStringAsFixed(2)} / $unit',
                           style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.teal.shade700,
-                              fontWeight: FontWeight.w600),
+                            fontSize: 11,
+                            color: Colors.teal.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                     ],
                   ),
@@ -5851,7 +5930,9 @@ class _MedicineRunningLotCard extends StatelessWidget {
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.teal.shade700,
                           borderRadius: BorderRadius.circular(8),
@@ -5861,11 +5942,14 @@ class _MedicineRunningLotCard extends StatelessWidget {
                           children: [
                             Icon(Icons.add, color: Colors.white, size: 14),
                             SizedBox(width: 4),
-                            Text('Add',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold)),
+                            Text(
+                              'Add',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -5893,7 +5977,8 @@ class _MedicineRunningLotCard extends StatelessWidget {
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, true),
                                 style: TextButton.styleFrom(
-                                    foregroundColor: Colors.red),
+                                  foregroundColor: Colors.red,
+                                ),
                                 child: const Text('Yes, Delete Lot'),
                               ),
                             ],
@@ -5904,14 +5989,17 @@ class _MedicineRunningLotCard extends StatelessWidget {
                             .getString('medicineStockList');
                         if (sj == null) return;
                         List<dynamic> all = json.decode(sj);
-                        all.removeWhere(
-                            (m) => m['id']?.toString() == mId);
+                        all.removeWhere((m) => m['id']?.toString() == mId);
                         await CompanyStore.instance.setString(
-                            'medicineStockList', json.encode(all));
-                        Get.snackbar('Deleted 🗑️',
-                            '"$name" lot delete ho gaya',
-                            backgroundColor: Colors.red,
-                            colorText: Colors.white);
+                          'medicineStockList',
+                          json.encode(all),
+                        );
+                        Get.snackbar(
+                          'Deleted 🗑️',
+                          '"$name" lot delete ho gaya',
+                          backgroundColor: Colors.red,
+                          colorText: Colors.white,
+                        );
                         onRefresh();
                       },
                       child: Container(
@@ -5919,11 +6007,13 @@ class _MedicineRunningLotCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.red.shade50,
                           borderRadius: BorderRadius.circular(8),
-                          border:
-                              Border.all(color: Colors.red.shade300),
+                          border: Border.all(color: Colors.red.shade300),
                         ),
-                        child: Icon(Icons.delete_rounded,
-                            color: Colors.red.shade700, size: 16),
+                        child: Icon(
+                          Icons.delete_rounded,
+                          color: Colors.red.shade700,
+                          size: 16,
+                        ),
                       ),
                     ),
                   ],
@@ -5935,16 +6025,19 @@ class _MedicineRunningLotCard extends StatelessWidget {
           // ── PURCHASE HISTORY BUTTON ──
           if (purchaseHistory.isNotEmpty)
             InkWell(
-              onTap: () => Get.to(() => MedicinePurchaseHistoryScreen(
-                    medicineId: mId,
-                    medicineName: name,
-                    unit: unit,
-                  )),
+              onTap: () => Get.to(
+                () => MedicinePurchaseHistoryScreen(
+                  medicineId: mId,
+                  medicineName: name,
+                  unit: unit,
+                ),
+              ),
               child: Container(
-                margin:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.teal.shade50,
                   borderRadius: BorderRadius.circular(8),
@@ -5955,20 +6048,27 @@ class _MedicineRunningLotCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.history_rounded,
-                            size: 15, color: Colors.teal.shade700),
+                        Icon(
+                          Icons.history_rounded,
+                          size: 15,
+                          color: Colors.teal.shade700,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Purchase History (${purchaseHistory.length} baar kharida)',
                           style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.teal.shade800,
-                              fontWeight: FontWeight.w500),
+                            fontSize: 12,
+                            color: Colors.teal.shade800,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
                     ),
-                    Icon(Icons.chevron_right_rounded,
-                        size: 16, color: Colors.teal.shade700),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: Colors.teal.shade700,
+                    ),
                   ],
                 ),
               ),
@@ -5988,10 +6088,11 @@ class _MedicineRunningLotCard extends StatelessWidget {
                 if (result == true) onRefresh();
               },
               child: Container(
-                margin:
-                    const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                margin: const EdgeInsets.fromLTRB(14, 8, 14, 0),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.teal.shade50,
                   borderRadius: BorderRadius.circular(8),
@@ -6002,20 +6103,27 @@ class _MedicineRunningLotCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.people_alt_rounded,
-                            size: 15, color: Colors.teal.shade700),
+                        Icon(
+                          Icons.people_alt_rounded,
+                          size: 15,
+                          color: Colors.teal.shade700,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Farmer Allocations (${allocs.length})',
                           style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.teal.shade800,
-                              fontWeight: FontWeight.w500),
+                            fontSize: 12,
+                            color: Colors.teal.shade800,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
                     ),
-                    Icon(Icons.chevron_right_rounded,
-                        size: 16, color: Colors.teal.shade700),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: Colors.teal.shade700,
+                    ),
                   ],
                 ),
               ),
@@ -6032,10 +6140,11 @@ class _MedicineRunningLotCard extends StatelessWidget {
                 ),
               ),
               child: Container(
-                margin:
-                    const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                margin: const EdgeInsets.fromLTRB(14, 8, 14, 0),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(8),
@@ -6046,20 +6155,27 @@ class _MedicineRunningLotCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.shopping_cart_rounded,
-                            size: 15, color: Colors.blue.shade700),
+                        Icon(
+                          Icons.shopping_cart_rounded,
+                          size: 15,
+                          color: Colors.blue.shade700,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Private Buyers (${privateSales.length})',
                           style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.blue.shade800,
-                              fontWeight: FontWeight.w500),
+                            fontSize: 12,
+                            color: Colors.blue.shade800,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
                     ),
-                    Icon(Icons.chevron_right_rounded,
-                        size: 16, color: Colors.blue.shade700),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: Colors.blue.shade700,
+                    ),
                   ],
                 ),
               ),
@@ -6072,7 +6188,9 @@ class _MedicineRunningLotCard extends StatelessWidget {
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(8),
@@ -6082,9 +6200,10 @@ class _MedicineRunningLotCard extends StatelessWidget {
                   '✅ Fully Used / Sold',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w500),
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             )
@@ -6131,8 +6250,9 @@ class _MedicineFarmerAllocationsListScreenState
 
   Future<void> _load() async {
     setState(() => _isLoading = true);
-    final String? stockJson =
-        await CompanyStore.instance.getString('medicineStockList');
+    final String? stockJson = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
     List<Map<String, dynamic>> allocs = [];
     if (stockJson != null) {
       try {
@@ -6140,8 +6260,9 @@ class _MedicineFarmerAllocationsListScreenState
         for (final m in all) {
           if (m['id']?.toString() == widget.medicineId) {
             final List<dynamic> raw = m['allocations'] as List<dynamic>? ?? [];
-            allocs =
-                raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+            allocs = raw
+                .map((e) => Map<String, dynamic>.from(e as Map))
+                .toList();
             break;
           }
         }
@@ -6168,106 +6289,124 @@ class _MedicineFarmerAllocationsListScreenState
           backgroundColor: Colors.teal.shade700,
           leading: IconButton(
             icon: const Icon(
-                Icons.arrow_back_ios_new_rounded, color: Colors.white),
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
             onPressed: () => Navigator.pop(context, _changed),
           ),
-          title: Text('🧑 ${widget.medicineName} — Farmer Allocations',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14),
-              overflow: TextOverflow.ellipsis),
+          title: Text(
+            '🧑 ${widget.medicineName} — Farmer Allocations',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _allocs.isEmpty
-                ? const Center(child: Text('Koi farmer allocation nahi.'))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _allocs.length,
-                    itemBuilder: (ctx, i) {
-                      final a = _allocs[i];
-                      final double aBaseQty =
-                          (a['qtyInBaseUnit'] as num?)?.toDouble() ??
-                              (a['qty'] as num?)?.toDouble() ??
-                              0.0;
-                      final String aDisplayUnit =
-                          a['unit']?.toString() ?? widget.unit;
-                      final double aDisplayQty = convertFromBase(
-                              aBaseQty, widget.unit, aDisplayUnit) ??
-                          aBaseQty;
-                      final String date =
-                          formatHistoryDateTime(a['date']?.toString());
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(10),
-                        onTap: () async {
-                          final result = await Get.to(
-                            () => MedicineAllocationDetailScreen(
-                              medicineId: widget.medicineId,
-                              allocIndex: i,
-                            ),
-                          );
-                          if (result == true) {
-                            _changed = true;
-                            _load();
-                          }
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.teal.shade100),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text('🧑 ${a['farmerName'] ?? '-'}',
-                                        style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold)),
-                                    // ✅ NEW: Batch ID
-                                    if (a['batchId']?.toString().isNotEmpty ?? false)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Text('🏷️ Batch: ${a['batchId']}',
-                                            style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.purple.shade700)),
-                                      ),
-                                    if (date.isNotEmpty)
-                                      Padding(
-                                        padding:
-                                            const EdgeInsets.only(top: 3),
-                                        child: Text(date,
-                                            style: TextStyle(
-                                                fontSize: 11,
-                                                color:
-                                                    Colors.grey.shade500)),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                '${aDisplayQty.toStringAsFixed(2)} $aDisplayUnit',
-                                style: const TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(width: 6),
-                              Icon(Icons.chevron_right_rounded,
-                                  size: 18, color: Colors.grey.shade500),
-                            ],
-                          ),
+            ? const Center(child: Text('Koi farmer allocation nahi.'))
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _allocs.length,
+                itemBuilder: (ctx, i) {
+                  final a = _allocs[i];
+                  final double aBaseQty =
+                      (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+                      (a['qty'] as num?)?.toDouble() ??
+                      0.0;
+                  final String aDisplayUnit =
+                      a['unit']?.toString() ?? widget.unit;
+                  final double aDisplayQty =
+                      convertFromBase(aBaseQty, widget.unit, aDisplayUnit) ??
+                      aBaseQty;
+                  final String date = formatHistoryDateTime(
+                    a['date']?.toString(),
+                  );
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () async {
+                      final result = await Get.to(
+                        () => MedicineAllocationDetailScreen(
+                          medicineId: widget.medicineId,
+                          allocIndex: i,
                         ),
                       );
+                      if (result == true) {
+                        _changed = true;
+                        _load();
+                      }
                     },
-                  ),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.teal.shade100),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '🧑 ${a['farmerName'] ?? '-'}',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                // ✅ NEW: Batch ID
+                                if (a['batchId']?.toString().isNotEmpty ??
+                                    false)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      '🏷️ Batch: ${a['batchId']}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.purple.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                if (date.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 3),
+                                    child: Text(
+                                      date,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade500,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '${aDisplayQty.toStringAsFixed(2)} $aDisplayUnit',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: Colors.grey.shade500,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
       ),
     );
   }
@@ -6297,7 +6436,8 @@ class MedicinePrivateBuyersListScreen extends StatefulWidget {
 
 class _MedicinePrivateBuyersListScreenState
     extends State<MedicinePrivateBuyersListScreen> {
-  List<Map<String, dynamic>> _rows = []; // {saleId, buyerName, mobile, date, qty, unit, rate}
+  List<Map<String, dynamic>> _rows =
+      []; // {saleId, buyerName, mobile, date, qty, unit, rate}
   bool _isLoading = true;
 
   @override
@@ -6308,8 +6448,9 @@ class _MedicinePrivateBuyersListScreenState
 
   Future<void> _load() async {
     setState(() => _isLoading = true);
-    final String? salesJson =
-        await CompanyStore.instance.getString('medicineSalesHistory');
+    final String? salesJson = await CompanyStore.instance.getString(
+      'medicineSalesHistory',
+    );
     List<Map<String, dynamic>> rows = [];
     if (salesJson != null) {
       try {
@@ -6319,13 +6460,15 @@ class _MedicinePrivateBuyersListScreenState
           for (final item in items) {
             if (item['medicineId']?.toString() != widget.medicineId) continue;
             rows.add({
-              'saleId'   : sale['id']?.toString() ?? '',
+              'saleId': sale['id']?.toString() ?? '',
               'buyerName': sale['buyerName']?.toString() ?? '-',
-              'mobile'   : sale['mobile']?.toString() ?? '',
-              'date'     : sale['date']?.toString() ?? '',
-              'qty'      : (item['qty'] as num?)?.toDouble() ?? 0.0,
-              'unit'     : item['saleUnit']?.toString() ??
-                           item['unit']?.toString() ?? widget.unit,
+              'mobile': sale['mobile']?.toString() ?? '',
+              'date': sale['date']?.toString() ?? '',
+              'qty': (item['qty'] as num?)?.toDouble() ?? 0.0,
+              'unit':
+                  item['saleUnit']?.toString() ??
+                  item['unit']?.toString() ??
+                  widget.unit,
             });
           }
         }
@@ -6347,80 +6490,97 @@ class _MedicinePrivateBuyersListScreenState
         backgroundColor: Colors.teal.shade700,
         leading: IconButton(
           icon: const Icon(
-              Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
           onPressed: () => Get.back(),
         ),
-        title: Text('🛒 ${widget.medicineName} — Private Buyers',
-            style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 14),
-            overflow: TextOverflow.ellipsis),
+        title: Text(
+          '🛒 ${widget.medicineName} — Private Buyers',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _rows.isEmpty
-              ? const Center(child: Text('Koi private buyer nahi.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _rows.length,
-                  itemBuilder: (ctx, i) {
-                    final r = _rows[i];
-                    final double qty = (r['qty'] as num?)?.toDouble() ?? 0.0;
-                    final String unit = r['unit']?.toString() ?? widget.unit;
-                    final String date =
-                        formatHistoryDateTime(r['date']?.toString());
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () => Get.to(
-                        () => MedicinePrivateSaleDetailScreen(
-                          saleId: r['saleId']?.toString() ?? '',
-                          medicineId: widget.medicineId,
-                        ),
-                      ),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.blue.shade100),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('🛒 ${r['buyerName'] ?? '-'}',
-                                      style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold)),
-                                  if (date.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 3),
-                                      child: Text(date,
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey.shade500)),
-                                    ),
-                                ],
+          ? const Center(child: Text('Koi private buyer nahi.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _rows.length,
+              itemBuilder: (ctx, i) {
+                final r = _rows[i];
+                final double qty = (r['qty'] as num?)?.toDouble() ?? 0.0;
+                final String unit = r['unit']?.toString() ?? widget.unit;
+                final String date = formatHistoryDateTime(
+                  r['date']?.toString(),
+                );
+                return InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => Get.to(
+                    () => MedicinePrivateSaleDetailScreen(
+                      saleId: r['saleId']?.toString() ?? '',
+                      medicineId: widget.medicineId,
+                    ),
+                  ),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade100),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '🛒 ${r['buyerName'] ?? '-'}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                            Text(
-                              '${qty.toStringAsFixed(2)} $unit',
-                              style: const TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(width: 6),
-                            Icon(Icons.chevron_right_rounded,
-                                size: 18, color: Colors.grey.shade500),
-                          ],
+                              if (date.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Text(
+                                    date,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey.shade500,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                        Text(
+                          '${qty.toStringAsFixed(2)} $unit',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: Colors.grey.shade500,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
@@ -6457,8 +6617,9 @@ class _MedicinePrivateSaleDetailScreenState
   }
 
   Future<void> _load() async {
-    final String? salesJson =
-        await CompanyStore.instance.getString('medicineSalesHistory');
+    final String? salesJson = await CompanyStore.instance.getString(
+      'medicineSalesHistory',
+    );
     Map<String, dynamic>? foundSale;
     Map<String, dynamic>? foundItem;
     if (salesJson != null) {
@@ -6488,24 +6649,26 @@ class _MedicinePrivateSaleDetailScreenState
   }
 
   Widget _row(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 130,
-              child: Text(label,
-                  style: TextStyle(
-                      fontSize: 13, color: Colors.grey.shade600)),
-            ),
-            Expanded(
-              child: Text(value,
-                  style: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w600)),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 130,
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -6530,64 +6693,77 @@ class _MedicinePrivateSaleDetailScreenState
         backgroundColor: Colors.blue.shade700,
         leading: IconButton(
           icon: const Icon(
-              Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
           onPressed: () => Get.back(),
         ),
-        title: const Text('🛒 Private Sale Detail',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text(
+          '🛒 Private Sale Detail',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : (sale == null || item == null)
-              ? const Center(child: Text('Sale record nahi mila.'))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.blue.shade100),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('🛒 $buyer',
-                            style: const TextStyle(
-                                fontSize: 17, fontWeight: FontWeight.bold)),
-                        const Divider(height: 22),
-                        if (mobile.isNotEmpty) _row('📞 Mobile', mobile),
-                        _row('🕒 Date', date),
-                        _row('💊 Medicine',
-                            nickName.isNotEmpty
-                                ? '$medicineName ("$nickName")'
-                                : medicineName),
-                        _row('📦 Quantity', '${qty.toStringAsFixed(2)} $saleUnit'),
-                        _row('💰 Rate',
-                            '₹${saleRate.toStringAsFixed(2)} / $saleUnit'),
-                        _row('🧾 Total Sale', '₹${totalSale.toStringAsFixed(2)}'),
-                        _row('📊 Profit/Loss', '₹${profit.toStringAsFixed(2)}'),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'ℹ️ Is sale ko edit ya delete karne ke liye Sales → Medicine Sales section mein jaayein.',
-                            style: TextStyle(
-                                fontSize: 11.5, color: Colors.blue.shade800),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+          ? const Center(child: Text('Sale record nahi mila.'))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.blue.shade100),
                 ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '🛒 $buyer',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Divider(height: 22),
+                    if (mobile.isNotEmpty) _row('📞 Mobile', mobile),
+                    _row('🕒 Date', date),
+                    _row(
+                      '💊 Medicine',
+                      nickName.isNotEmpty
+                          ? '$medicineName ("$nickName")'
+                          : medicineName,
+                    ),
+                    _row('📦 Quantity', '${qty.toStringAsFixed(2)} $saleUnit'),
+                    _row(
+                      '💰 Rate',
+                      '₹${saleRate.toStringAsFixed(2)} / $saleUnit',
+                    ),
+                    _row('🧾 Total Sale', '₹${totalSale.toStringAsFixed(2)}'),
+                    _row('📊 Profit/Loss', '₹${profit.toStringAsFixed(2)}'),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'ℹ️ Is sale ko edit ya delete karne ke liye Sales → Medicine Sales section mein jaayein.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: Colors.blue.shade800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 💊 ADD MORE STOCK DIALOG — Same medicine mein add karo (Running lot)
@@ -6625,20 +6801,23 @@ Future<void> _showAddMoreStockDialog(
                 TextField(
                   controller: qtyCtrl,
                   keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
+                    decimal: true,
+                  ),
                   onChanged: (_) => setDlg(() {}),
                   decoration: InputDecoration(
                     labelText: 'Quantity *',
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
 
                 // Unit select
-                Text('Unit Chuno:',
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.grey.shade700)),
+                Text(
+                  'Unit Chuno:',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 8,
@@ -6656,8 +6835,8 @@ Future<void> _showAddMoreStockDialog(
                       labelStyle: TextStyle(
                         color: enabled
                             ? (selectedUnit == u
-                                ? Colors.white
-                                : Colors.black87)
+                                  ? Colors.white
+                                  : Colors.black87)
                             : Colors.grey,
                       ),
                     );
@@ -6671,7 +6850,9 @@ Future<void> _showAddMoreStockDialog(
                     child: Text(
                       '= ${qtyInBase.toStringAsFixed(3)} $baseUnit (base)',
                       style: TextStyle(
-                          fontSize: 11, color: Colors.teal.shade700),
+                        fontSize: 11,
+                        color: Colors.teal.shade700,
+                      ),
                     ),
                   ),
                 const SizedBox(height: 12),
@@ -6680,13 +6861,15 @@ Future<void> _showAddMoreStockDialog(
                 TextField(
                   controller: actualPriceCtrl,
                   keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
+                    decimal: true,
+                  ),
                   decoration: InputDecoration(
                     labelText: 'Actual Price (₹) *',
                     helperText: 'Company ne jis rate pe kharida',
                     prefixIcon: const Icon(Icons.store_rounded),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -6695,13 +6878,15 @@ Future<void> _showAddMoreStockDialog(
                 TextField(
                   controller: farmerPriceCtrl,
                   keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
+                    decimal: true,
+                  ),
                   decoration: InputDecoration(
                     labelText: 'Farmer Price (₹) *',
                     helperText: 'Jo rate farmer ko charge hoga',
                     prefixIcon: const Icon(Icons.person_rounded),
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
               ],
@@ -6714,30 +6899,38 @@ Future<void> _showAddMoreStockDialog(
             ),
             ElevatedButton(
               onPressed: () async {
-                final double qty2 =
-                    double.tryParse(qtyCtrl.text) ?? 0.0;
+                final double qty2 = double.tryParse(qtyCtrl.text) ?? 0.0;
                 final double actualPrice =
                     double.tryParse(actualPriceCtrl.text) ?? 0.0;
                 final double farmerPrice =
                     double.tryParse(farmerPriceCtrl.text) ?? 0.0;
 
                 if (qty2 <= 0) {
-                  Get.snackbar('Error', 'Quantity dalein',
-                      backgroundColor: Colors.red,
-                      colorText: Colors.white);
+                  Get.snackbar(
+                    'Error',
+                    'Quantity dalein',
+                    backgroundColor: Colors.red,
+                    colorText: Colors.white,
+                  );
                   return;
                 }
                 if (actualPrice <= 0) {
-                  Get.snackbar('Error', 'Actual price dalein',
-                      backgroundColor: Colors.red,
-                      colorText: Colors.white);
+                  Get.snackbar(
+                    'Error',
+                    'Actual price dalein',
+                    backgroundColor: Colors.red,
+                    colorText: Colors.white,
+                  );
                   return;
                 }
 
                 if (farmerPrice <= 0) {
-                  Get.snackbar('Error', 'Farmer price dalein',
-                      backgroundColor: Colors.red,
-                      colorText: Colors.white);
+                  Get.snackbar(
+                    'Error',
+                    'Farmer price dalein',
+                    backgroundColor: Colors.red,
+                    colorText: Colors.white,
+                  );
                   return;
                 }
 
@@ -6759,14 +6952,20 @@ Future<void> _showAddMoreStockDialog(
                 );
 
                 Navigator.pop(ctx);
-                Get.snackbar('Added ✅', '${qty2.toStringAsFixed(2)} $selectedUnit add ho gaya!',
-                    backgroundColor: Colors.green,
-                    colorText: Colors.white);
+                Get.snackbar(
+                  'Added ✅',
+                  '${qty2.toStringAsFixed(2)} $selectedUnit add ho gaya!',
+                  backgroundColor: Colors.green,
+                  colorText: Colors.white,
+                );
               },
               style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal.shade700),
-              child: const Text('Add Stock',
-                  style: TextStyle(color: Colors.white)),
+                backgroundColor: Colors.teal.shade700,
+              ),
+              child: const Text(
+                'Add Stock',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         );
@@ -6804,9 +7003,13 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                 icon: const Icon(Icons.close, color: Colors.white),
                 onPressed: () => Navigator.pop(ctx),
               ),
-              title: const Text('💊 Medicine Purchase',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
+              title: const Text(
+                '💊 Medicine Purchase',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             body: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
@@ -6820,7 +7023,8 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                       labelText: 'Medicine Ka Naam *',
                       prefixIcon: const Icon(Icons.medical_services_rounded),
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -6833,7 +7037,8 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                       helperText:
                           'e.g. "Enro" — Batch entry mein shortcut ke liye',
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -6842,20 +7047,23 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                   TextField(
                     controller: qtyCtrl,
                     keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
+                      decimal: true,
+                    ),
                     onChanged: (_) => setDlg(() {}),
                     decoration: InputDecoration(
                       labelText: 'Total Quantity *',
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
 
                   // Unit select
-                  const Text('Unit Chuno *',
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  const Text(
+                    'Unit Chuno *',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -6887,13 +7095,19 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.currency_rupee,
-                            color: Colors.teal.shade700, size: 18),
+                        Icon(
+                          Icons.currency_rupee,
+                          color: Colors.teal.shade700,
+                          size: 18,
+                        ),
                         const SizedBox(width: 8),
-                        Text('Price Details',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.teal.shade800)),
+                        Text(
+                          'Price Details',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.teal.shade800,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -6903,14 +7117,18 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                   TextField(
                     controller: actualPriceCtrl,
                     keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
+                      decimal: true,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'Actual Price (₹) *',
                       helperText: 'Company ne jis rate pe kharida',
-                      prefixIcon: const Icon(Icons.store_rounded,
-                          color: Colors.blue),
+                      prefixIcon: const Icon(
+                        Icons.store_rounded,
+                        color: Colors.blue,
+                      ),
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -6919,14 +7137,18 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                   TextField(
                     controller: farmerPriceCtrl,
                     keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
+                      decimal: true,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'Farmer Price (₹) *',
                       helperText: 'Jo rate farmer ko charge hoga',
-                      prefixIcon: const Icon(Icons.person_rounded,
-                          color: Colors.orange),
+                      prefixIcon: const Icon(
+                        Icons.person_rounded,
+                        color: Colors.orange,
+                      ),
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 32),
@@ -6946,27 +7168,39 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                             double.tryParse(farmerPriceCtrl.text) ?? 0.0;
 
                         if (name.isEmpty) {
-                          Get.snackbar('Error', 'Medicine ka naam dalein',
-                              backgroundColor: Colors.red,
-                              colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Medicine ka naam dalein',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
                         if (qty2 <= 0) {
-                          Get.snackbar('Error', 'Quantity dalein',
-                              backgroundColor: Colors.red,
-                              colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Quantity dalein',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
                         if (actualPrice <= 0) {
-                          Get.snackbar('Error', 'Actual price dalein',
-                              backgroundColor: Colors.red,
-                              colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Actual price dalein',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
                         if (farmerPrice <= 0) {
-                          Get.snackbar('Error', 'Farmer price dalein',
-                              backgroundColor: Colors.red,
-                              colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Farmer price dalein',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
 
@@ -6991,20 +7225,27 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                         );
 
                         Navigator.pop(ctx);
-                        Get.snackbar('Saved ✅', '$name add ho gaya!',
-                            backgroundColor: Colors.green,
-                            colorText: Colors.white);
+                        Get.snackbar(
+                          'Saved ✅',
+                          '$name add ho gaya!',
+                          backgroundColor: Colors.green,
+                          colorText: Colors.white,
+                        );
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal.shade700,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      child: const Text('Save Karo',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16)),
+                      child: const Text(
+                        'Save Karo',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -7043,12 +7284,16 @@ class _MedicinePurchaseHistoryScreenState
   bool _isLoading = true;
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _load();
+  }
 
   Future<void> _load() async {
     setState(() => _isLoading = true);
-    final String? stockJson =
-        await CompanyStore.instance.getString('medicineStockList');
+    final String? stockJson = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
     if (stockJson != null) {
       try {
         final List<dynamic> all = json.decode(stockJson);
@@ -7056,9 +7301,7 @@ class _MedicinePurchaseHistoryScreenState
           if (m['id']?.toString() == widget.medicineId) {
             final List<dynamic> hist =
                 m['purchaseHistory'] as List<dynamic>? ?? [];
-            _history = hist
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList();
+            _history = hist.map((e) => Map<String, dynamic>.from(e)).toList();
             break;
           }
         }
@@ -7068,23 +7311,31 @@ class _MedicinePurchaseHistoryScreenState
   }
 
   // ── Recalculate stock totals from remaining history ──
-  Future<void> _recalcAndSave(List<dynamic> hist, List<dynamic> all, int medIdx) async {
+  Future<void> _recalcAndSave(
+    List<dynamic> hist,
+    List<dynamic> all,
+    int medIdx,
+  ) async {
     double newTotalBase = 0, newTotalCost = 0;
     double lastFPB = 0;
     for (final h in hist) {
       final double hBase = (h['qtyInBaseUnit'] as num?)?.toDouble() ?? 0;
-      final double hAct  = (h['actualPrice']   as num?)?.toDouble() ?? 0;
-      final double hFPB  = (h['perBaseFarmerRate'] as num?)?.toDouble() ?? 0;
-      final double hCPB  = hBase > 0 ? hAct / hBase : 0;
+      final double hAct = (h['actualPrice'] as num?)?.toDouble() ?? 0;
+      final double hFPB = (h['perBaseFarmerRate'] as num?)?.toDouble() ?? 0;
+      final double hCPB = hBase > 0 ? hAct / hBase : 0;
       newTotalBase += hBase;
       newTotalCost += hBase * hCPB;
       lastFPB = hFPB;
     }
-    all[medIdx]['totalBaseQty']     = newTotalBase;
-    all[medIdx]['weightedAvgCost']  =
-        newTotalBase > 0 ? newTotalCost / newTotalBase : 0.0;
+    all[medIdx]['totalBaseQty'] = newTotalBase;
+    all[medIdx]['weightedAvgCost'] = newTotalBase > 0
+        ? newTotalCost / newTotalBase
+        : 0.0;
     if (lastFPB > 0) all[medIdx]['currentFarmerRate'] = lastFPB;
-    await CompanyStore.instance.setString('medicineStockList', json.encode(all));
+    await CompanyStore.instance.setString(
+      'medicineStockList',
+      json.encode(all),
+    );
   }
 
   Future<void> _deleteEntry(int index) async {
@@ -7096,13 +7347,15 @@ class _MedicinePurchaseHistoryScreenState
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Karein?'),
         content: Text(
-            'Kya aap "${qty.toStringAsFixed(2)} $hUnit" wali purchase '
-            'entry delete karna chahte hain?\n\n'
-            '⚠️ Stock quantity bhi update hogi.'),
+          'Kya aap "${qty.toStringAsFixed(2)} $hUnit" wali purchase '
+          'entry delete karna chahte hain?\n\n'
+          '⚠️ Stock quantity bhi update hogi.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -7113,7 +7366,9 @@ class _MedicinePurchaseHistoryScreenState
     );
     if (confirm != true) return;
 
-    final String? sj = await CompanyStore.instance.getString('medicineStockList');
+    final String? sj = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
     if (sj == null) return;
     List<dynamic> all = json.decode(sj);
     for (int i = 0; i < all.length; i++) {
@@ -7125,8 +7380,12 @@ class _MedicinePurchaseHistoryScreenState
         break;
       }
     }
-    Get.snackbar('Deleted 🗑️', 'Entry delete ho gaya',
-        backgroundColor: Colors.red, colorText: Colors.white);
+    Get.snackbar(
+      'Deleted 🗑️',
+      'Entry delete ho gaya',
+      backgroundColor: Colors.red,
+      colorText: Colors.white,
+    );
     _load();
   }
 
@@ -7134,11 +7393,14 @@ class _MedicinePurchaseHistoryScreenState
     final h = _history[index];
     final String entryUnit = h['unit']?.toString() ?? widget.unit;
     final qtyCtrl = TextEditingController(
-        text: (h['qty'] as num?)?.toStringAsFixed(2) ?? '');
+      text: (h['qty'] as num?)?.toStringAsFixed(2) ?? '',
+    );
     final aCtrl = TextEditingController(
-        text: (h['actualPrice'] as num?)?.toStringAsFixed(2) ?? '');
+      text: (h['actualPrice'] as num?)?.toStringAsFixed(2) ?? '',
+    );
     final fCtrl = TextEditingController(
-        text: (h['farmerPrice'] as num?)?.toStringAsFixed(2) ?? '');
+      text: (h['farmerPrice'] as num?)?.toStringAsFixed(2) ?? '',
+    );
 
     final bool? saved = await showDialog<bool>(
       context: context,
@@ -7146,48 +7408,67 @@ class _MedicinePurchaseHistoryScreenState
       builder: (ctx) => AlertDialog(
         title: const Text('✏️ Edit Purchase Entry'),
         content: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('Unit: $entryUnit',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: qtyCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Quantity ($entryUnit)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Unit: $entryUnit',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: aCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Actual Price (₹ total)',
-                helperText: 'Company ne jis rate pe kharida',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: qtyCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Quantity ($entryUnit)',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: fCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Farmer Price (₹ total)',
-                helperText: 'Jo rate farmer ko charge hoga',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: aCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Actual Price (₹ total)',
+                  helperText: 'Company ne jis rate pe kharida',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
-            ),
-          ]),
+              const SizedBox(height: 12),
+              TextField(
+                controller: fCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Farmer Price (₹ total)',
+                  helperText: 'Jo rate farmer ko charge hoga',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal.shade700),
+              backgroundColor: Colors.teal.shade700,
+            ),
             child: const Text('Save', style: TextStyle(color: Colors.white)),
           ),
         ],
@@ -7196,19 +7477,25 @@ class _MedicinePurchaseHistoryScreenState
     if (saved != true) return;
 
     final double qty2 = double.tryParse(qtyCtrl.text) ?? 0;
-    final double act  = double.tryParse(aCtrl.text)   ?? 0;
-    final double frm  = double.tryParse(fCtrl.text)   ?? 0;
+    final double act = double.tryParse(aCtrl.text) ?? 0;
+    final double frm = double.tryParse(fCtrl.text) ?? 0;
     if (qty2 <= 0 || act <= 0) {
-      Get.snackbar('Error', 'Quantity aur actual price zaroori hai',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      Get.snackbar(
+        'Error',
+        'Quantity aur actual price zaroori hai',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
       return;
     }
 
     final double qBase = convertToBase(qty2, entryUnit, widget.unit) ?? qty2;
-    final double cPB   = qBase > 0 ? act / qBase : 0;
-    final double fPB   = qBase > 0 ? frm / qBase : 0;
+    final double cPB = qBase > 0 ? act / qBase : 0;
+    final double fPB = qBase > 0 ? frm / qBase : 0;
 
-    final String? sj = await CompanyStore.instance.getString('medicineStockList');
+    final String? sj = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
     if (sj == null) return;
     List<dynamic> all = json.decode(sj);
     for (int i = 0; i < all.length; i++) {
@@ -7217,13 +7504,13 @@ class _MedicinePurchaseHistoryScreenState
         if (index >= 0 && index < hist.length) {
           hist[index] = {
             ...Map<String, dynamic>.from(hist[index]),
-            'qty'               : qty2,
-            'qtyInBaseUnit'     : qBase,
-            'actualPrice'       : act,
-            'farmerPrice'       : frm,
-            'perBaseActualCost' : cPB,
-            'perBaseFarmerRate' : fPB,
-            'editedOn'          : DateTime.now().toIso8601String(),
+            'qty': qty2,
+            'qtyInBaseUnit': qBase,
+            'actualPrice': act,
+            'farmerPrice': frm,
+            'perBaseActualCost': cPB,
+            'perBaseFarmerRate': fPB,
+            'editedOn': DateTime.now().toIso8601String(),
           };
         }
         all[i]['purchaseHistory'] = hist;
@@ -7231,8 +7518,12 @@ class _MedicinePurchaseHistoryScreenState
         break;
       }
     }
-    Get.snackbar('Updated ✅', 'Entry update ho gaya',
-        backgroundColor: Colors.green, colorText: Colors.white);
+    Get.snackbar(
+      'Updated ✅',
+      'Entry update ho gaya',
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+    );
     _load();
   }
 
@@ -7244,129 +7535,173 @@ class _MedicinePurchaseHistoryScreenState
         backgroundColor: Colors.teal.shade700,
         leading: IconButton(
           icon: const Icon(
-              Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
           onPressed: () => Get.back(),
         ),
-        title: Text('💊 ${widget.medicineName} — History',
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-            overflow: TextOverflow.ellipsis),
+        title: Text(
+          '💊 ${widget.medicineName} — History',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _history.isEmpty
-              ? const Center(child: Text('Koi purchase history nahi.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _history.length,
-                  itemBuilder: (ctx, i) {
-                    final h        = _history[i];
-                    final double qty  = (h['qty'] as num?)?.toDouble() ?? 0;
-                    final String hUnit= h['unit']?.toString() ?? widget.unit;
-                    final double qb   = (h['qtyInBaseUnit'] as num?)?.toDouble() ?? qty;
-                    final double act  = (h['actualPrice']   as num?)?.toDouble() ?? 0;
-                    final double frm  = (h['farmerPrice']   as num?)?.toDouble() ?? 0;
-                    final double cPB  = (h['perBaseActualCost'] as num?)?.toDouble() ?? 0;
-                    final String date = formatHistoryDateTime(h['date']?.toString());
-                    final String by   = h['addedByName']?.toString() ?? '';
-                    final String byR  = h['addedByRole']?.toString() ?? '';
+          ? const Center(child: Text('Koi purchase history nahi.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _history.length,
+              itemBuilder: (ctx, i) {
+                final h = _history[i];
+                final double qty = (h['qty'] as num?)?.toDouble() ?? 0;
+                final String hUnit = h['unit']?.toString() ?? widget.unit;
+                final double qb =
+                    (h['qtyInBaseUnit'] as num?)?.toDouble() ?? qty;
+                final double act = (h['actualPrice'] as num?)?.toDouble() ?? 0;
+                final double frm = (h['farmerPrice'] as num?)?.toDouble() ?? 0;
+                final double cPB =
+                    (h['perBaseActualCost'] as num?)?.toDouble() ?? 0;
+                final String date = formatHistoryDateTime(
+                  h['date']?.toString(),
+                );
+                final String by = h['addedByName']?.toString() ?? '';
+                final String byR = h['addedByRole']?.toString() ?? '';
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.teal.shade100),
-                      ),
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                        // Header: qty + price + Edit + Delete
-                        Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.spaceBetween,
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.teal.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header: qty + price + Edit + Delete
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${qty.toStringAsFixed(2)} $hUnit',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Colors.teal.shade900,
+                            ),
+                          ),
+                          Row(
                             children: [
-                          Text('${qty.toStringAsFixed(2)} $hUnit',
-                              style: TextStyle(
+                              Text(
+                                '₹${act.toStringAsFixed(2)}',
+                                style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 15,
-                                  color: Colors.teal.shade900)),
-                          Row(children: [
-                            Text('₹${act.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                    color: Colors.teal.shade900)),
-                            const SizedBox(width: 8),
-                            // Edit
-                            InkWell(
-                              onTap: () => _editEntry(i),
-                              borderRadius: BorderRadius.circular(6),
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                decoration: BoxDecoration(
+                                  color: Colors.teal.shade900,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // Edit
+                              InkWell(
+                                onTap: () => _editEntry(i),
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
                                     color: Colors.blue.shade50,
                                     borderRadius: BorderRadius.circular(6),
                                     border: Border.all(
-                                        color: Colors.blue.shade200)),
-                                child: Icon(Icons.edit_rounded,
+                                      color: Colors.blue.shade200,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.edit_rounded,
                                     size: 14,
-                                    color: Colors.blue.shade700),
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 6),
-                            // Delete
-                            InkWell(
-                              onTap: () => _deleteEntry(i),
-                              borderRadius: BorderRadius.circular(6),
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                decoration: BoxDecoration(
+                              const SizedBox(width: 6),
+                              // Delete
+                              InkWell(
+                                onTap: () => _deleteEntry(i),
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
                                     color: Colors.red.shade50,
                                     borderRadius: BorderRadius.circular(6),
                                     border: Border.all(
-                                        color: Colors.red.shade200)),
-                                child: Icon(Icons.delete_rounded,
+                                      color: Colors.red.shade200,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.delete_rounded,
                                     size: 14,
-                                    color: Colors.red.shade700),
+                                    color: Colors.red.shade700,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ]),
-                        ]),
-                        if (hUnit != widget.unit)
-                          Text('(= ${qb.toStringAsFixed(3)} ${widget.unit})',
-                              style: TextStyle(
-                                  fontSize: 11, color: Colors.grey.shade500)),
-                        const SizedBox(height: 4),
+                            ],
+                          ),
+                        ],
+                      ),
+                      if (hUnit != widget.unit)
                         Text(
-                            'Actual: ₹${act.toStringAsFixed(2)}  •  Farmer: ₹${frm.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.black54)),
-                        if (cPB > 0)
-                          Text(
-                              'Per unit cost: ₹${cPB.toStringAsFixed(2)} / ${widget.unit}',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.teal.shade700)),
-                        const SizedBox(height: 6),
-                        Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.spaceBetween,
-                            children: [
+                          '(= ${qb.toStringAsFixed(3)} ${widget.unit})',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Actual: ₹${act.toStringAsFixed(2)}  •  Farmer: ₹${frm.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
+                      ),
+                      if (cPB > 0)
+                        Text(
+                          'Per unit cost: ₹${cPB.toStringAsFixed(2)} / ${widget.unit}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.teal.shade700,
+                          ),
+                        ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
                           if (by.isNotEmpty)
                             Text(
-                                '👤 ${byR.isNotEmpty ? "$byR: " : ""}$by',
-                                style: const TextStyle(
-                                    fontSize: 11, color: Colors.black45)),
-                          Text('🕒 $date',
+                              '👤 ${byR.isNotEmpty ? "$byR: " : ""}$by',
                               style: const TextStyle(
-                                  fontSize: 11, color: Colors.black45)),
-                        ]),
-                      ]),
-                    );
-                  },
-                ),
+                                fontSize: 11,
+                                color: Colors.black45,
+                              ),
+                            ),
+                          Text(
+                            '🕒 $date',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.black45,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
     );
   }
 }
@@ -7380,8 +7715,7 @@ Future<void> _showMedicineAllocationDialog(
   String mId,
   String baseUnit,
 ) async {
-  final double totalBaseQty =
-      (med['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
+  final double totalBaseQty = (med['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
   final double weightedAvgCost =
       (med['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
   final double currentFarmerRate =
@@ -7389,21 +7723,24 @@ Future<void> _showMedicineAllocationDialog(
 
   // Already allocated
   final List<Map<String, dynamic>> allocs = List<Map<String, dynamic>>.from(
-    (med['allocations'] as List<dynamic>?)
-            ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
+    (med['allocations'] as List<dynamic>?)?.map(
+          (e) => Map<String, dynamic>.from(e as Map),
+        ) ??
         [],
   );
   double allocatedBase = 0;
   for (final a in allocs) {
-    allocatedBase += (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+    allocatedBase +=
+        (a['qtyInBaseUnit'] as num?)?.toDouble() ??
         (a['qty'] as num?)?.toDouble() ??
         0.0;
   }
 
   // Private sales bhi minus karo
   double soldBase = 0;
-  final String? salesJson =
-      await CompanyStore.instance.getString('medicineSalesHistory');
+  final String? salesJson = await CompanyStore.instance.getString(
+    'medicineSalesHistory',
+  );
   if (salesJson != null) {
     try {
       final List<dynamic> rawSales = json.decode(salesJson);
@@ -7411,7 +7748,8 @@ Future<void> _showMedicineAllocationDialog(
         final List<dynamic> items = sale['items'] as List<dynamic>? ?? [];
         for (final item in items) {
           if (item['medicineId']?.toString() == mId) {
-            soldBase += (item['qtyInBaseUnit'] as num?)?.toDouble() ??
+            soldBase +=
+                (item['qtyInBaseUnit'] as num?)?.toDouble() ??
                 (item['qty'] as num?)?.toDouble() ??
                 0.0;
           }
@@ -7420,12 +7758,15 @@ Future<void> _showMedicineAllocationDialog(
     } catch (_) {}
   }
 
-  double availBase =
-      (totalBaseQty - allocatedBase - soldBase).clamp(0.0, double.infinity);
+  double availBase = (totalBaseQty - allocatedBase - soldBase).clamp(
+    0.0,
+    double.infinity,
+  );
 
   // Company farmers
-  List<dynamic> rawFarmers =
-      await CompanyStore.instance.getJsonList('companyFarmers');
+  List<dynamic> rawFarmers = await CompanyStore.instance.getJsonList(
+    'companyFarmers',
+  );
   List<String> farmerOptions = rawFarmers.map((f) {
     String name = f['name']?.toString() ?? 'Unknown';
     String mobile = f['phone']?.toString() ?? 'No Mobile';
@@ -7439,9 +7780,7 @@ Future<void> _showMedicineAllocationDialog(
   String selectedUnit = baseUnit;
   final qtyCtrl = TextEditingController();
   final rateCtrl = TextEditingController(
-    text: currentFarmerRate > 0
-        ? currentFarmerRate.toStringAsFixed(2)
-        : '',
+    text: currentFarmerRate > 0 ? currentFarmerRate.toStringAsFixed(2) : '',
   );
 
   await showDialog(
@@ -7453,12 +7792,10 @@ Future<void> _showMedicineAllocationDialog(
           final double qty = double.tryParse(qtyCtrl.text) ?? 0.0;
           final double qtyBase =
               convertToBase(qty, selectedUnit, baseUnit) ?? qty;
-          final double saleRate =
-              double.tryParse(rateCtrl.text) ?? 0.0;
+          final double saleRate = double.tryParse(rateCtrl.text) ?? 0.0;
           final bool isOver = qtyBase > availBase;
           final double availInSelected =
-              convertFromBase(availBase, baseUnit, selectedUnit) ??
-                  availBase;
+              convertFromBase(availBase, baseUnit, selectedUnit) ?? availBase;
           final double totalCost = qtyBase * weightedAvgCost;
           final double totalBill = qtyBase * saleRate;
           final double profit = totalBill - totalCost;
@@ -7476,9 +7813,10 @@ Future<void> _showMedicineAllocationDialog(
               title: Text(
                 '💊 ${med['name']} Allocate Karo',
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15),
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
               ),
             ),
             body: Column(
@@ -7494,15 +7832,18 @@ Future<void> _showMedicineAllocationDialog(
                       Text(
                         'Bacha: ${availBase.toStringAsFixed(3)} $baseUnit',
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                        ),
                       ),
                       if (weightedAvgCost > 0)
                         Text(
                           'Avg Cost: ₹${weightedAvgCost.toStringAsFixed(2)} / $baseUnit',
                           style: const TextStyle(
-                              color: Colors.white70, fontSize: 11),
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
                         ),
                     ],
                   ),
@@ -7518,18 +7859,17 @@ Future<void> _showMedicineAllocationDialog(
                         TextField(
                           controller: farmerSearchCtrl,
                           decoration: InputDecoration(
-                            labelText:
-                                'Apna Farmer Search Karein *',
-                            prefixIcon:
-                                const Icon(Icons.search_rounded),
+                            labelText: 'Apna Farmer Search Karein *',
+                            prefixIcon: const Icon(Icons.search_rounded),
                             suffixIcon: selectedFarmer != null
                                 ? const Icon(
                                     Icons.check_circle_rounded,
-                                    color: Colors.green)
+                                    color: Colors.green,
+                                  )
                                 : null,
                             border: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(10)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                             helperText: selectedFarmer != null
                                 ? '✅ $selectedFarmer'
                                 : null,
@@ -7544,68 +7884,69 @@ Future<void> _showMedicineAllocationDialog(
                             farmerSearchCtrl.text.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Container(
-                            constraints:
-                                const BoxConstraints(maxHeight: 150),
+                            constraints: const BoxConstraints(maxHeight: 150),
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              border: Border.all(
-                                  color: Colors.teal.shade200),
+                              border: Border.all(color: Colors.teal.shade200),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Builder(builder: (cx) {
-                              final q = farmerSearchCtrl.text
-                                  .toLowerCase();
-                              final filtered = farmerOptions
-                                  .where((f) =>
-                                      f.toLowerCase().contains(q))
-                                  .toList();
-                              if (filtered.isEmpty) {
-                                return const Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: Text('Koi farmer nahi mila',
-                                      style: TextStyle(
-                                          color: Colors.grey)),
-                                );
-                              }
-                              return ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: filtered.length,
-                                itemBuilder: (cx2, fi) {
-                                  return InkWell(
-                                    onTap: () => setDlg(() {
-                                      selectedFarmer = filtered[fi];
-                                      farmerSearchCtrl.text =
-                                          filtered[fi];
-                                      dropdownVisible = false;
-                                    }),
-                                    child: Padding(
-                                      padding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 14,
-                                              vertical: 10),
-                                      child: Text(filtered[fi],
-                                          style: const TextStyle(
-                                              fontSize: 13)),
+                            child: Builder(
+                              builder: (cx) {
+                                final q = farmerSearchCtrl.text.toLowerCase();
+                                final filtered = farmerOptions
+                                    .where((f) => f.toLowerCase().contains(q))
+                                    .toList();
+                                if (filtered.isEmpty) {
+                                  return const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: Text(
+                                      'Koi farmer nahi mila',
+                                      style: TextStyle(color: Colors.grey),
                                     ),
                                   );
-                                },
-                              );
-                            }),
+                                }
+                                return ListView.builder(
+                                  shrinkWrap: true,
+                                  itemCount: filtered.length,
+                                  itemBuilder: (cx2, fi) {
+                                    return InkWell(
+                                      onTap: () => setDlg(() {
+                                        selectedFarmer = filtered[fi];
+                                        farmerSearchCtrl.text = filtered[fi];
+                                        dropdownVisible = false;
+                                      }),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 10,
+                                        ),
+                                        child: Text(
+                                          filtered[fi],
+                                          style: const TextStyle(fontSize: 13),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                           ),
                         ],
                         const SizedBox(height: 20),
 
                         // Unit select for allocation
-                        const Text('Unit Chuno:',
-                            style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600)),
+                        const Text(
+                          'Unit Chuno:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                         const SizedBox(height: 6),
                         Wrap(
                           spacing: 8,
                           children: kMedicineUnits.map((u) {
-                            final bool enabled =
-                                canConvert(u, baseUnit);
+                            final bool enabled = canConvert(u, baseUnit);
                             return ChoiceChip(
                               label: Text(u),
                               selected: selectedUnit == u,
@@ -7618,14 +7959,13 @@ Future<void> _showMedicineAllocationDialog(
                                           if (currentFarmerRate > 0) {
                                             final double perSelected =
                                                 convertFromBase(
-                                                        currentFarmerRate,
-                                                        baseUnit,
-                                                        u) ??
-                                                    currentFarmerRate;
-                                            rateCtrl.text =
-                                                perSelected
-                                                    .toStringAsFixed(
-                                                        2);
+                                                  currentFarmerRate,
+                                                  baseUnit,
+                                                  u,
+                                                ) ??
+                                                currentFarmerRate;
+                                            rateCtrl.text = perSelected
+                                                .toStringAsFixed(2);
                                           }
                                         });
                                       }
@@ -7635,8 +7975,8 @@ Future<void> _showMedicineAllocationDialog(
                               labelStyle: TextStyle(
                                 color: enabled
                                     ? (selectedUnit == u
-                                        ? Colors.white
-                                        : Colors.black87)
+                                          ? Colors.white
+                                          : Colors.black87)
                                     : Colors.grey,
                               ),
                             );
@@ -7648,48 +7988,53 @@ Future<void> _showMedicineAllocationDialog(
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: isOver
-                                ? Colors.red.shade50
-                                : Colors.white,
+                            color: isOver ? Colors.red.shade50 : Colors.white,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                                color: isOver
-                                    ? Colors.red.shade300
-                                    : Colors.grey.shade300),
+                              color: isOver
+                                  ? Colors.red.shade300
+                                  : Colors.grey.shade300,
+                            ),
                           ),
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('💊 ${med['name']}',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                          color: Colors.teal.shade900)),
+                                  Text(
+                                    '💊 ${med['name']}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: Colors.teal.shade900,
+                                    ),
+                                  ),
                                   Text(
                                     'Max: ${availInSelected.toStringAsFixed(2)} $selectedUnit',
                                     style: TextStyle(
-                                        fontSize: 11,
-                                        color: isOver
-                                            ? Colors.red.shade700
-                                            : Colors.green.shade700,
-                                        fontWeight: FontWeight.bold),
+                                      fontSize: 11,
+                                      color: isOver
+                                          ? Colors.red.shade700
+                                          : Colors.green.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ],
                               ),
                               if (weightedAvgCost > 0)
                                 Padding(
                                   padding: const EdgeInsets.only(
-                                      top: 3, bottom: 3),
+                                    top: 3,
+                                    bottom: 3,
+                                  ),
                                   child: Text(
                                     'Auto Cost: ₹${weightedAvgCost.toStringAsFixed(2)} / $baseUnit',
                                     style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey.shade600),
+                                      fontSize: 11,
+                                      color: Colors.grey.shade600,
+                                    ),
                                   ),
                                 ),
                               const SizedBox(height: 8),
@@ -7698,9 +8043,10 @@ Future<void> _showMedicineAllocationDialog(
                                   Expanded(
                                     child: TextField(
                                       controller: qtyCtrl,
-                                      keyboardType: const TextInputType
-                                          .numberWithOptions(
-                                          decimal: true),
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
                                       onChanged: (_) => setDlg(() {}),
                                       decoration: InputDecoration(
                                         labelText: 'Qty ($selectedUnit)',
@@ -7715,13 +8061,13 @@ Future<void> _showMedicineAllocationDialog(
                                   Expanded(
                                     child: TextField(
                                       controller: rateCtrl,
-                                      keyboardType: const TextInputType
-                                          .numberWithOptions(
-                                          decimal: true),
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
                                       onChanged: (_) => setDlg(() {}),
                                       decoration: InputDecoration(
-                                        labelText:
-                                            'Rate (₹/$selectedUnit)',
+                                        labelText: 'Rate (₹/$selectedUnit)',
                                         isDense: true,
                                       ),
                                     ),
@@ -7734,40 +8080,47 @@ Future<void> _showMedicineAllocationDialog(
                                   child: Text(
                                     '= ${qtyBase.toStringAsFixed(3)} $baseUnit',
                                     style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.teal.shade700),
+                                      fontSize: 11,
+                                      color: Colors.teal.shade700,
+                                    ),
                                   ),
                                 ),
                               if (hasCalc) ...[
                                 const SizedBox(height: 10),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 7),
+                                    horizontal: 10,
+                                    vertical: 7,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: profit >= 0
                                         ? Colors.teal.shade50
                                         : Colors.orange.shade50,
-                                    borderRadius:
-                                        BorderRadius.circular(8),
+                                    borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                        color: profit >= 0
-                                            ? Colors.teal.shade200
-                                            : Colors.orange.shade200),
+                                      color: profit >= 0
+                                          ? Colors.teal.shade200
+                                          : Colors.orange.shade200,
+                                    ),
                                   ),
                                   child: Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
-                                          'Cost: ₹${totalCost.toStringAsFixed(0)}',
-                                          style: const TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.black54)),
+                                        'Cost: ₹${totalCost.toStringAsFixed(0)}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
                                       Text(
-                                          'Bill: ₹${totalBill.toStringAsFixed(0)}',
-                                          style: const TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.black54)),
+                                        'Bill: ₹${totalBill.toStringAsFixed(0)}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.black54,
+                                        ),
+                                      ),
                                       Text(
                                         profit >= 0
                                             ? '📈 +₹${profit.toStringAsFixed(0)}'
@@ -7800,27 +8153,31 @@ Future<void> _showMedicineAllocationDialog(
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () async {
-                        final String farmerName = (selectedFarmer ??
-                                farmerSearchCtrl.text)
-                            .trim();
+                        final String farmerName =
+                            (selectedFarmer ?? farmerSearchCtrl.text).trim();
                         final double qty2 =
                             double.tryParse(qtyCtrl.text) ?? 0.0;
                         final double qtyBase2 =
-                            convertToBase(qty2, selectedUnit, baseUnit) ??
-                                qty2;
+                            convertToBase(qty2, selectedUnit, baseUnit) ?? qty2;
                         final double rate =
                             double.tryParse(rateCtrl.text) ?? 0.0;
 
                         if (farmerName.isEmpty) {
-                          Get.snackbar('Error', 'Farmer select karein.',
-                              backgroundColor: Colors.red,
-                              colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Farmer select karein.',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
                         if (qty2 <= 0) {
-                          Get.snackbar('Error', 'Quantity dalein.',
-                              backgroundColor: Colors.red,
-                              colorText: Colors.white);
+                          Get.snackbar(
+                            'Error',
+                            'Quantity dalein.',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
                           return;
                         }
                         if (qtyBase2 > availBase) {
@@ -7839,8 +8196,7 @@ Future<void> _showMedicineAllocationDialog(
                             await SessionService.currentName ?? '';
 
                         // Stock update
-                        final String? stockJson = await CompanyStore
-                            .instance
+                        final String? stockJson = await CompanyStore.instance
                             .getString('medicineStockList');
                         List<dynamic> all = [];
                         if (stockJson != null) {
@@ -7853,16 +8209,19 @@ Future<void> _showMedicineAllocationDialog(
                             List<dynamic> allocList =
                                 all[i]['allocations'] ?? [];
                             allocList.add({
-                              'id': DateTime.now()
-                                  .millisecondsSinceEpoch
+                              'id': DateTime.now().millisecondsSinceEpoch
                                   .toString(),
                               'farmerName': farmerName,
                               'qty': qty2,
                               'unit': selectedUnit,
                               'qtyInBaseUnit': qtyBase2,
                               'rate': rate,
-                              'allocatedOn':
-                                  DateTime.now().toIso8601String(),
+                              // ✅ NEW: cost snapshot (historical, non-changing)
+                              'costAtAllocation':
+                                  (all[i]['weightedAvgCost'] as num?)
+                                      ?.toDouble() ??
+                                  0.0,
+                              'allocatedOn': DateTime.now().toIso8601String(),
                               'allocatedByName': allocByName,
                               'allocatedByRole': allocByRole,
                             });
@@ -7871,26 +8230,33 @@ Future<void> _showMedicineAllocationDialog(
                           }
                         }
                         await CompanyStore.instance.setString(
-                            'medicineStockList', json.encode(all));
+                          'medicineStockList',
+                          json.encode(all),
+                        );
 
                         Navigator.pop(ctx);
-                        Get.snackbar('Saved ✅',
-                            '${qty2.toStringAsFixed(2)} $selectedUnit allocate ho gaya!',
-                            backgroundColor: Colors.green,
-                            colorText: Colors.white);
+                        Get.snackbar(
+                          'Saved ✅',
+                          '${qty2.toStringAsFixed(2)} $selectedUnit allocate ho gaya!',
+                          backgroundColor: Colors.green,
+                          colorText: Colors.white,
+                        );
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green.shade700,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
-                      child: const Text('Save Allocation',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16)),
+                      child: const Text(
+                        'Save Allocation',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -7939,8 +8305,9 @@ class _MedicineAllocationDetailScreenState
   }
 
   Future<void> _load() async {
-    final String? stockJson =
-        await CompanyStore.instance.getString('medicineStockList');
+    final String? stockJson = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
     Map<String, dynamic>? found;
     if (stockJson != null) {
       try {
@@ -7958,12 +8325,12 @@ class _MedicineAllocationDetailScreenState
       return;
     }
     final allocs = List<Map<String, dynamic>>.from(
-      (found['allocations'] as List<dynamic>?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
+      (found['allocations'] as List<dynamic>?)?.map(
+            (e) => Map<String, dynamic>.from(e as Map),
+          ) ??
           [],
     );
-    final alloc = (widget.allocIndex >= 0 &&
-            widget.allocIndex < allocs.length)
+    final alloc = (widget.allocIndex >= 0 && widget.allocIndex < allocs.length)
         ? allocs[widget.allocIndex]
         : <String, dynamic>{};
 
@@ -7985,17 +8352,18 @@ class _MedicineAllocationDetailScreenState
 
   double _availForEdit() {
     final String baseUnit = _med!['unit']?.toString() ?? 'ml';
-    final double totalBase =
-        (_med!['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
+    final double totalBase = (_med!['totalBaseQty'] as num?)?.toDouble() ?? 0.0;
     final allocs = List<Map<String, dynamic>>.from(
-      (_med!['allocations'] as List<dynamic>?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map)) ??
+      (_med!['allocations'] as List<dynamic>?)?.map(
+            (e) => Map<String, dynamic>.from(e as Map),
+          ) ??
           [],
     );
     double allocElsewhere = 0;
     for (int i = 0; i < allocs.length; i++) {
       if (i == widget.allocIndex) continue;
-      allocElsewhere += (allocs[i]['qtyInBaseUnit'] as num?)?.toDouble() ??
+      allocElsewhere +=
+          (allocs[i]['qtyInBaseUnit'] as num?)?.toDouble() ??
           (allocs[i]['qty'] as num?)?.toDouble() ??
           0.0;
     }
@@ -8006,19 +8374,22 @@ class _MedicineAllocationDetailScreenState
   Future<void> _save() async {
     final String baseUnit = _med!['unit']?.toString() ?? 'ml';
     final double qty = double.tryParse(_qtyCtrl.text) ?? 0.0;
-    final double qtyBase =
-        convertToBase(qty, _selectedUnit, baseUnit) ?? qty;
+    final double qtyBase = convertToBase(qty, _selectedUnit, baseUnit) ?? qty;
     final double avail = _availForEdit();
 
     if (qty > avail) {
-      Get.snackbar('Error',
-          'Sirf ${avail.toStringAsFixed(2)} $baseUnit available hai.',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      Get.snackbar(
+        'Error',
+        'Sirf ${avail.toStringAsFixed(2)} $baseUnit available hai.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
       return;
     }
 
-    final String? stockJson =
-        await CompanyStore.instance.getString('medicineStockList');
+    final String? stockJson = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
     List<dynamic> all = [];
     if (stockJson != null) {
       try {
@@ -8028,8 +8399,7 @@ class _MedicineAllocationDetailScreenState
     for (int i = 0; i < all.length; i++) {
       if (all[i]['id']?.toString() == widget.medicineId) {
         List<dynamic> allocList = all[i]['allocations'] ?? [];
-        if (widget.allocIndex >= 0 &&
-            widget.allocIndex < allocList.length) {
+        if (widget.allocIndex >= 0 && widget.allocIndex < allocList.length) {
           allocList[widget.allocIndex] = {
             ...Map<String, dynamic>.from(allocList[widget.allocIndex]),
             'farmerName': _nameCtrl.text.trim(),
@@ -8045,10 +8415,16 @@ class _MedicineAllocationDetailScreenState
       }
     }
     await CompanyStore.instance.setString(
-        'medicineStockList', json.encode(all));
+      'medicineStockList',
+      json.encode(all),
+    );
     Get.back(result: true);
-    Get.snackbar('Updated ✅', 'Allocation update ho gaya',
-        backgroundColor: Colors.green, colorText: Colors.white);
+    Get.snackbar(
+      'Updated ✅',
+      'Allocation update ho gaya',
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+    );
   }
 
   Future<void> _delete() async {
@@ -8057,11 +8433,13 @@ class _MedicineAllocationDetailScreenState
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Karein?'),
         content: const Text(
-            'Kya aap is allocation ko delete karna chahte hain?'),
+          'Kya aap is allocation ko delete karna chahte hain?',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('No')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -8072,8 +8450,9 @@ class _MedicineAllocationDetailScreenState
     );
     if (confirm != true) return;
 
-    final String? stockJson =
-        await CompanyStore.instance.getString('medicineStockList');
+    final String? stockJson = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
     List<dynamic> all = [];
     if (stockJson != null) {
       try {
@@ -8083,8 +8462,7 @@ class _MedicineAllocationDetailScreenState
     for (int i = 0; i < all.length; i++) {
       if (all[i]['id']?.toString() == widget.medicineId) {
         List<dynamic> allocList = all[i]['allocations'] ?? [];
-        if (widget.allocIndex >= 0 &&
-            widget.allocIndex < allocList.length) {
+        if (widget.allocIndex >= 0 && widget.allocIndex < allocList.length) {
           allocList.removeAt(widget.allocIndex);
         }
         all[i]['allocations'] = allocList;
@@ -8092,10 +8470,16 @@ class _MedicineAllocationDetailScreenState
       }
     }
     await CompanyStore.instance.setString(
-        'medicineStockList', json.encode(all));
+      'medicineStockList',
+      json.encode(all),
+    );
     Get.back(result: true);
-    Get.snackbar('Deleted 🗑️', 'Allocation delete ho gaya',
-        backgroundColor: Colors.red, colorText: Colors.white);
+    Get.snackbar(
+      'Deleted 🗑️',
+      'Allocation delete ho gaya',
+      backgroundColor: Colors.red,
+      colorText: Colors.white,
+    );
   }
 
   @override
@@ -8109,8 +8493,7 @@ class _MedicineAllocationDetailScreenState
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-          body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_med == null) {
       return Scaffold(
@@ -8124,8 +8507,7 @@ class _MedicineAllocationDetailScreenState
     final double weightedAvgCost =
         (_med!['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
     final double qty = double.tryParse(_qtyCtrl.text) ?? 0.0;
-    final double qtyBase =
-        convertToBase(qty, _selectedUnit, baseUnit) ?? qty;
+    final double qtyBase = convertToBase(qty, _selectedUnit, baseUnit) ?? qty;
     final double rate = double.tryParse(_rateCtrl.text) ?? 0.0;
     final bool isOver = _isEditMode && qty > _availForEdit();
     final double totalCost = qtyBase * weightedAvgCost;
@@ -8139,23 +8521,26 @@ class _MedicineAllocationDetailScreenState
         backgroundColor: Colors.teal.shade700,
         leading: IconButton(
           icon: const Icon(
-              Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
           onPressed: () => Get.back(),
         ),
         title: Text(
           _isEditMode ? 'Edit Allocation' : 'Farmer Allocation',
           style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16),
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
         ),
         actions: [
           IconButton(
             icon: Icon(
-                _isEditMode ? Icons.close_rounded : Icons.edit_rounded,
-                color: Colors.white),
-            onPressed: () =>
-                setState(() => _isEditMode = !_isEditMode),
+              _isEditMode ? Icons.close_rounded : Icons.edit_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => setState(() => _isEditMode = !_isEditMode),
           ),
           IconButton(
             icon: const Icon(Icons.delete_rounded, color: Colors.white),
@@ -8169,33 +8554,41 @@ class _MedicineAllocationDetailScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: Colors.teal.shade100,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text('💊 $name',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.teal.shade900)),
+              child: Text(
+                '💊 $name',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.teal.shade900,
+                ),
+              ),
             ),
             // ✅ NEW: Batch ID badge — jis farmer-batch mein ye medicine gaya
             if (_alloc?['batchId']?.toString().isNotEmpty ?? false) ...[
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.purple.shade50,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.purple.shade200),
                 ),
-                child: Text('🏷️ Batch: ${_alloc!['batchId']}',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple.shade800)),
+                child: Text(
+                  '🏷️ Batch: ${_alloc!['batchId']}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.purple.shade800,
+                  ),
+                ),
               ),
             ],
             const SizedBox(height: 16),
@@ -8206,16 +8599,18 @@ class _MedicineAllocationDetailScreenState
                 labelText: 'Farmer Ka Naam',
                 prefixIcon: const Icon(Icons.person_rounded),
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
             const SizedBox(height: 16),
 
             // Unit select (edit mode only)
             if (_isEditMode) ...[
-              const Text('Unit:',
-                  style: TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600)),
+              const Text(
+                'Unit:',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 6),
               Wrap(
                 spacing: 8,
@@ -8232,9 +8627,7 @@ class _MedicineAllocationDetailScreenState
                     selectedColor: Colors.teal.shade700,
                     labelStyle: TextStyle(
                       color: enabled
-                          ? (_selectedUnit == u
-                              ? Colors.white
-                              : Colors.black87)
+                          ? (_selectedUnit == u ? Colors.white : Colors.black87)
                           : Colors.grey,
                     ),
                   );
@@ -8249,9 +8642,8 @@ class _MedicineAllocationDetailScreenState
                 color: isOver ? Colors.red.shade50 : Colors.white,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                    color: isOver
-                        ? Colors.red.shade300
-                        : Colors.grey.shade300),
+                  color: isOver ? Colors.red.shade300 : Colors.grey.shade300,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -8259,20 +8651,24 @@ class _MedicineAllocationDetailScreenState
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('💊 $name',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: Colors.teal.shade900)),
+                      Text(
+                        '💊 $name',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.teal.shade900,
+                        ),
+                      ),
                       if (_isEditMode)
                         Text(
                           'Max: ${_availForEdit().toStringAsFixed(2)} $_selectedUnit',
                           style: TextStyle(
-                              fontSize: 11,
-                              color: isOver
-                                  ? Colors.red.shade700
-                                  : Colors.green.shade700,
-                              fontWeight: FontWeight.bold),
+                            fontSize: 11,
+                            color: isOver
+                                ? Colors.red.shade700
+                                : Colors.green.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                     ],
                   ),
@@ -8280,10 +8676,12 @@ class _MedicineAllocationDetailScreenState
                     Padding(
                       padding: const EdgeInsets.only(top: 3, bottom: 3),
                       child: Text(
-                          'Avg Cost: ₹${weightedAvgCost.toStringAsFixed(2)} / $baseUnit',
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade600)),
+                        'Avg Cost: ₹${weightedAvgCost.toStringAsFixed(2)} / $baseUnit',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
                     ),
                   const SizedBox(height: 6),
                   Row(
@@ -8292,9 +8690,9 @@ class _MedicineAllocationDetailScreenState
                         child: TextField(
                           controller: _qtyCtrl,
                           enabled: _isEditMode,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(
-                                  decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
                           onChanged: (_) => setState(() {}),
                           decoration: InputDecoration(
                             labelText: 'Qty ($_selectedUnit)',
@@ -8310,9 +8708,9 @@ class _MedicineAllocationDetailScreenState
                         child: TextField(
                           controller: _rateCtrl,
                           enabled: _isEditMode,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(
-                                  decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
                           onChanged: (_) => setState(() {}),
                           decoration: InputDecoration(
                             labelText: 'Rate (₹/$_selectedUnit)',
@@ -8325,39 +8723,49 @@ class _MedicineAllocationDetailScreenState
                   if (_selectedUnit != baseUnit && qty > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
-                      child: Text('= ${qtyBase.toStringAsFixed(3)} $baseUnit',
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.teal.shade700)),
+                      child: Text(
+                        '= ${qtyBase.toStringAsFixed(3)} $baseUnit',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.teal.shade700,
+                        ),
+                      ),
                     ),
                   if (hasCalc) ...[
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 7),
+                        horizontal: 10,
+                        vertical: 7,
+                      ),
                       decoration: BoxDecoration(
                         color: profit >= 0
                             ? Colors.teal.shade50
                             : Colors.orange.shade50,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                            color: profit >= 0
-                                ? Colors.teal.shade200
-                                : Colors.orange.shade200),
+                          color: profit >= 0
+                              ? Colors.teal.shade200
+                              : Colors.orange.shade200,
+                        ),
                       ),
                       child: Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Cost: ₹${totalCost.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.black54)),
                           Text(
-                              'Bill: ₹${totalBilling.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.black54)),
+                            'Cost: ₹${totalCost.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          Text(
+                            'Bill: ₹${totalBilling.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.black54,
+                            ),
+                          ),
                           Text(
                             profit >= 0
                                 ? '📈 +₹${profit.toStringAsFixed(0)}'
@@ -8384,17 +8792,17 @@ class _MedicineAllocationDetailScreenState
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                    '👤 ${_alloc!['allocatedByRole'] ?? ''}: ${_alloc!['allocatedByName']}',
-                    style:
-                        TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  '👤 ${_alloc!['allocatedByRole'] ?? ''}: ${_alloc!['allocatedByName']}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
               ),
             if (_alloc?['allocatedOn'] != null)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                    '🕒 ${formatHistoryDateTime(_alloc!['allocatedOn']?.toString())}',
-                    style:
-                        TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                  '🕒 ${formatHistoryDateTime(_alloc!['allocatedOn']?.toString())}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                ),
               ),
 
             if (_isEditMode) ...[
@@ -8407,11 +8815,14 @@ class _MedicineAllocationDetailScreenState
                     backgroundColor: Colors.green.shade700,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text('Save Changes',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16)),
+                  child: const Text(
+                    'Save Changes',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -8443,7 +8854,6 @@ class AllocateMedicineToFarmerScreen extends StatefulWidget {
 
 class _AllocateMedicineToFarmerScreenState
     extends State<AllocateMedicineToFarmerScreen> {
-
   // Farmer search
   final _farmerSearchCtrl = TextEditingController();
   String? _selectedFarmer;
@@ -8476,15 +8886,18 @@ class _AllocateMedicineToFarmerScreenState
     // "Farmer Select Karein" bolta rehta tha chahe farmer select kiya ho.
     // Ab TextField ke `onChanged` (neeche) mein hi reset hota hai — wo sirf
     // real typing par fire hota hai, programmatic assignment par nahi.
-    _medicineSearchCtrl.addListener(() => setState(() {
-      _medicineDropdownVisible = _medicineSearchCtrl.text.isNotEmpty;
-    }));
+    _medicineSearchCtrl.addListener(
+      () => setState(() {
+        _medicineDropdownVisible = _medicineSearchCtrl.text.isNotEmpty;
+      }),
+    );
   }
 
   Future<void> _init() async {
     // Load farmers
-    List<dynamic> rawFarmers =
-        await CompanyStore.instance.getJsonList('companyFarmers');
+    List<dynamic> rawFarmers = await CompanyStore.instance.getJsonList(
+      'companyFarmers',
+    );
     final farmers = rawFarmers.map((f) {
       return '${f['name'] ?? 'Unknown'} - ${f['phone'] ?? ''} - ${f['district'] ?? ''}';
     }).toList();
@@ -8502,10 +8915,10 @@ class _AllocateMedicineToFarmerScreenState
       if (avail <= 0) continue;
       final String bu = med['unit']?.toString() ?? 'unit';
       rows.add({
-        'med'     : med,
-        'mId'     : mId,
+        'med': med,
+        'mId': mId,
         'saleUnit': bu, // default = base unit
-        'qtyCtrl' : TextEditingController(),
+        'qtyCtrl': TextEditingController(),
       });
     }
 
@@ -8513,8 +8926,8 @@ class _AllocateMedicineToFarmerScreenState
       setState(() {
         _farmerOptions = farmers;
         _farmerDisplayToId = displayToId;
-        _medicineRows  = rows;
-        _isLoading     = false;
+        _medicineRows = rows;
+        _isLoading = false;
       });
     }
   }
@@ -8533,13 +8946,13 @@ class _AllocateMedicineToFarmerScreenState
   double _totalBill() {
     double total = 0;
     for (final idx in _selectedIndices) {
-      final row        = _medicineRows[idx];
-      final med        = row['med'] as Map<String, dynamic>;
-      final String bu  = med['unit']?.toString() ?? '';
-      final String su  = row['saleUnit']?.toString() ?? bu;
-      final double qty = double.tryParse(
-          (row['qtyCtrl'] as TextEditingController).text) ?? 0;
-      final double qb  = convertToBase(qty, su, bu) ?? qty;
+      final row = _medicineRows[idx];
+      final med = row['med'] as Map<String, dynamic>;
+      final String bu = med['unit']?.toString() ?? '';
+      final String su = row['saleUnit']?.toString() ?? bu;
+      final double qty =
+          double.tryParse((row['qtyCtrl'] as TextEditingController).text) ?? 0;
+      final double qb = convertToBase(qty, su, bu) ?? qty;
       final double fRatePB =
           (med['currentFarmerRate'] as num?)?.toDouble() ?? 0;
       total += qb * fRatePB;
@@ -8548,66 +8961,84 @@ class _AllocateMedicineToFarmerScreenState
   }
 
   Future<void> _save() async {
-    final String farmerName =
-        (_selectedFarmer ?? _farmerSearchCtrl.text).trim();
+    final String farmerName = (_selectedFarmer ?? _farmerSearchCtrl.text)
+        .trim();
     if (farmerName.isEmpty) {
-      Get.snackbar('Error', 'Farmer select karein',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      Get.snackbar(
+        'Error',
+        'Farmer select karein',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
       return;
     }
 
     // Check at least one medicine search karke select ki gayi hai
     if (_selectedIndices.isEmpty) {
-      Get.snackbar('Error', 'Kam se kam ek medicine search karke select karein',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      Get.snackbar(
+        'Error',
+        'Kam se kam ek medicine search karke select karein',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
       return;
     }
 
     // Check at least one qty entered (selected medicines mein se)
     final hasAny = _selectedIndices.any((idx) {
       final row = _medicineRows[idx];
-      final double qty = double.tryParse(
-          (row['qtyCtrl'] as TextEditingController).text) ?? 0;
+      final double qty =
+          double.tryParse((row['qtyCtrl'] as TextEditingController).text) ?? 0;
       return qty > 0;
     });
     if (!hasAny) {
-      Get.snackbar('Error', 'Kam se kam ek medicine ki qty dalein',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      Get.snackbar(
+        'Error',
+        'Kam se kam ek medicine ki qty dalein',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
       return;
     }
 
     // Validate each selected row
     for (final idx in _selectedIndices) {
-      final row       = _medicineRows[idx];
-      final med       = row['med'] as Map<String, dynamic>;
-      final String mId= row['mId']?.toString() ?? '';
+      final row = _medicineRows[idx];
+      final med = row['med'] as Map<String, dynamic>;
+      final String mId = row['mId']?.toString() ?? '';
       final String bu = med['unit']?.toString() ?? '';
       final String su = row['saleUnit']?.toString() ?? bu;
-      final double qty= double.tryParse(
-          (row['qtyCtrl'] as TextEditingController).text) ?? 0;
+      final double qty =
+          double.tryParse((row['qtyCtrl'] as TextEditingController).text) ?? 0;
       if (qty <= 0) continue; // skip empty rows
       final double qb = convertToBase(qty, su, bu) ?? qty;
       final double avail = widget.availBaseQty[mId] ?? 0;
       if (qb > avail) {
         final double av = convertFromBase(avail, bu, su) ?? avail;
-        Get.snackbar('Error',
-            '${med['name']}: sirf ${av.toStringAsFixed(2)} $su available hai',
-            backgroundColor: Colors.red, colorText: Colors.white);
+        Get.snackbar(
+          'Error',
+          '${med['name']}: sirf ${av.toStringAsFixed(2)} $su available hai',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
         return;
       }
     }
 
     // ✅ NEW: farmerId zaroori hai batch link karne ke liye
     if (_selectedFarmerId == null || _selectedFarmerId!.isEmpty) {
-      Get.snackbar('Farmer Select Karein ⚠️',
-          'Kripya dropdown list se hi farmer select karein.',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      Get.snackbar(
+        'Farmer Select Karein ⚠️',
+        'Kripya dropdown list se hi farmer select karein.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
       return;
     }
 
     // ✅ NEW: Farmer ka batch dhoondo (running ya back/completed)
-    List<Map<String, dynamic>> farmersForBatch =
-        await CompanyStore.instance.getJsonList('companyFarmers');
+    List<Map<String, dynamic>> farmersForBatch = await CompanyStore.instance
+        .getJsonList('companyFarmers');
     Map<String, dynamic>? farmerMap;
     int farmerIdxInList = -1;
     for (int fi = 0; fi < farmersForBatch.length; fi++) {
@@ -8618,8 +9049,12 @@ class _AllocateMedicineToFarmerScreenState
       }
     }
     if (farmerMap == null) {
-      Get.snackbar('Error', 'Farmer record nahi mila.',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      Get.snackbar(
+        'Error',
+        'Farmer record nahi mila.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
       return;
     }
 
@@ -8633,7 +9068,9 @@ class _AllocateMedicineToFarmerScreenState
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
           title: const Text('Batch Nahi Mila ⚠️'),
           content: Text(
             '$farmerName ka koi RUNNING batch nahi hai.\n\n'
@@ -8652,8 +9089,13 @@ class _AllocateMedicineToFarmerScreenState
               ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, 'new'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade700),
-              child: const Text('Naya Batch', style: TextStyle(color: Colors.white)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade700,
+              ),
+              child: const Text(
+                'Naya Batch',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         ),
@@ -8662,8 +9104,8 @@ class _AllocateMedicineToFarmerScreenState
       if (choice == null || choice == 'cancel') return;
 
       if (choice == 'old') {
-        final Map<String, dynamic>? picked =
-            await showDialog<Map<String, dynamic>>(
+        final Map<String, dynamic>?
+        picked = await showDialog<Map<String, dynamic>>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Batch Chuniye'),
@@ -8676,8 +9118,9 @@ class _AllocateMedicineToFarmerScreenState
                   final b = completedBatches[bi];
                   return ListTile(
                     title: Text(b['batchId']?.toString() ?? '-'),
-                    subtitle:
-                        Text('${b['chicksCount']} chicks | ${b['startDate'] ?? ''}'),
+                    subtitle: Text(
+                      '${b['chicksCount']} chicks | ${b['startDate'] ?? ''}',
+                    ),
                     onTap: () => Navigator.pop(ctx, b),
                   );
                 },
@@ -8693,46 +9136,51 @@ class _AllocateMedicineToFarmerScreenState
 
     final String byName = await SessionService.currentName ?? '';
     final String byRole = await SessionService.currentRole ?? '';
-    final String allocId =
-        DateTime.now().millisecondsSinceEpoch.toString();
+    final String allocId = DateTime.now().millisecondsSinceEpoch.toString();
     final String allocDate = DateTime.now().toIso8601String();
 
     // Load stock
-    final String? sj =
-        await CompanyStore.instance.getString('medicineStockList');
+    final String? sj = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
     List<dynamic> all = sj != null ? json.decode(sj) : [];
 
     // Add allocation entry to each selected medicine that has qty > 0
     for (final idx in _selectedIndices) {
-      final row       = _medicineRows[idx];
-      final med       = row['med'] as Map<String, dynamic>;
-      final String mId= row['mId']?.toString() ?? '';
+      final row = _medicineRows[idx];
+      final med = row['med'] as Map<String, dynamic>;
+      final String mId = row['mId']?.toString() ?? '';
       final String bu = med['unit']?.toString() ?? '';
       final String su = row['saleUnit']?.toString() ?? bu;
-      final double qty= double.tryParse(
-          (row['qtyCtrl'] as TextEditingController).text) ?? 0;
+      final double qty =
+          double.tryParse((row['qtyCtrl'] as TextEditingController).text) ?? 0;
       if (qty <= 0) continue;
-      final double qb    = convertToBase(qty, su, bu) ?? qty;
+      final double qb = convertToBase(qty, su, bu) ?? qty;
       final double fRatePB =
           (med['currentFarmerRate'] as num?)?.toDouble() ?? 0;
-      final double fRateSu =
-          pricePerUnit(fRatePB, bu, su) ?? fRatePB;
+      final double fRateSu = pricePerUnit(fRatePB, bu, su) ?? fRatePB;
 
       for (int i = 0; i < all.length; i++) {
         if (all[i]['id']?.toString() == mId) {
           List<dynamic> allocs = all[i]['allocations'] ?? [];
           allocs.add({
-            'id'             : '$allocId-$mId',
-            'groupId'        : allocId, // same group = same allocation session
-            'farmerName'     : farmerName,
-            'farmerId'       : _selectedFarmerId, // ✅ NEW
-            'batchId'        : linkedBatchId, // ✅ NEW: is batch ko gaya
-            'qty'            : qty,
-            'unit'           : su,
-            'qtyInBaseUnit'  : qb,
-            'rate'           : fRateSu,
-            'ratePerBase'    : fRatePB,
-            'allocatedOn'    : allocDate,
+            'id': '$allocId-$mId',
+            'groupId': allocId, // same group = same allocation session
+            'farmerName': farmerName,
+            'farmerId': _selectedFarmerId, // ✅ NEW
+            'batchId': linkedBatchId, // ✅ NEW: is batch ko gaya
+            'qty': qty,
+            'unit': su,
+            'qtyInBaseUnit': qb,
+            'rate': fRateSu,
+            'ratePerBase': fRatePB,
+            // ✅ NEW: Is waqt ka actual purchase avg cost (per base unit)
+            // snapshot karke save karo — taaki baad mein naye medicine
+            // purchase se is batch ka calculated income retroactively na
+            // badle (report screen isi field ko cost basis maanega).
+            'costAtAllocation':
+                (all[i]['weightedAvgCost'] as num?)?.toDouble() ?? 0.0,
+            'allocatedOn': allocDate,
             'allocatedByName': byName,
             'allocatedByRole': byRole,
           });
@@ -8771,14 +9219,23 @@ class _AllocateMedicineToFarmerScreenState
     }
 
     if (linkedBatchId != null) {
-      await CompanyStore.instance
-          .saveJsonList('companyFarmers', farmersForBatch);
+      await CompanyStore.instance.saveJsonList(
+        'companyFarmers',
+        farmersForBatch,
+      );
     }
 
-    await CompanyStore.instance.setString('medicineStockList', json.encode(all));
+    await CompanyStore.instance.setString(
+      'medicineStockList',
+      json.encode(all),
+    );
     Get.back(result: true);
-    Get.snackbar('Allocated ✅', '$farmerName ko medicines allocate ho gayi',
-        backgroundColor: Colors.green, colorText: Colors.white);
+    Get.snackbar(
+      'Allocated ✅',
+      '$farmerName ko medicines allocate ho gayi',
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+    );
   }
 
   @override
@@ -8795,15 +9252,25 @@ class _AllocateMedicineToFarmerScreenState
       appBar: AppBar(
         backgroundColor: Colors.orange.shade700,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
           onPressed: () => Get.back(),
         ),
-        title: const Row(children: [
-          Text('👨‍🌾', style: TextStyle(fontSize: 18)),
-          SizedBox(width: 8),
-          Text('Allocate to Farmer',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        ]),
+        title: const Row(
+          children: [
+            Text('👨‍🌾', style: TextStyle(fontSize: 18)),
+            SizedBox(width: 8),
+            Text(
+              'Allocate to Farmer',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
       ),
       body: Column(
         children: [
@@ -8813,11 +9280,11 @@ class _AllocateMedicineToFarmerScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-
                   // ── Farmer search ──
-                  const Text('👨‍🌾 Farmer Select Karein',
-                      style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.bold)),
+                  const Text(
+                    '👨‍🌾 Farmer Select Karein',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _farmerSearchCtrl,
@@ -8825,20 +9292,23 @@ class _AllocateMedicineToFarmerScreenState
                       hintText: 'Naam, Mobile ya Jagah se search karein...',
                       prefixIcon: const Icon(Icons.search_rounded),
                       suffixIcon: _selectedFarmer != null
-                          ? const Icon(Icons.check_circle_rounded,
-                              color: Colors.green)
+                          ? const Icon(
+                              Icons.check_circle_rounded,
+                              color: Colors.green,
+                            )
                           : null,
                       filled: true,
                       fillColor: Colors.white,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide:
-                            BorderSide(color: Colors.orange.shade200),
+                        borderSide: BorderSide(color: Colors.orange.shade200),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                            color: Colors.orange.shade600, width: 2),
+                          color: Colors.orange.shade600,
+                          width: 2,
+                        ),
                       ),
                       helperText: _selectedFarmer != null
                           ? '✅ $_selectedFarmer'
@@ -8861,48 +9331,55 @@ class _AllocateMedicineToFarmerScreenState
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(10),
-                        border:
-                            Border.all(color: Colors.orange.shade200),
+                        border: Border.all(color: Colors.orange.shade200),
                         boxShadow: [
                           BoxShadow(
-                              color: Colors.black.withOpacity(0.07),
-                              blurRadius: 6,
-                              offset: const Offset(0, 3))
+                            color: Colors.black.withOpacity(0.07),
+                            blurRadius: 6,
+                            offset: const Offset(0, 3),
+                          ),
                         ],
                       ),
-                      child: Builder(builder: (cx) {
-                        final q =
-                            _farmerSearchCtrl.text.toLowerCase();
-                        final filtered = _farmerOptions
-                            .where(
-                                (f) => f.toLowerCase().contains(q))
-                            .toList();
-                        if (filtered.isEmpty) {
-                          return const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Text('Koi farmer nahi mila',
-                                style: TextStyle(color: Colors.grey)),
-                          );
-                        }
-                        return ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: filtered.length,
-                          itemBuilder: (cx2, fi) => InkWell(
-                            onTap: () => setState(() {
-                              _selectedFarmer = filtered[fi];
-                              _selectedFarmerId = _farmerDisplayToId[filtered[fi]];
-                              _farmerSearchCtrl.text = filtered[fi];
-                              _dropdownVisible = false;
-                            }),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 10),
-                              child: Text(filtered[fi],
-                                  style: const TextStyle(fontSize: 13)),
+                      child: Builder(
+                        builder: (cx) {
+                          final q = _farmerSearchCtrl.text.toLowerCase();
+                          final filtered = _farmerOptions
+                              .where((f) => f.toLowerCase().contains(q))
+                              .toList();
+                          if (filtered.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Text(
+                                'Koi farmer nahi mila',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            );
+                          }
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: filtered.length,
+                            itemBuilder: (cx2, fi) => InkWell(
+                              onTap: () => setState(() {
+                                _selectedFarmer = filtered[fi];
+                                _selectedFarmerId =
+                                    _farmerDisplayToId[filtered[fi]];
+                                _farmerSearchCtrl.text = filtered[fi];
+                                _dropdownVisible = false;
+                              }),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                child: Text(
+                                  filtered[fi],
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
                             ),
-                          ),
-                        );
-                      }),
+                          );
+                        },
+                      ),
                     ),
                   ],
 
@@ -8922,14 +9399,20 @@ class _AllocateMedicineToFarmerScreenState
                           '⚠️ Koi medicine available nahi hai.\nPehle purchase karein.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                              color: Colors.orange.shade800, fontSize: 13),
+                            color: Colors.orange.shade800,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     )
                   else ...[
-                    const Text('💊 Medicine Select Karein',
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.bold)),
+                    const Text(
+                      '💊 Medicine Select Karein',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _medicineSearchCtrl,
@@ -8940,13 +9423,14 @@ class _AllocateMedicineToFarmerScreenState
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide:
-                              BorderSide(color: Colors.orange.shade200),
+                          borderSide: BorderSide(color: Colors.orange.shade200),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(
-                              color: Colors.orange.shade600, width: 2),
+                            color: Colors.orange.shade600,
+                            width: 2,
+                          ),
                         ),
                       ),
                     ),
@@ -8963,83 +9447,100 @@ class _AllocateMedicineToFarmerScreenState
                           border: Border.all(color: Colors.orange.shade200),
                           boxShadow: [
                             BoxShadow(
-                                color: Colors.black.withOpacity(0.07),
-                                blurRadius: 6,
-                                offset: const Offset(0, 3))
+                              color: Colors.black.withOpacity(0.07),
+                              blurRadius: 6,
+                              offset: const Offset(0, 3),
+                            ),
                           ],
                         ),
-                        child: Builder(builder: (cx) {
-                          final q = _medicineSearchCtrl.text.toLowerCase();
-                          final List<int> filtered = [];
-                          for (int i = 0; i < _medicineRows.length; i++) {
-                            if (_selectedIndices.contains(i)) continue;
-                            final med = _medicineRows[i]['med']
-                                as Map<String, dynamic>;
-                            final String name =
-                                (med['name']?.toString() ?? '').toLowerCase();
-                            final String nick =
-                                (med['nickName']?.toString() ?? '')
-                                    .toLowerCase();
-                            if (name.contains(q) || nick.contains(q)) {
-                              filtered.add(i);
-                            }
-                          }
-                          if (filtered.isEmpty) {
-                            return const Padding(
-                              padding: EdgeInsets.all(12),
-                              child: Text('Koi medicine nahi mili',
-                                  style: TextStyle(color: Colors.grey)),
-                            );
-                          }
-                          return ListView.builder(
-                            shrinkWrap: true,
-                            itemCount: filtered.length,
-                            itemBuilder: (cx2, fi) {
-                              final idx = filtered[fi];
-                              final med = _medicineRows[idx]['med']
-                                  as Map<String, dynamic>;
+                        child: Builder(
+                          builder: (cx) {
+                            final q = _medicineSearchCtrl.text.toLowerCase();
+                            final List<int> filtered = [];
+                            for (int i = 0; i < _medicineRows.length; i++) {
+                              if (_selectedIndices.contains(i)) continue;
+                              final med =
+                                  _medicineRows[i]['med']
+                                      as Map<String, dynamic>;
                               final String name =
-                                  med['name']?.toString() ?? '-';
+                                  (med['name']?.toString() ?? '').toLowerCase();
                               final String nick =
-                                  med['nickName']?.toString() ?? '';
-                              return InkWell(
-                                onTap: () => setState(() {
-                                  _selectedIndices.add(idx);
-                                  _medicineSearchCtrl.clear();
-                                  _medicineDropdownVisible = false;
-                                }),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 14, vertical: 10),
-                                  child: Row(children: [
-                                    const Text('💊',
-                                        style: TextStyle(fontSize: 14)),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(name,
-                                              style: const TextStyle(
-                                                  fontSize: 13,
-                                                  fontWeight:
-                                                      FontWeight.w600)),
-                                          if (nick.isNotEmpty)
-                                            Text('"$nick"',
-                                                style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: Colors
-                                                        .grey.shade600)),
-                                        ],
-                                      ),
-                                    ),
-                                  ]),
+                                  (med['nickName']?.toString() ?? '')
+                                      .toLowerCase();
+                              if (name.contains(q) || nick.contains(q)) {
+                                filtered.add(i);
+                              }
+                            }
+                            if (filtered.isEmpty) {
+                              return const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Text(
+                                  'Koi medicine nahi mili',
+                                  style: TextStyle(color: Colors.grey),
                                 ),
                               );
-                            },
-                          );
-                        }),
+                            }
+                            return ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: filtered.length,
+                              itemBuilder: (cx2, fi) {
+                                final idx = filtered[fi];
+                                final med =
+                                    _medicineRows[idx]['med']
+                                        as Map<String, dynamic>;
+                                final String name =
+                                    med['name']?.toString() ?? '-';
+                                final String nick =
+                                    med['nickName']?.toString() ?? '';
+                                return InkWell(
+                                  onTap: () => setState(() {
+                                    _selectedIndices.add(idx);
+                                    _medicineSearchCtrl.clear();
+                                    _medicineDropdownVisible = false;
+                                  }),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 10,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Text(
+                                          '💊',
+                                          style: TextStyle(fontSize: 14),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                name,
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              if (nick.isNotEmpty)
+                                                Text(
+                                                  '"$nick"',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
                       ),
                     ],
 
@@ -9057,8 +9558,10 @@ class _AllocateMedicineToFarmerScreenState
                         child: Text(
                           'Upar search karke medicine choose karein — usi ka fill karne ka form yahan aayega.',
                           textAlign: TextAlign.center,
-                          style:
-                              TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
                         ),
                       )
                     else
@@ -9080,18 +9583,23 @@ class _AllocateMedicineToFarmerScreenState
                         border: Border.all(color: Colors.orange.shade200),
                       ),
                       child: Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Total Farmer Bill:',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14)),
-                          Text('₹${bill.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: Colors.black87)),
+                          const Text(
+                            'Total Farmer Bill:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          Text(
+                            '₹${bill.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.black87,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -9113,13 +9621,17 @@ class _AllocateMedicineToFarmerScreenState
                   backgroundColor: Colors.orange.shade700,
                   disabledBackgroundColor: Colors.grey.shade300,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
-                child: const Text('Save Allocation',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'Save Allocation',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
           ),
@@ -9129,32 +9641,30 @@ class _AllocateMedicineToFarmerScreenState
   }
 
   Widget _medicineRow(int index) {
-    final row     = _medicineRows[index];
-    final med     = row['med'] as Map<String, dynamic>;
-    final String mId  = row['mId']?.toString() ?? '';
-    final String bu   = med['unit']?.toString() ?? 'unit';
-    final String su   = row['saleUnit']?.toString() ?? bu;
+    final row = _medicineRows[index];
+    final med = row['med'] as Map<String, dynamic>;
+    final String mId = row['mId']?.toString() ?? '';
+    final String bu = med['unit']?.toString() ?? 'unit';
+    final String su = row['saleUnit']?.toString() ?? bu;
     final String name = med['name']?.toString() ?? '-';
     final String nick = med['nickName']?.toString() ?? '';
-    final double fRatePB =
-        (med['currentFarmerRate'] as num?)?.toDouble() ?? 0;
-    final double avgCostPB =
-        (med['weightedAvgCost'] as num?)?.toDouble() ?? 0;
+    final double fRatePB = (med['currentFarmerRate'] as num?)?.toDouble() ?? 0;
+    final double avgCostPB = (med['weightedAvgCost'] as num?)?.toDouble() ?? 0;
     final double availBase = widget.availBaseQty[mId] ?? 0;
-    final double availSu   = convertFromBase(availBase, bu, su) ?? availBase;
+    final double availSu = convertFromBase(availBase, bu, su) ?? availBase;
 
     final qCtrl = row['qtyCtrl'] as TextEditingController;
-    final double qty  = double.tryParse(qCtrl.text) ?? 0;
-    final double qb   = convertToBase(qty, su, bu) ?? qty;
+    final double qty = double.tryParse(qCtrl.text) ?? 0;
+    final double qb = convertToBase(qty, su, bu) ?? qty;
     final bool isOver = qb > availBase && availBase >= 0;
 
     // Rate in sale unit (CORRECT price conversion)
-    final double fRateSu  = pricePerUnit(fRatePB,   bu, su) ?? fRatePB;
-    final double costSu   = pricePerUnit(avgCostPB,  bu, su) ?? avgCostPB;
+    final double fRateSu = pricePerUnit(fRatePB, bu, su) ?? fRatePB;
+    final double costSu = pricePerUnit(avgCostPB, bu, su) ?? avgCostPB;
     final double itemBill = qb * fRatePB;
     final double itemCost = qb * avgCostPB;
     final double itemProf = itemBill - itemCost;
-    final bool hasCalc    = qty > 0;
+    final bool hasCalc = qty > 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -9162,225 +9672,274 @@ class _AllocateMedicineToFarmerScreenState
         color: qty > 0 ? Colors.white : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-            color: isOver
-                ? Colors.red.shade300
-                : qty > 0
-                    ? Colors.orange.shade300
-                    : Colors.grey.shade300,
-            width: qty > 0 ? 1.5 : 1),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
-        // Header
-        Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: qty > 0
-                ? Colors.orange.shade50
-                : Colors.grey.shade100,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(12),
-              topRight: Radius.circular(12),
-            ),
-          ),
-          child: Row(children: [
-            const Text('💊', style: TextStyle(fontSize: 16)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name,
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: qty > 0
-                                ? Colors.orange.shade900
-                                : Colors.grey.shade600)),
-                    if (nick.isNotEmpty)
-                      Text('"$nick"',
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: qty > 0
-                                  ? Colors.orange.shade700
-                                  : Colors.grey.shade500)),
-                  ]),
-            ),
-            // Available badge
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.green.shade200),
-              ),
-              child: Text(
-                '${availSu.toStringAsFixed(2)} $su left',
-                style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green.shade700),
-              ),
-            ),
-            // Remove — galti se select ho gayi ho to hata sakein
-            IconButton(
-              icon: Icon(Icons.close_rounded,
-                  size: 18, color: Colors.grey.shade500),
-              tooltip: 'Hatayein',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => setState(() {
-                qCtrl.clear();
-                _selectedIndices.remove(index);
-              }),
-            ),
-          ]),
+          color: isOver
+              ? Colors.red.shade300
+              : qty > 0
+              ? Colors.orange.shade300
+              : Colors.grey.shade300,
+          width: qty > 0 ? 1.5 : 1,
         ),
-
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-
-            // Unit chips
-            Wrap(
-              spacing: 6, runSpacing: 4,
-              children: kMedicineUnits.map((u) {
-                final bool enabled = canConvert(u, bu);
-                return ChoiceChip(
-                  label: Text(u, style: const TextStyle(fontSize: 11)),
-                  selected: su == u,
-                  onSelected: enabled ? (v) {
-                    if (!v) return;
-                    setState(() {
-                      _medicineRows[index]['saleUnit'] = u;
-                      // Reset qty on unit change to avoid confusion
-                      qCtrl.clear();
-                    });
-                  } : null,
-                  selectedColor: Colors.orange.shade700,
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 4, vertical: 0),
-                  labelStyle: TextStyle(
-                    color: !enabled
-                        ? Colors.grey.shade400
-                        : su == u
-                            ? Colors.white
-                            : Colors.black87,
-                  ),
-                );
-              }).toList(),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: qty > 0 ? Colors.orange.shade50 : Colors.grey.shade100,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
             ),
-
-            const SizedBox(height: 10),
-
-            // Qty + farmer rate info
-            Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: qCtrl,
-                  onChanged: (_) => setState(() {}),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: 'Qty ($su)',
-                    isDense: true,
-                    errorText: isOver
-                        ? 'Max ${availSu.toStringAsFixed(2)}'
-                        : null,
-                    helperText: fRateSu > 0
-                        ? 'Rate: ₹${fRateSu.toStringAsFixed(2)} / $su'
-                        : null,
-                    helperStyle: const TextStyle(
-                        fontSize: 10, color: Colors.black45),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10)),
+            child: Row(
+              children: [
+                const Text('💊', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: qty > 0
+                              ? Colors.orange.shade900
+                              : Colors.grey.shade600,
+                        ),
+                      ),
+                      if (nick.isNotEmpty)
+                        Text(
+                          '"$nick"',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: qty > 0
+                                ? Colors.orange.shade700
+                                : Colors.grey.shade500,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-              ),
-              // Cost per unit info
-              if (costSu > 0) ...[
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Text('Cost / $su',
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey.shade600)),
-                      Text(
-                          '₹${costSu.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13)),
-                    ]),
+                // Available badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
                   ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Text(
+                    '${availSu.toStringAsFixed(2)} $su left',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                ),
+                // Remove — galti se select ho gayi ho to hata sakein
+                IconButton(
+                  icon: Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: Colors.grey.shade500,
+                  ),
+                  tooltip: 'Hatayein',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(() {
+                    qCtrl.clear();
+                    _selectedIndices.remove(index);
+                  }),
                 ),
               ],
-            ]),
+            ),
+          ),
 
-            // Conversion display
-            if (su != bu && qty > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text('= ${qb.toStringAsFixed(3)} $bu',
-                    style: TextStyle(
-                        fontSize: 10, color: Colors.orange.shade700)),
-              ),
-
-            // Mini P&L
-            if (hasCalc) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 7),
-                decoration: BoxDecoration(
-                  color: itemProf >= 0
-                      ? Colors.teal.shade50
-                      : Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                      color: itemProf >= 0
-                          ? Colors.teal.shade200
-                          : Colors.orange.shade200),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Unit chips
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: kMedicineUnits.map((u) {
+                    final bool enabled = canConvert(u, bu);
+                    return ChoiceChip(
+                      label: Text(u, style: const TextStyle(fontSize: 11)),
+                      selected: su == u,
+                      onSelected: enabled
+                          ? (v) {
+                              if (!v) return;
+                              setState(() {
+                                _medicineRows[index]['saleUnit'] = u;
+                                // Reset qty on unit change to avoid confusion
+                                qCtrl.clear();
+                              });
+                            }
+                          : null,
+                      selectedColor: Colors.orange.shade700,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 0,
+                      ),
+                      labelStyle: TextStyle(
+                        color: !enabled
+                            ? Colors.grey.shade400
+                            : su == u
+                            ? Colors.white
+                            : Colors.black87,
+                      ),
+                    );
+                  }).toList(),
                 ),
-                child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                  Text('Cost: ₹${itemCost.toStringAsFixed(0)}',
-                      style: const TextStyle(
-                          fontSize: 11, color: Colors.black54)),
-                  Text('Bill: ₹${itemBill.toStringAsFixed(0)}',
-                      style: const TextStyle(
-                          fontSize: 11, color: Colors.black54)),
-                  Text(
-                    itemProf >= 0
-                        ? '📈 +₹${itemProf.toStringAsFixed(0)}'
-                        : '📉 -₹${itemProf.abs().toStringAsFixed(0)}',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: itemProf >= 0
-                            ? Colors.teal.shade800
-                            : Colors.orange.shade800),
+
+                const SizedBox(height: 10),
+
+                // Qty + farmer rate info
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: qCtrl,
+                        onChanged: (_) => setState(() {}),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Qty ($su)',
+                          isDense: true,
+                          errorText: isOver
+                              ? 'Max ${availSu.toStringAsFixed(2)}'
+                              : null,
+                          helperText: fRateSu > 0
+                              ? 'Rate: ₹${fRateSu.toStringAsFixed(2)} / $su'
+                              : null,
+                          helperStyle: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.black45,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Cost per unit info
+                    if (costSu > 0) ...[
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Cost / $su',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              Text(
+                                '₹${costSu.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+
+                // Conversion display
+                if (su != bu && qty > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '= ${qb.toStringAsFixed(3)} $bu',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.orange.shade700,
+                      ),
+                    ),
                   ),
-                ]),
-              ),
-            ],
-          ]),
-        ),
-      ]),
+
+                // Mini P&L
+                if (hasCalc) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: itemProf >= 0
+                          ? Colors.teal.shade50
+                          : Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: itemProf >= 0
+                            ? Colors.teal.shade200
+                            : Colors.orange.shade200,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Cost: ₹${itemCost.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        Text(
+                          'Bill: ₹${itemBill.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        Text(
+                          itemProf >= 0
+                              ? '📈 +₹${itemProf.toStringAsFixed(0)}'
+                              : '📉 -₹${itemProf.abs().toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: itemProf >= 0
+                                ? Colors.teal.shade800
+                                : Colors.orange.shade800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

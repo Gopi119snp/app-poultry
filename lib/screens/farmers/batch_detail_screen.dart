@@ -211,7 +211,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       // permission chahiye hoti hai — ye request kar deta hai.
       await _notificationsPlugin
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.requestNotificationsPermission();
       _notificationsReady = true;
     } catch (_) {
@@ -337,7 +338,6 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         .trim();
   }
 
-
   // ── 🚨 Fraud Risk Indicator Card ───────────────────────────────────────
   Widget _buildFraudRiskCard(FraudRiskAssessment a) {
     Color bgColor;
@@ -407,7 +407,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           const SizedBox(height: 6),
           _fraudCheckRow(
             label: 'Purchase Reconciliation',
-            detail: 'Expected Stock ${a.purchaseReconciliation.expectedRemainingKg.toStringAsFixed(1)} kg '
+            detail:
+                'Expected Stock ${a.purchaseReconciliation.expectedRemainingKg.toStringAsFixed(1)} kg '
                 'vs Actual ${a.purchaseReconciliation.actualRemainingKg.toStringAsFixed(1)} kg '
                 '(Gap ${a.purchaseReconciliation.gapPercent.toStringAsFixed(1)}%)',
             isFlagged: a.purchaseReconciliation.isFlagged,
@@ -701,9 +702,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             'ownerSignature',
           );
           if (ownerSigBase64 != null && ownerSigBase64.isNotEmpty) {
-            setState(
-              () => _ownerSignatureBytes = base64Decode(ownerSigBase64),
-            );
+            setState(() => _ownerSignatureBytes = base64Decode(ownerSigBase64));
           }
         } catch (_) {
           _ownerSignatureBytes = null;
@@ -732,6 +731,23 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     }
   }
 
+  // ✅ NEW: Start Date ko display ke liye hamesha "dd/MM/yyyy" mein dikhao —
+  // chahe underlying data purani (corrupt ISO string) ho ya nayi (sahi
+  // format) ho. Isse overflow/garbled date kabhi nahi dikhega.
+  String _formatStartDateForDisplay(dynamic raw) {
+    if (raw == null) return '-';
+    final String s = raw.toString().trim();
+    if (s.isEmpty) return '-';
+    // Already "dd/MM/yyyy" jaisa hai (10 chars, do '/' hain) to waisa hi rakho
+    if (RegExp(r'^\d{1,2}/\d{1,2}/\d{4}$').hasMatch(s)) return s;
+    try {
+      final d = DateTime.parse(s);
+      return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+    } catch (_) {
+      return s; // kuch aur format hai to jaisa hai waisa hi dikha do
+    }
+  }
+
   int _calculateChicksDaysOld(String startDateStr) {
     try {
       List<String> parts = startDateStr.split('/');
@@ -744,6 +760,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         int totalDays = DateTime.now().difference(startDate).inDays;
         return totalDays < 0 ? 0 : totalDays;
       }
+      // ✅ FIX: purane corrupt-format (ISO string) startDate ke liye bhi
+      // fallback try karo, warna "0 Din" galat dikhta rehta tha.
+      DateTime isoDate = DateTime.parse(startDateStr);
+      int totalDays = DateTime.now().difference(isoDate).inDays;
+      return totalDays < 0 ? 0 : totalDays;
     } catch (e) {
       debugPrint('Date parsing: $e');
     }
@@ -997,40 +1018,36 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         );
 
     // ── Small dashboard stat-chip — colorful gradient pill with big number ──
-    pw.Widget statChip(
-      String value,
-      String label,
-      PdfColor c1,
-      PdfColor c2,
-    ) => pw.Expanded(
-      child: pw.Container(
-        margin: const pw.EdgeInsets.symmetric(horizontal: 3),
-        padding: const pw.EdgeInsets.symmetric(vertical: 9),
-        decoration: pw.BoxDecoration(
-          gradient: pw.LinearGradient(
-            begin: pw.Alignment.topLeft,
-            end: pw.Alignment.bottomRight,
-            colors: [c1, c2],
+    pw.Widget statChip(String value, String label, PdfColor c1, PdfColor c2) =>
+        pw.Expanded(
+          child: pw.Container(
+            margin: const pw.EdgeInsets.symmetric(horizontal: 3),
+            padding: const pw.EdgeInsets.symmetric(vertical: 9),
+            decoration: pw.BoxDecoration(
+              gradient: pw.LinearGradient(
+                begin: pw.Alignment.topLeft,
+                end: pw.Alignment.bottomRight,
+                colors: [c1, c2],
+              ),
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+              boxShadow: cardShadow(opacity: 0.2),
+            ),
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              children: [
+                pw.Text(
+                  value,
+                  style: ts(size: 13, bold: true, color: PdfColors.white),
+                ),
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  label,
+                  style: ts(size: 6.8, color: const PdfColor(1, 1, 1, 0.88)),
+                ),
+              ],
+            ),
           ),
-          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
-          boxShadow: cardShadow(opacity: 0.2),
-        ),
-        child: pw.Column(
-          mainAxisAlignment: pw.MainAxisAlignment.center,
-          children: [
-            pw.Text(
-              value,
-              style: ts(size: 13, bold: true, color: PdfColors.white),
-            ),
-            pw.SizedBox(height: 2),
-            pw.Text(
-              label,
-              style: ts(size: 6.8, color: const PdfColor(1, 1, 1, 0.88)),
-            ),
-          ],
-        ),
-      ),
-    );
+        );
 
     // ── Header row inside green banner — same tight dotted-leader style ─────
     pw.Widget pdfHeaderRow(String label, String value) => pw.Padding(
@@ -1364,11 +1381,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                                 _farmerName.isNotEmpty
                                     ? _farmerName[0].toUpperCase()
                                     : 'F',
-                                style: ts(
-                                  size: 22,
-                                  bold: true,
-                                  color: kGreen,
-                                ),
+                                style: ts(size: 22, bold: true, color: kGreen),
                               ),
                             ),
                     ),
@@ -1593,9 +1606,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             [
               pdfDataRow(
                 'Account Holder',
-                _farmerAccountHolder.isNotEmpty
-                    ? _farmerAccountHolder
-                    : '--',
+                _farmerAccountHolder.isNotEmpty ? _farmerAccountHolder : '--',
               ),
               pdfDataRow(
                 'Bank Name',
@@ -1621,43 +1632,47 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               kRedDark,
               kRedLight,
               [
-              pdfDataRow(
-                'Chick Cost',
-                'Rs.${totalChickCost.toStringAsFixed(2)}',
-              ),
-              pdfDataRow('Feed Cost', 'Rs.${totalFeedCost.toStringAsFixed(2)}'),
-              pdfDataRow(
-                'Admin/Labour Charge',
-                'Rs.${totalAdminCost.toStringAsFixed(2)}',
-              ),
-              pdfDataRow(
-                'Medicine Cost',
-                'Rs.${totalMedicineCost.toStringAsFixed(2)}'
-                    ' (${medInProdCost ? "Included in Prod" : "Excluded"})',
-              ),
-              pdfDataRow(
-                'Total Production Cost',
-                'Rs.${totalProdCost.toStringAsFixed(2)}',
-                bold: true,
-                valueColor: kRed,
-                divider: true,
-              ),
-              pdfDataRow(
-                'Actual Cost/KG',
-                'Rs.${actualCostPerKg.toStringAsFixed(2)}/KG',
-                bold: true,
-              ),
-              pdfDataRow(
-                'Target Cost/KG',
-                'Rs.${targetCostPerKg.toStringAsFixed(2)}/KG',
-              ),
-              pdfDataRow(
-                costDiff >= 0 ? 'Cost Saving/KG' : 'Cost Exceeded/KG',
-                '${costDiff >= 0 ? "+" : ""}Rs.${costDiff.toStringAsFixed(2)}/KG',
-                valueColor: costDiff >= 0 ? kGreen : kRed,
-                bold: true,
-              ),
-            ]),
+                pdfDataRow(
+                  'Chick Cost',
+                  'Rs.${totalChickCost.toStringAsFixed(2)}',
+                ),
+                pdfDataRow(
+                  'Feed Cost',
+                  'Rs.${totalFeedCost.toStringAsFixed(2)}',
+                ),
+                pdfDataRow(
+                  'Admin/Labour Charge',
+                  'Rs.${totalAdminCost.toStringAsFixed(2)}',
+                ),
+                pdfDataRow(
+                  'Medicine Cost',
+                  'Rs.${totalMedicineCost.toStringAsFixed(2)}'
+                      ' (${medInProdCost ? "Included in Prod" : "Excluded"})',
+                ),
+                pdfDataRow(
+                  'Total Production Cost',
+                  'Rs.${totalProdCost.toStringAsFixed(2)}',
+                  bold: true,
+                  valueColor: kRed,
+                  divider: true,
+                ),
+                pdfDataRow(
+                  'Actual Cost/KG',
+                  'Rs.${actualCostPerKg.toStringAsFixed(2)}/KG',
+                  bold: true,
+                ),
+                pdfDataRow(
+                  'Target Cost/KG',
+                  'Rs.${targetCostPerKg.toStringAsFixed(2)}/KG',
+                ),
+                pdfDataRow(
+                  costDiff >= 0 ? 'Cost Saving/KG' : 'Cost Exceeded/KG',
+                  '${costDiff >= 0 ? "+" : ""}Rs.${costDiff.toStringAsFixed(2)}/KG',
+                  valueColor: costDiff >= 0 ? kGreen : kRed,
+                  bold: true,
+                ),
+              ],
+            ),
 
             // ── COMMISSION ────────────────────────────────────────────────
             pdfSection(
@@ -1706,9 +1721,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   colors: [kGreenDark, kGreenMid, kGreenDark],
                   stops: const [0.0, 0.55, 1.0],
                 ),
-                borderRadius: const pw.BorderRadius.all(
-                  pw.Radius.circular(12),
-                ),
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(12)),
                 border: pw.Border.all(
                   color: const PdfColor(1, 1, 1, 0.12),
                   width: 1,
@@ -1738,10 +1751,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         ),
                         decoration: pw.BoxDecoration(
                           gradient: pw.LinearGradient(
-                            colors: [
-                              kGold,
-                              const PdfColor.fromInt(0xFFB8860B),
-                            ],
+                            colors: [kGold, const PdfColor.fromInt(0xFFB8860B)],
                           ),
                           borderRadius: const pw.BorderRadius.all(
                             pw.Radius.circular(20),
@@ -1756,11 +1766,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         ),
                         child: pw.Text(
                           'SETTLED',
-                          style: ts(
-                            size: 7.5,
-                            bold: true,
-                            color: kGreenDark,
-                          ),
+                          style: ts(size: 7.5, bold: true, color: kGreenDark),
                         ),
                       ),
                     ],
@@ -1899,21 +1905,14 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                             ),
                           )
                         : pw.SizedBox(height: 34),
-                    pw.Container(
-                      width: 150,
-                      height: 0.8,
-                      color: kDark,
-                    ),
+                    pw.Container(width: 150, height: 0.8, color: kDark),
                     pw.SizedBox(height: 5),
                     pw.Text(
                       'Company Owner Signature',
                       style: ts(size: 8, bold: true, color: kDark),
                     ),
                     pw.SizedBox(height: 1),
-                    pw.Text(
-                      watermarkText,
-                      style: ts(size: 7.5, color: kGrey),
-                    ),
+                    pw.Text(watermarkText, style: ts(size: 7.5, color: kGrey)),
                   ],
                 ),
               ),
@@ -1933,11 +1932,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                             ),
                           )
                         : pw.SizedBox(height: 34),
-                    pw.Container(
-                      width: 150,
-                      height: 0.8,
-                      color: kDark,
-                    ),
+                    pw.Container(width: 150, height: 0.8, color: kDark),
                     pw.SizedBox(height: 5),
                     pw.Text(
                       'Farmer Signature',
@@ -2987,7 +2982,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   Future<bool> _confirmSignaturesOrProceed() async {
     final missingFarmer = _farmerSignatureBytes == null;
     final missingOwner = _ownerSignatureBytes == null;
-    if (!missingFarmer && !missingOwner) return true; // dono load hain, aage badho
+    if (!missingFarmer && !missingOwner)
+      return true; // dono load hain, aage badho
 
     if (!mounted) return true;
 
@@ -3424,7 +3420,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             break;
           }
         }
-        await CompanyStore.instance.setString('companyFarmers', json.encode(farmersList)); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
+        await CompanyStore.instance.setString(
+          'companyFarmers',
+          json.encode(farmersList),
+        ); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -3698,9 +3697,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       photoBytes: _weightPhotoBytes,
                       mismatch: _weightPhotoMismatch,
                       mismatchReason: _weightMismatchReason,
-                      onCapture: () => _captureAndVerifyWeightPhoto(
-                        setDialogState,
-                      ),
+                      onCapture: () =>
+                          _captureAndVerifyWeightPhoto(setDialogState),
                       onRemove: () => setDialogState(() {
                         _weightPhotoBytes = null;
                         _weightPhotoMismatch = false;
@@ -3728,9 +3726,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       photoBytes: _mortalityPhotoBytes,
                       mismatch: _mortalityPhotoMismatch,
                       mismatchReason: _mortalityMismatchReason,
-                      onCapture: () => _captureAndVerifyMortalityPhoto(
-                        setDialogState,
-                      ),
+                      onCapture: () =>
+                          _captureAndVerifyMortalityPhoto(setDialogState),
                       onRemove: () => setDialogState(() {
                         _mortalityPhotoBytes = null;
                         _mortalityPhotoMismatch = false;
@@ -3758,9 +3755,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       photoBytes: _remainingFeedPhotoBytes,
                       mismatch: false,
                       mismatchReason: null,
-                      onCapture: () => _captureRemainingFeedPhoto(
-                        setDialogState,
-                      ),
+                      onCapture: () =>
+                          _captureRemainingFeedPhoto(setDialogState),
                       onRemove: () => setDialogState(() {
                         _remainingFeedPhotoBytes = null;
                       }),
@@ -4179,9 +4175,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           children: [
             const Icon(Icons.warning_amber_rounded, color: Colors.orange),
             const SizedBox(width: 8),
-            Expanded(
-              child: Text(title, style: const TextStyle(fontSize: 15)),
-            ),
+            Expanded(child: Text(title, style: const TextStyle(fontSize: 15))),
           ],
         ),
         content: Text(
@@ -4195,7 +4189,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             onPressed: () => Navigator.pop(ctx),
             child: const Text(
               'Samajh Gaya',
-              style: TextStyle(color: primaryGreen, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: primaryGreen,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -4212,9 +4209,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     for (final m in matches) {
       final val = double.tryParse(m.group(0) ?? '');
       if (val == null || val <= 0) continue;
-      final diff = enteredWeight > 0
-          ? (val - enteredWeight).abs()
-          : 0.0;
+      final diff = enteredWeight > 0 ? (val - enteredWeight).abs() : 0.0;
       if (diff < bestDiff) {
         bestDiff = diff;
         best = val;
@@ -4712,7 +4707,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     String dateInput = _dateController.text.trim();
     String remainingFeedInput = _remainingFeedController.text.trim();
 
-    bool anyFeedEntered = starterBagsInput.isNotEmpty ||
+    bool anyFeedEntered =
+        starterBagsInput.isNotEmpty ||
         growerBagsInput.isNotEmpty ||
         finisherBagsInput.isNotEmpty;
 
@@ -4863,8 +4859,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           if (_weightPhotoBytes != null)
             'weightPhotoBase64': base64Encode(_weightPhotoBytes!),
           if (_remainingFeedPhotoBytes != null)
-            'remainingFeedPhotoBase64':
-                base64Encode(_remainingFeedPhotoBytes!),
+            'remainingFeedPhotoBase64': base64Encode(_remainingFeedPhotoBytes!),
           'hasMismatch': hasMismatch,
           if (mismatchReasons.isNotEmpty)
             'mismatchReason': mismatchReasons.join(' | '),
@@ -4881,7 +4876,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             break;
           }
         }
-        await CompanyStore.instance.setString('companyFarmers', json.encode(farmersList)); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
+        await CompanyStore.instance.setString(
+          'companyFarmers',
+          json.encode(farmersList),
+        ); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
         _weightController.clear();
         _mortalityController.clear();
         _feedStarterBagsController.clear();
@@ -5006,7 +5004,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             break;
           }
         }
-        await CompanyStore.instance.setString('companyFarmers', json.encode(farmersList)); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
+        await CompanyStore.instance.setString(
+          'companyFarmers',
+          json.encode(farmersList),
+        ); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
         _buyerNameController.clear();
         _soldChicksController.clear();
         _totalWeightSoldController.clear();
@@ -5119,7 +5120,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             break;
           }
         }
-        await CompanyStore.instance.setString('companyFarmers', json.encode(farmersList)); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
+        await CompanyStore.instance.setString(
+          'companyFarmers',
+          json.encode(farmersList),
+        ); // ✅ FIX: cloud pe bhi push hoga ab, warna app-restart pe purana data wapas aa jaata tha
         _medicineNameController.clear();
         _medicineQuantityController.clear();
         _medicinePriceController.clear();
@@ -5474,7 +5478,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     ),
                     _buildStatBlock(
                       'Start Date',
-                      _liveBatchData['startDate'] ?? '-',
+                      _formatStartDateForDisplay(_liveBatchData['startDate']),
                     ),
                   ],
                 ),
@@ -5565,7 +5569,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline_rounded, color: Colors.grey.shade600, size: 18),
+                    Icon(
+                      Icons.info_outline_rounded,
+                      color: Colors.grey.shade600,
+                      size: 18,
+                    ),
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
