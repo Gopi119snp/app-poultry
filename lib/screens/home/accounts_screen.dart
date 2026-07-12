@@ -20,7 +20,7 @@ import 'sales_screen.dart'
 // 1. Overview     — sab kuch ek nazar mein
 // 2. Udhaar       — private buyers (Chicks/Feed/Medicine) jinka payment baki
 // 3. Kharcha      — Labour + Other expense
-// 4. Kharida      — Chicks + Feed + Medicine purchase cost
+// 4. Kharida      — Chicks + Feed + Medicine purchase cost (month-wise)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const Color _accGreen = Color(0xFF1B5E20);
@@ -80,11 +80,991 @@ class AccountsScreen extends StatefulWidget {
   @override
   State<AccountsScreen> createState() => _AccountsScreenState();
 }
+
+class _AccountsScreenState extends State<AccountsScreen>
+    with TickerProviderStateMixin {
+  late TabController _tabController;
+  bool _isLoading = true;
+
+  List<_DueItem> _dues = [];
+  List<_LedgerItem> _expenses = [];
+  List<_LedgerItem> _purchases = [];
+
+  double get _totalDue => _dues.fold(0.0, (s, d) => s + d.due);
+  double get _totalExpense => _expenses.fold(0.0, (s, e) => s + e.amount);
+  double get _totalPurchase => _purchases.fold(0.0, (s, p) => s + p.amount);
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+    _loadAll();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  DateTime? _parseDate(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  Future<void> _loadAll() async {
+    setState(() => _isLoading = true);
+
+    final List<_DueItem> dues = [];
+    final List<_LedgerItem> expenses = [];
+    final List<_LedgerItem> purchases = [];
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🐣 CHICKS — Private allocations ka due + Purchase cost
+    // ═══════════════════════════════════════════════════════════════════
+    final String? chicksJson = await CompanyStore.instance.getString(
+      'chicksPurchaseHistory',
+    );
+    if (chicksJson != null) {
+      try {
+        final List<dynamic> rawChicks = json.decode(chicksJson);
+        for (final raw in rawChicks) {
+          final Map<String, dynamic> purchase = Map<String, dynamic>.from(raw);
+          final String lotName = purchase['company']?.toString() ?? 'Lot';
+          final double effRate =
+              (purchase['effectiveRate'] as num?)?.toDouble() ??
+              (purchase['rate'] as num?)?.toDouble() ??
+              0.0;
+          final double totalAmt =
+              (purchase['totalAmount'] as num?)?.toDouble() ?? 0.0;
+
+          purchases.add(
+            _LedgerItem(
+              category: 'Chicks',
+              title: '🐣 $lotName',
+              subtitle:
+                  '${(purchase['quantity'] as num?)?.toStringAsFixed(0) ?? '0'} chicks',
+              amount: totalAmt,
+              date: _parseDate(purchase['date']?.toString()),
+              emoji: '🐣',
+              color: Colors.orange.shade800,
+              addedBy: purchase['addedByName']?.toString() ?? '',
+            ),
+          );
+
+          final List<dynamic> allocs =
+              (purchase['allocations'] as List<dynamic>?) ?? [];
+          for (final rawAlloc in allocs) {
+            final Map<String, dynamic> alloc = Map<String, dynamic>.from(
+              rawAlloc,
+            );
+            if (alloc['type'] != 'Private') continue;
+
+            final double qty = (alloc['qty'] as num?)?.toDouble() ?? 0.0;
+            final double rate = (alloc['rate'] as num?)?.toDouble() ?? 0.0;
+            final double paid = (alloc['paid'] as num?)?.toDouble() ?? 0.0;
+            final double total = qty * rate;
+            final double due = (total - paid).clamp(0.0, double.infinity);
+            if (due <= 0.01) continue;
+
+            dues.add(
+              _DueItem(
+                category: 'Chicks',
+                buyerName: alloc['name']?.toString() ?? '-',
+                mobile: alloc['mobile']?.toString() ?? '',
+                totalAmount: total,
+                paid: paid,
+                due: due,
+                date: _parseDate(alloc['allocatedOn']?.toString()),
+                emoji: '🐣',
+                color: Colors.orange.shade800,
+                onTap: () {
+                  Get.to(
+                    () => ChicksPrivateSaleDetailScreen(
+                      alloc: alloc,
+                      lotName: lotName,
+                      purchaseEffectiveRate: effRate,
+                    ),
+                  );
+                },
+              ),
+            );
+          }
+        }
+      } catch (_) {}
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 🌾 FEED — Private sales ka due (feedSalesHistory) + Purchase cost
+    // (per-type feedStockList se, taaki Purchase History jaisa hi total ho)
+    // ═══════════════════════════════════════════════════════════════════
+    final String? feedSalesJson = await CompanyStore.instance.getString(
+      'feedSalesHistory',
+    );
+    if (feedSalesJson != null) {
+      try {
+        final List<dynamic> rawSales = json.decode(feedSalesJson);
+        for (final raw in rawSales) {
+          final Map<String, dynamic> sale = Map<String, dynamic>.from(raw);
+          final double due = (sale['dueAmount'] as num?)?.toDouble() ?? 0.0;
+          if (due <= 0.01) continue;
+
+          dues.add(
+            _DueItem(
+              category: 'Feed',
+              buyerName: sale['buyerName']?.toString() ?? '-',
+              mobile: sale['mobile']?.toString() ?? '',
+              totalAmount: (sale['totalSaleAmount'] as num?)?.toDouble() ?? 0.0,
+              paid: (sale['paidAmount'] as num?)?.toDouble() ?? 0.0,
+              due: due,
+              date: _parseDate(sale['date']?.toString()),
+              emoji: '🌾',
+              color: Colors.blue.shade700,
+              onTap: () {
+                Get.to(() => FeedSaleDetailScreen(sale: sale));
+              },
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+
+    try {
+      final List<Map<String, dynamic>> feedStock =
+          await ensureFeedStockMigrated();
+      for (final feedType in feedStock) {
+        final String id = feedType['id']?.toString() ?? '';
+        final String name =
+            feedType['name']?.toString() ?? kFeedTypeNames[id] ?? id;
+        final String emoji = kFeedTypeEmoji[id] ?? '🌾';
+        final List<dynamic> hist =
+            (feedType['purchaseHistory'] as List<dynamic>?) ?? [];
+        for (final rawH in hist) {
+          final Map<String, dynamic> h = Map<String, dynamic>.from(rawH);
+          final double bags = (h['bags'] as num?)?.toDouble() ?? 0.0;
+          final double perBag = (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+          purchases.add(
+            _LedgerItem(
+              category: 'Feed',
+              title: '$emoji $name — ${h['company'] ?? '-'}',
+              subtitle:
+                  '${bags.toStringAsFixed(0)} bag @ ₹${perBag.toStringAsFixed(2)}',
+              amount: bags * perBag,
+              date: _parseDate(h['date']?.toString()),
+              emoji: emoji,
+              color: Colors.blue.shade700,
+              addedBy: h['addedByName']?.toString() ?? '',
+            ),
+          );
+        }
+      }
+    } catch (_) {}
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 💊 MEDICINE — Private sales ka due (medicineSalesHistory) + Purchase
+    // ═══════════════════════════════════════════════════════════════════
+    final String? medSalesJson = await CompanyStore.instance.getString(
+      'medicineSalesHistory',
+    );
+    if (medSalesJson != null) {
+      try {
+        final List<dynamic> rawSales = json.decode(medSalesJson);
+        for (final raw in rawSales) {
+          final Map<String, dynamic> sale = Map<String, dynamic>.from(raw);
+          final double due = (sale['dueAmount'] as num?)?.toDouble() ?? 0.0;
+          if (due <= 0.01) continue;
+
+          dues.add(
+            _DueItem(
+              category: 'Medicine',
+              buyerName: sale['buyerName']?.toString() ?? '-',
+              mobile: sale['mobile']?.toString() ?? '',
+              totalAmount: (sale['totalSaleAmount'] as num?)?.toDouble() ?? 0.0,
+              paid: (sale['paidAmount'] as num?)?.toDouble() ?? 0.0,
+              due: due,
+              date: _parseDate(sale['date']?.toString()),
+              emoji: '💊',
+              color: Colors.teal.shade700,
+              onTap: () {
+                Get.to(() => MedicineSaleDetailScreen(sale: sale));
+              },
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+
+    final String? medStockJson = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
+    if (medStockJson != null) {
+      try {
+        final List<dynamic> rawMeds = json.decode(medStockJson);
+        for (final rawMed in rawMeds) {
+          final Map<String, dynamic> med = Map<String, dynamic>.from(rawMed);
+          final String name = med['name']?.toString() ?? '-';
+          final String unit = med['unit']?.toString() ?? '';
+          final List<dynamic> hist =
+              (med['purchaseHistory'] as List<dynamic>?) ?? [];
+          for (final rawH in hist) {
+            final Map<String, dynamic> h = Map<String, dynamic>.from(rawH);
+            final double actualPrice =
+                (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
+            final double qty = (h['qty'] as num?)?.toDouble() ?? 0.0;
+            purchases.add(
+              _LedgerItem(
+                category: 'Medicine',
+                title: '💊 $name',
+                subtitle: '${qty.toStringAsFixed(2)} ${h['unit'] ?? unit}',
+                amount: actualPrice,
+                date: _parseDate(h['date']?.toString()),
+                emoji: '💊',
+                color: Colors.teal.shade700,
+                addedBy: h['addedByName']?.toString() ?? '',
+              ),
+            );
+          }
+        }
+      } catch (_) {}
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 👷 LABOUR + 📋 OTHER — Company expenses
+    // ═══════════════════════════════════════════════════════════════════
+    final String? labourJson = await CompanyStore.instance.getString(
+      'labourExpenseHistory',
+    );
+    if (labourJson != null) {
+      try {
+        final List<dynamic> rawList = json.decode(labourJson);
+        for (final raw in rawList) {
+          final Map<String, dynamic> e = Map<String, dynamic>.from(raw);
+          expenses.add(
+            _LedgerItem(
+              category: 'Labour',
+              title: '👷 ${e['workerName'] ?? '-'}',
+              subtitle: '${e['labourType'] ?? ''} • ${e['unitMode'] ?? ''}',
+              amount: (e['totalAmount'] as num?)?.toDouble() ?? 0.0,
+              date: _parseDate(e['date']?.toString()),
+              emoji: '👷',
+              color: Colors.orange.shade800,
+              addedBy: e['addedByName']?.toString() ?? '',
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+
+    final String? otherJson = await CompanyStore.instance.getString(
+      'otherExpenseHistory',
+    );
+    if (otherJson != null) {
+      try {
+        final List<dynamic> rawList = json.decode(otherJson);
+        for (final raw in rawList) {
+          final Map<String, dynamic> e = Map<String, dynamic>.from(raw);
+          expenses.add(
+            _LedgerItem(
+              category: 'Other',
+              title: '📋 ${e['expenseType'] ?? '-'}',
+              subtitle: (e['note']?.toString().isNotEmpty ?? false)
+                  ? e['note'].toString()
+                  : 'Koi note nahi',
+              amount: (e['amount'] as num?)?.toDouble() ?? 0.0,
+              date: _parseDate(e['date']?.toString()),
+              emoji: '📋',
+              color: Colors.purple.shade700,
+              addedBy: e['addedByName']?.toString() ?? '',
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+
+    // ── Sort ──
+    dues.sort((a, b) => b.due.compareTo(a.due));
+    expenses.sort(
+      (a, b) => (b.date ?? DateTime(2000)).compareTo(a.date ?? DateTime(2000)),
+    );
+    purchases.sort(
+      (a, b) => (b.date ?? DateTime(2000)).compareTo(a.date ?? DateTime(2000)),
+    );
+
+    if (mounted) {
+      setState(() {
+        _dues = dues;
+        _expenses = expenses;
+        _purchases = purchases;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: _accGreen,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () => Get.back(),
+        ),
+        title: const Row(
+          children: [
+            Text('💼', style: TextStyle(fontSize: 20)),
+            SizedBox(width: 8),
+            Text(
+              'Accounts',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white60,
+          labelStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 12.5,
+          ),
+          tabs: const [
+            Tab(text: '📊 Overview'),
+            Tab(text: '⏳ Udhaar'),
+            Tab(text: '💸 Kharcha'),
+            Tab(text: '🛒 Kharida'),
+          ],
+        ),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: _accGreen))
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildOverviewTab(),
+                _buildDuesTab(),
+                _buildLedgerTab(_expenses, 'Koi expense record nahi.'),
+                const _KharidaTabView(),
+              ],
+            ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 📊 OVERVIEW TAB
+  // ═══════════════════════════════════════════════════════════════════════
+  Widget _buildOverviewTab() {
+    final double net = _totalDue - _totalExpense;
+
+    Map<String, double> byCategory(List<_LedgerItem> items) {
+      final Map<String, double> map = {};
+      for (final i in items) {
+        map[i.category] = (map[i.category] ?? 0.0) + i.amount;
+      }
+      return map;
+    }
+
+    final expByCat = byCategory(_expenses);
+    final purByCat = byCategory(_purchases);
+
+    Map<String, double> dueByCat = {};
+    for (final d in _dues) {
+      dueByCat[d.category] = (dueByCat[d.category] ?? 0.0) + d.due;
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      color: _accGreen,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF0F3D12),
+                  Color(0xFF1B5E20),
+                  Color(0xFF2E7D32),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: _accGreen.withOpacity(0.35),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.account_balance_wallet_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Company Ka Pura Hisaab',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    _ovKpi('⏳ Udhaar Aana', _totalDue, Colors.orange.shade200),
+                    const SizedBox(width: 8),
+                    _ovKpi('💸 Kharcha', _totalExpense, Colors.red.shade200),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    _ovKpi('🛒 Kharida', _totalPurchase, Colors.blue.shade100),
+                    const SizedBox(width: 8),
+                    _ovKpi(
+                      net >= 0
+                          ? '📈 Net (Udhaar−Kharcha)'
+                          : '📉 Net (Udhaar−Kharcha)',
+                      net,
+                      net >= 0
+                          ? Colors.greenAccent.shade100
+                          : Colors.red.shade200,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          const Text(
+            '⏳ Udhaar — Category Wise',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          if (dueByCat.isEmpty)
+            _emptyCatCard('Koi udhaar pending nahi 🎉')
+          else
+            ...dueByCat.entries.map(
+              (e) => _catRow(
+                _emojiFor(e.key),
+                e.key,
+                e.value,
+                Colors.orange.shade700,
+              ),
+            ),
+
+          const SizedBox(height: 20),
+          const Text(
+            '💸 Kharcha — Category Wise',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          if (expByCat.isEmpty)
+            _emptyCatCard('Koi expense record nahi.')
+          else
+            ...expByCat.entries.map(
+              (e) => _catRow(
+                _emojiFor(e.key),
+                e.key,
+                e.value,
+                Colors.red.shade700,
+              ),
+            ),
+
+          const SizedBox(height: 20),
+          const Text(
+            '🛒 Kharida — Category Wise',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          if (purByCat.isEmpty)
+            _emptyCatCard('Koi purchase record nahi.')
+          else
+            ...purByCat.entries.map(
+              (e) => _catRow(
+                _emojiFor(e.key),
+                e.key,
+                e.value,
+                Colors.blue.shade700,
+              ),
+            ),
+
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  String _emojiFor(String category) {
+    switch (category) {
+      case 'Chicks':
+        return '🐣';
+      case 'Feed':
+        return '🌾';
+      case 'Medicine':
+        return '💊';
+      case 'Labour':
+        return '👷';
+      case 'Other':
+        return '📋';
+      default:
+        return '📦';
+    }
+  }
+
+  Widget _ovKpi(String label, double value, Color valueColor) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 10),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '₹${value.toStringAsFixed(0)}',
+              style: TextStyle(
+                color: valueColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _catRow(String emoji, String label, double amount, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 18)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+          Text(
+            '₹${amount.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyCatCard(String msg) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        msg,
+        style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ⏳ UDHAAR (DUES) TAB
+  // ═══════════════════════════════════════════════════════════════════════
+  Widget _buildDuesTab() {
+    if (_dues.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadAll,
+        color: _accGreen,
+        child: ListView(
+          children: [
+            SizedBox(
+              height: 400,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('🎉', style: TextStyle(fontSize: 52)),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Koi Udhaar Pending Nahi!',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      color: _accGreen,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _dues.length + 1,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Total Udhaar (${_dues.length} buyers)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.orange.shade900,
+                    ),
+                  ),
+                  Text(
+                    '₹${_totalDue.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                      color: Colors.orange.shade900,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          final d = _dues[index - 1];
+          return _dueCard(d);
+        },
+      ),
+    );
+  }
+
+  Widget _dueCard(_DueItem d) {
+    return GestureDetector(
+      onTap: d.onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: d.color.withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: d.color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Text(d.emoji, style: const TextStyle(fontSize: 20)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          d.buyerName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: d.color.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          d.category,
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: d.color,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Bill: ₹${d.totalAmount.toStringAsFixed(0)}  •  Paid: ₹${d.paid.toStringAsFixed(0)}',
+                    style: const TextStyle(fontSize: 11, color: Colors.black54),
+                  ),
+                  if (d.date != null)
+                    Text(
+                      formatHistoryDateTime(d.date!.toIso8601String()),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Colors.black45,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '₹${d.due.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Colors.red.shade700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: Colors.grey.shade400,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 💸 GENERIC LEDGER TAB (Kharcha use karta hai)
+  // ═══════════════════════════════════════════════════════════════════════
+  Widget _buildLedgerTab(List<_LedgerItem> items, String emptyMsg) {
+    final double total = items.fold(0.0, (s, i) => s + i.amount);
+
+    if (items.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadAll,
+        color: _accGreen,
+        child: ListView(
+          children: [
+            SizedBox(
+              height: 400,
+              child: Center(
+                child: Text(
+                  emptyMsg,
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      color: _accGreen,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: items.length + 1,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: _accGreen.withOpacity(0.07),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _accGreen.withOpacity(0.25)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Total (${items.length} entries)',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: _accGreen,
+                    ),
+                  ),
+                  Text(
+                    '₹${total.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 17,
+                      color: _accGreen,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          final e = items[index - 1];
+          return _ledgerCard(e);
+        },
+      ),
+    );
+  }
+
+  Widget _ledgerCard(_LedgerItem e) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: e.color.withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: e.color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Center(
+              child: Text(e.emoji, style: const TextStyle(fontSize: 20)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  e.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13.5,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  e.subtitle,
+                  style: const TextStyle(fontSize: 11.5, color: Colors.black54),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    if (e.addedBy.isNotEmpty)
+                      Expanded(
+                        child: Text(
+                          '👤 ${e.addedBy}',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.black45,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    if (e.date != null)
+                      Text(
+                        formatHistoryDateTime(e.date!.toIso8601String()),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.black45,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '₹${e.amount.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: e.color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 🛒 KHARIDA TAB — Month-wise (ya Last-N-Months) Purchase Overview
-// 3 sections: Chicks / Feed / Medicine. Chicks poori tarah kaam karta hai —
-// tap karke us period ke saare lots dikhte hain, aur lot tap karke uska
-// Company-Farmer vs Private-Sale split. Feed/Medicine abhi placeholder hain.
+// 3 sections: Chicks / Feed / Medicine. Chicks aur Feed poori tarah kaam
+// karte hain (drill-down list + allocation split). Medicine abhi placeholder.
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _PurchasePeriod {
@@ -504,12 +1484,12 @@ class _KharidaTabViewState extends State<_KharidaTabView> {
             amount: feedTotals['amount']!,
             color: Colors.blue.shade700,
             onTap: () {
-              Get.snackbar(
-                'Jald Aayega 🚧',
-                'Feed ka detailed view abhi kaam ho raha hai.',
-                backgroundColor: Colors.blue.shade700,
-                colorText: Colors.white,
-                snackPosition: SnackPosition.BOTTOM,
+              Get.to(
+                () => FeedTypesOverviewScreen(
+                  periodLabel: _period.label(),
+                  period: _period,
+                  feedStock: _feedStock,
+                ),
               );
             },
           ),
@@ -1060,333 +2040,30 @@ class ChicksLotAllocationBreakdownScreen extends StatelessWidget {
   }
 }
 
-class _AccountsScreenState extends State<AccountsScreen>
-    with TickerProviderStateMixin {
-  late TabController _tabController;
-  bool _isLoading = true;
+// ═══════════════════════════════════════════════════════════════════════════
+// 🌾 FEED TYPES OVERVIEW — 3 alag section (Starter/Grower/Finisher), har ek
+// ka us period mein kitna purchase hua wo dikhata hai
+// ═══════════════════════════════════════════════════════════════════════════
+class FeedTypesOverviewScreen extends StatelessWidget {
+  final String periodLabel;
+  final _PurchasePeriod period;
+  final List<Map<String, dynamic>> feedStock;
 
-  List<_DueItem> _dues = [];
-  List<_LedgerItem> _expenses = [];
-  List<_LedgerItem> _purchases = [];
-
-  double get _totalDue => _dues.fold(0.0, (s, d) => s + d.due);
-  double get _totalExpense => _expenses.fold(0.0, (s, e) => s + e.amount);
-  double get _totalPurchase => _purchases.fold(0.0, (s, p) => s + p.amount);
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _loadAll();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  DateTime? _parseDate(String? raw) {
-    if (raw == null || raw.isEmpty) return null;
-    return DateTime.tryParse(raw);
-  }
-
-  Future<void> _loadAll() async {
-    setState(() => _isLoading = true);
-
-    final List<_DueItem> dues = [];
-    final List<_LedgerItem> expenses = [];
-    final List<_LedgerItem> purchases = [];
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 🐣 CHICKS — Private allocations ka due + Purchase cost
-    // ═══════════════════════════════════════════════════════════════════
-    final String? chicksJson = await CompanyStore.instance.getString(
-      'chicksPurchaseHistory',
-    );
-    if (chicksJson != null) {
-      try {
-        final List<dynamic> rawChicks = json.decode(chicksJson);
-        for (final raw in rawChicks) {
-          final Map<String, dynamic> purchase = Map<String, dynamic>.from(raw);
-          final String lotName = purchase['company']?.toString() ?? 'Lot';
-          final double effRate =
-              (purchase['effectiveRate'] as num?)?.toDouble() ??
-              (purchase['rate'] as num?)?.toDouble() ??
-              0.0;
-          final double totalAmt =
-              (purchase['totalAmount'] as num?)?.toDouble() ?? 0.0;
-
-          // Purchase cost entry (company ne yahan se chicks khareede)
-          purchases.add(
-            _LedgerItem(
-              category: 'Chicks',
-              title: '🐣 $lotName',
-              subtitle:
-                  '${(purchase['quantity'] as num?)?.toStringAsFixed(0) ?? '0'} chicks',
-              amount: totalAmt,
-              date: _parseDate(purchase['date']?.toString()),
-              emoji: '🐣',
-              color: Colors.orange.shade800,
-              addedBy: purchase['addedByName']?.toString() ?? '',
-            ),
-          );
-
-          final List<dynamic> allocs =
-              (purchase['allocations'] as List<dynamic>?) ?? [];
-          for (final rawAlloc in allocs) {
-            final Map<String, dynamic> alloc = Map<String, dynamic>.from(
-              rawAlloc,
-            );
-            if (alloc['type'] != 'Private') continue;
-
-            final double qty = (alloc['qty'] as num?)?.toDouble() ?? 0.0;
-            final double rate = (alloc['rate'] as num?)?.toDouble() ?? 0.0;
-            final double paid = (alloc['paid'] as num?)?.toDouble() ?? 0.0;
-            final double total = qty * rate;
-            final double due = (total - paid).clamp(0.0, double.infinity);
-            if (due <= 0.01) continue;
-
-            dues.add(
-              _DueItem(
-                category: 'Chicks',
-                buyerName: alloc['name']?.toString() ?? '-',
-                mobile: alloc['mobile']?.toString() ?? '',
-                totalAmount: total,
-                paid: paid,
-                due: due,
-                date: _parseDate(alloc['allocatedOn']?.toString()),
-                emoji: '🐣',
-                color: Colors.orange.shade800,
-                onTap: () {
-                  Get.to(
-                    () => ChicksPrivateSaleDetailScreen(
-                      alloc: alloc,
-                      lotName: lotName,
-                      purchaseEffectiveRate: effRate,
-                    ),
-                  );
-                },
-              ),
-            );
-          }
-        }
-      } catch (_) {}
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 🌾 FEED — Private sales ka due (feedSalesHistory) + Purchase cost
-    // (per-type feedStockList se, taaki Purchase History jaisa hi total ho)
-    // ═══════════════════════════════════════════════════════════════════
-    final String? feedSalesJson = await CompanyStore.instance.getString(
-      'feedSalesHistory',
-    );
-    if (feedSalesJson != null) {
-      try {
-        final List<dynamic> rawSales = json.decode(feedSalesJson);
-        for (final raw in rawSales) {
-          final Map<String, dynamic> sale = Map<String, dynamic>.from(raw);
-          final double due = (sale['dueAmount'] as num?)?.toDouble() ?? 0.0;
-          if (due <= 0.01) continue;
-
-          dues.add(
-            _DueItem(
-              category: 'Feed',
-              buyerName: sale['buyerName']?.toString() ?? '-',
-              mobile: sale['mobile']?.toString() ?? '',
-              totalAmount: (sale['totalSaleAmount'] as num?)?.toDouble() ?? 0.0,
-              paid: (sale['paidAmount'] as num?)?.toDouble() ?? 0.0,
-              due: due,
-              date: _parseDate(sale['date']?.toString()),
-              emoji: '🌾',
-              color: Colors.blue.shade700,
-              onTap: () {
-                Get.to(() => FeedSaleDetailScreen(sale: sale));
-              },
-            ),
-          );
-        }
-      } catch (_) {}
-    }
-
-    try {
-      final List<Map<String, dynamic>> feedStock =
-          await ensureFeedStockMigrated();
-      for (final feedType in feedStock) {
-        final String id = feedType['id']?.toString() ?? '';
-        final String name =
-            feedType['name']?.toString() ?? kFeedTypeNames[id] ?? id;
-        final String emoji = kFeedTypeEmoji[id] ?? '🌾';
-        final List<dynamic> hist =
-            (feedType['purchaseHistory'] as List<dynamic>?) ?? [];
-        for (final rawH in hist) {
-          final Map<String, dynamic> h = Map<String, dynamic>.from(rawH);
-          final double bags = (h['bags'] as num?)?.toDouble() ?? 0.0;
-          final double perBag = (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
-          purchases.add(
-            _LedgerItem(
-              category: 'Feed',
-              title: '$emoji $name — ${h['company'] ?? '-'}',
-              subtitle:
-                  '${bags.toStringAsFixed(0)} bag @ ₹${perBag.toStringAsFixed(2)}',
-              amount: bags * perBag,
-              date: _parseDate(h['date']?.toString()),
-              emoji: emoji,
-              color: Colors.blue.shade700,
-              addedBy: h['addedByName']?.toString() ?? '',
-            ),
-          );
-        }
-      }
-    } catch (_) {}
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 💊 MEDICINE — Private sales ka due (medicineSalesHistory) + Purchase
-    // ═══════════════════════════════════════════════════════════════════
-    final String? medSalesJson = await CompanyStore.instance.getString(
-      'medicineSalesHistory',
-    );
-    if (medSalesJson != null) {
-      try {
-        final List<dynamic> rawSales = json.decode(medSalesJson);
-        for (final raw in rawSales) {
-          final Map<String, dynamic> sale = Map<String, dynamic>.from(raw);
-          final double due = (sale['dueAmount'] as num?)?.toDouble() ?? 0.0;
-          if (due <= 0.01) continue;
-
-          dues.add(
-            _DueItem(
-              category: 'Medicine',
-              buyerName: sale['buyerName']?.toString() ?? '-',
-              mobile: sale['mobile']?.toString() ?? '',
-              totalAmount: (sale['totalSaleAmount'] as num?)?.toDouble() ?? 0.0,
-              paid: (sale['paidAmount'] as num?)?.toDouble() ?? 0.0,
-              due: due,
-              date: _parseDate(sale['date']?.toString()),
-              emoji: '💊',
-              color: Colors.teal.shade700,
-              onTap: () {
-                Get.to(() => MedicineSaleDetailScreen(sale: sale));
-              },
-            ),
-          );
-        }
-      } catch (_) {}
-    }
-
-    final String? medStockJson = await CompanyStore.instance.getString(
-      'medicineStockList',
-    );
-    if (medStockJson != null) {
-      try {
-        final List<dynamic> rawMeds = json.decode(medStockJson);
-        for (final rawMed in rawMeds) {
-          final Map<String, dynamic> med = Map<String, dynamic>.from(rawMed);
-          final String name = med['name']?.toString() ?? '-';
-          final String unit = med['unit']?.toString() ?? '';
-          final List<dynamic> hist =
-              (med['purchaseHistory'] as List<dynamic>?) ?? [];
-          for (final rawH in hist) {
-            final Map<String, dynamic> h = Map<String, dynamic>.from(rawH);
-            final double actualPrice =
-                (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
-            final double qty = (h['qty'] as num?)?.toDouble() ?? 0.0;
-            purchases.add(
-              _LedgerItem(
-                category: 'Medicine',
-                title: '💊 $name',
-                subtitle: '${qty.toStringAsFixed(2)} ${h['unit'] ?? unit}',
-                amount: actualPrice,
-                date: _parseDate(h['date']?.toString()),
-                emoji: '💊',
-                color: Colors.teal.shade700,
-                addedBy: h['addedByName']?.toString() ?? '',
-              ),
-            );
-          }
-        }
-      } catch (_) {}
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // 👷 LABOUR + 📋 OTHER — Company expenses
-    // ═══════════════════════════════════════════════════════════════════
-    final String? labourJson = await CompanyStore.instance.getString(
-      'labourExpenseHistory',
-    );
-    if (labourJson != null) {
-      try {
-        final List<dynamic> rawList = json.decode(labourJson);
-        for (final raw in rawList) {
-          final Map<String, dynamic> e = Map<String, dynamic>.from(raw);
-          expenses.add(
-            _LedgerItem(
-              category: 'Labour',
-              title: '👷 ${e['workerName'] ?? '-'}',
-              subtitle: '${e['labourType'] ?? ''} • ${e['unitMode'] ?? ''}',
-              amount: (e['totalAmount'] as num?)?.toDouble() ?? 0.0,
-              date: _parseDate(e['date']?.toString()),
-              emoji: '👷',
-              color: Colors.orange.shade800,
-              addedBy: e['addedByName']?.toString() ?? '',
-            ),
-          );
-        }
-      } catch (_) {}
-    }
-
-    final String? otherJson = await CompanyStore.instance.getString(
-      'otherExpenseHistory',
-    );
-    if (otherJson != null) {
-      try {
-        final List<dynamic> rawList = json.decode(otherJson);
-        for (final raw in rawList) {
-          final Map<String, dynamic> e = Map<String, dynamic>.from(raw);
-          expenses.add(
-            _LedgerItem(
-              category: 'Other',
-              title: '📋 ${e['expenseType'] ?? '-'}',
-              subtitle: (e['note']?.toString().isNotEmpty ?? false)
-                  ? e['note'].toString()
-                  : 'Koi note nahi',
-              amount: (e['amount'] as num?)?.toDouble() ?? 0.0,
-              date: _parseDate(e['date']?.toString()),
-              emoji: '📋',
-              color: Colors.purple.shade700,
-              addedBy: e['addedByName']?.toString() ?? '',
-            ),
-          );
-        }
-      } catch (_) {}
-    }
-
-    // ── Sort ──
-    dues.sort((a, b) => b.due.compareTo(a.due));
-    expenses.sort(
-      (a, b) => (b.date ?? DateTime(2000)).compareTo(a.date ?? DateTime(2000)),
-    );
-    purchases.sort(
-      (a, b) => (b.date ?? DateTime(2000)).compareTo(a.date ?? DateTime(2000)),
-    );
-
-    if (mounted) {
-      setState(() {
-        _dues = dues;
-        _expenses = expenses;
-        _purchases = purchases;
-        _isLoading = false;
-      });
-    }
-  }
+  const FeedTypesOverviewScreen({
+    super.key,
+    required this.periodLabel,
+    required this.period,
+    required this.feedStock,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final range = _computePurchaseRange(period);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        backgroundColor: _accGreen,
-        elevation: 0,
+        backgroundColor: Colors.blue.shade700,
         leading: IconButton(
           icon: const Icon(
             Icons.arrow_back_ios_new_rounded,
@@ -1394,285 +2071,429 @@ class _AccountsScreenState extends State<AccountsScreen>
           ),
           onPressed: () => Get.back(),
         ),
-        title: const Row(
-          children: [
-            Text('💼', style: TextStyle(fontSize: 20)),
-            SizedBox(width: 8),
-            Text(
-              'Accounts',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white60,
-          labelStyle: const TextStyle(
+        title: Text(
+          '🌾 Feed — $periodLabel',
+          style: const TextStyle(
+            color: Colors.white,
             fontWeight: FontWeight.bold,
-            fontSize: 12.5,
+            fontSize: 15,
           ),
-          tabs: const [
-            Tab(text: '📊 Overview'),
-            Tab(text: '⏳ Udhaar'),
-            Tab(text: '💸 Kharcha'),
-            Tab(text: '🛒 Kharida'),
-          ],
+          overflow: TextOverflow.ellipsis,
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _accGreen))
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildOverviewTab(),
-                _buildDuesTab(),
-                _buildLedgerTab(_expenses, 'Koi expense record nahi.'),
-                const _KharidaTabView(),
-              ],
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: kFeedTypeIds.map((id) {
+          final Map<String, dynamic> typeData = feedStock.firstWhere(
+            (s) => s['id'] == id,
+            orElse: () => <String, dynamic>{},
+          );
+          final String name = kFeedTypeNames[id] ?? id;
+          final String emoji = kFeedTypeEmoji[id] ?? '🌾';
+
+          final List<dynamic> hist =
+              (typeData['purchaseHistory'] as List?) ?? [];
+          double bags = 0, amount = 0;
+          int count = 0;
+          for (final rawH in hist) {
+            final h = Map<String, dynamic>.from(rawH);
+            if (!_dateInRange(h['date']?.toString(), range)) continue;
+            final double b = (h['bags'] as num?)?.toDouble() ?? 0.0;
+            final double perBag = (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+            bags += b;
+            amount += b * perBag;
+            count++;
+          }
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: GestureDetector(
+              onTap: () {
+                Get.to(
+                  () => FeedTypeMonthlyDetailScreen(
+                    periodLabel: periodLabel,
+                    period: period,
+                    feedTypeData: typeData,
+                    typeId: id,
+                    typeName: name,
+                    emoji: emoji,
+                  ),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.blue.shade200),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Center(
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 24),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '$count purchases • ${bags.toStringAsFixed(0)} bag',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '₹${amount.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color: Colors.grey.shade400,
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
+          );
+        }).toList(),
+      ),
     );
   }
+}
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // 📊 OVERVIEW TAB
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildOverviewTab() {
-    final double net = _totalDue - _totalExpense;
+// ═══════════════════════════════════════════════════════════════════════════
+// 🌾 FEED TYPE MONTHLY DETAIL — Us period mein: Purchase History list +
+// Company Farmer allocation vs Private Sale ka split (qty + amount + list)
+// ═══════════════════════════════════════════════════════════════════════════
+class FeedTypeMonthlyDetailScreen extends StatelessWidget {
+  final String periodLabel;
+  final _PurchasePeriod period;
+  final Map<String, dynamic> feedTypeData;
+  final String typeId;
+  final String typeName;
+  final String emoji;
 
-    Map<String, double> byCategory(List<_LedgerItem> items) {
-      final Map<String, double> map = {};
-      for (final i in items) {
-        map[i.category] = (map[i.category] ?? 0.0) + i.amount;
-      }
-      return map;
+  const FeedTypeMonthlyDetailScreen({
+    super.key,
+    required this.periodLabel,
+    required this.period,
+    required this.feedTypeData,
+    required this.typeId,
+    required this.typeName,
+    required this.emoji,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final range = _computePurchaseRange(period);
+
+    // ── Purchase History (period filtered) ──
+    final List<dynamic> histRaw =
+        (feedTypeData['purchaseHistory'] as List?) ?? [];
+    final List<Map<String, dynamic>> purchases = histRaw
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((h) => _dateInRange(h['date']?.toString(), range))
+        .toList();
+    double totalBags = 0, totalAmount = 0;
+    for (final h in purchases) {
+      final double b = (h['bags'] as num?)?.toDouble() ?? 0.0;
+      final double perBag = (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+      totalBags += b;
+      totalAmount += b * perBag;
     }
 
-    final expByCat = byCategory(_expenses);
-    final purByCat = byCategory(_purchases);
-
-    Map<String, double> dueByCat = {};
-    for (final d in _dues) {
-      dueByCat[d.category] = (dueByCat[d.category] ?? 0.0) + d.due;
+    // ── Company Farmer allocations (period filtered by allocatedOn) ──
+    final List<dynamic> allocRaw = (feedTypeData['allocations'] as List?) ?? [];
+    final List<Map<String, dynamic>> allocs = allocRaw
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((a) => _dateInRange(a['allocatedOn']?.toString(), range))
+        .toList();
+    double allocQty = 0, allocAmt = 0;
+    for (final a in allocs) {
+      final double q = (a['qty'] as num?)?.toDouble() ?? 0.0;
+      final double r = (a['rate'] as num?)?.toDouble() ?? 0.0;
+      allocQty += q;
+      allocAmt += q * r;
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadAll,
-      color: _accGreen,
-      child: ListView(
+    // ── Private Sales (period filtered by date) ──
+    final List<dynamic> saleRaw = (feedTypeData['privateSales'] as List?) ?? [];
+    final List<Map<String, dynamic>> sales = saleRaw
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((s) => _dateInRange(s['date']?.toString(), range))
+        .toList();
+    double saleQty = 0, saleAmt = 0;
+    for (final s in sales) {
+      final double q = (s['qty'] as num?)?.toDouble() ?? 0.0;
+      final double r = (s['rate'] as num?)?.toDouble() ?? 0.0;
+      saleQty += q;
+      saleAmt += q * r;
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.blue.shade700,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () => Get.back(),
+        ),
+        title: Text(
+          '$emoji $typeName — $periodLabel',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ── Top Summary Gradient Card ──
+          // ── Total purchased header ──
           Container(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF0F3D12),
-                  Color(0xFF1B5E20),
-                  Color(0xFF2E7D32),
-                ],
-              ),
+              color: Colors.blue.shade700,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: _accGreen.withOpacity(0.35),
-                  blurRadius: 14,
-                  offset: const Offset(0, 5),
-                ),
-              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
-                  children: [
-                    Icon(
-                      Icons.account_balance_wallet_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Company Ka Pura Hisaab',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Total Kharida (${purchases.length} purchase${purchases.length == 1 ? '' : 's'})',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    _ovKpi('⏳ Udhaar Aana', _totalDue, Colors.orange.shade200),
-                    const SizedBox(width: 8),
-                    _ovKpi('💸 Kharcha', _totalExpense, Colors.red.shade200),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _ovKpi('🛒 Kharida', _totalPurchase, Colors.blue.shade100),
-                    const SizedBox(width: 8),
-                    _ovKpi(
-                      net >= 0
-                          ? '📈 Net (Udhaar−Kharcha)'
-                          : '📉 Net (Udhaar−Kharcha)',
-                      net,
-                      net >= 0
-                          ? Colors.greenAccent.shade100
-                          : Colors.red.shade200,
-                    ),
-                  ],
+                const SizedBox(height: 4),
+                Text(
+                  '${totalBags.toStringAsFixed(0)} Bag  •  ₹${totalAmount.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 20),
 
-          const Text(
-            '⏳ Udhaar — Category Wise',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          // ── Allocation summary cards ──
+          _feedBreakdownCard(
+            emoji: '🏢',
+            title: 'Company Farmers Ko Diya',
+            qty: allocQty,
+            amount: allocAmt,
+            color: Colors.blue.shade700,
           ),
-          const SizedBox(height: 10),
-          if (dueByCat.isEmpty)
-            _emptyCatCard('Koi udhaar pending nahi 🎉')
-          else
-            ...dueByCat.entries.map(
-              (e) => _catRow(
-                _emojiFor(e.key),
-                e.key,
-                e.value,
-                Colors.orange.shade700,
-              ),
-            ),
-
-          const SizedBox(height: 20),
-          const Text(
-            '💸 Kharcha — Category Wise',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          const SizedBox(height: 12),
+          _feedBreakdownCard(
+            emoji: '🛒',
+            title: 'Private Mein Becha',
+            qty: saleQty,
+            amount: saleAmt,
+            color: Colors.green.shade700,
           ),
-          const SizedBox(height: 10),
-          if (expByCat.isEmpty)
-            _emptyCatCard('Koi expense record nahi.')
-          else
-            ...expByCat.entries.map(
-              (e) => _catRow(
-                _emojiFor(e.key),
-                e.key,
-                e.value,
-                Colors.red.shade700,
-              ),
-            ),
-
-          const SizedBox(height: 20),
-          const Text(
-            '🛒 Kharida — Category Wise',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          if (purByCat.isEmpty)
-            _emptyCatCard('Koi purchase record nahi.')
-          else
-            ...purByCat.entries.map(
-              (e) => _catRow(
-                _emojiFor(e.key),
-                e.key,
-                e.value,
-                Colors.blue.shade700,
-              ),
-            ),
-
           const SizedBox(height: 24),
+
+          // ── Purchase entries list ──
+          const Text(
+            '📜 Purchase History',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          if (purchases.isEmpty)
+            _emptyMsg('Is period mein koi purchase nahi hui.')
+          else
+            ...purchases.map((h) {
+              final double b = (h['bags'] as num?)?.toDouble() ?? 0.0;
+              final double perBag =
+                  (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.blue.shade100),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            h['company']?.toString() ?? '-',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            '${b.toStringAsFixed(0)} bag @ ₹${perBag.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          Text(
+                            formatHistoryDateTime(h['date']?.toString()),
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Colors.black45,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '₹${(b * perBag).toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+
+          const SizedBox(height: 20),
+
+          // ── Farmer-wise list ──
+          if (allocs.isNotEmpty) ...[
+            const Text(
+              '🏢 Farmer-Wise List',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            ...allocs.map(
+              (a) => _feedAllocTile(
+                name: a['farmerName']?.toString() ?? '-',
+                qty: (a['qty'] as num?)?.toDouble() ?? 0.0,
+                rate: (a['rate'] as num?)?.toDouble() ?? 0.0,
+                color: Colors.blue.shade700,
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+
+          // ── Buyer-wise list ──
+          if (sales.isNotEmpty) ...[
+            const Text(
+              '🛒 Private Buyer-Wise List',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            ...sales.map(
+              (s) => _feedAllocTile(
+                name: s['buyerName']?.toString() ?? '-',
+                qty: (s['qty'] as num?)?.toDouble() ?? 0.0,
+                rate: (s['rate'] as num?)?.toDouble() ?? 0.0,
+                color: Colors.green.shade700,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  String _emojiFor(String category) {
-    switch (category) {
-      case 'Chicks':
-        return '🐣';
-      case 'Feed':
-        return '🌾';
-      case 'Medicine':
-        return '💊';
-      case 'Labour':
-        return '👷';
-      case 'Other':
-        return '📋';
-      default:
-        return '📦';
-    }
-  }
-
-  Widget _ovKpi(String label, double value, Color valueColor) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white70, fontSize: 10),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '₹${value.toStringAsFixed(0)}',
-              style: TextStyle(
-                color: valueColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _catRow(String emoji, String label, double amount, Color color) {
+  Widget _feedBreakdownCard({
+    required String emoji,
+    required String title,
+    required double qty,
+    required double amount,
+    required Color color,
+  }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.25)),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Row(
         children: [
-          Text(emoji, style: const TextStyle(fontSize: 18)),
-          const SizedBox(width: 10),
+          Text(emoji, style: const TextStyle(fontSize: 26)),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${qty.toStringAsFixed(0)} Bag',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ],
             ),
           ),
           Text(
             '₹${amount.toStringAsFixed(2)}',
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 15,
               fontWeight: FontWeight.bold,
               color: color,
             ),
@@ -1682,7 +2503,48 @@ class _AccountsScreenState extends State<AccountsScreen>
     );
   }
 
-  Widget _emptyCatCard(String msg) {
+  Widget _feedAllocTile({
+    required String name,
+    required double qty,
+    required double rate,
+    required Color color,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(
+            '${qty.toStringAsFixed(0)} bag',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '₹${(qty * rate).toStringAsFixed(0)}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyMsg(String msg) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -1694,349 +2556,6 @@ class _AccountsScreenState extends State<AccountsScreen>
         msg,
         style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
         textAlign: TextAlign.center,
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // ⏳ UDHAAR (DUES) TAB
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildDuesTab() {
-    if (_dues.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _loadAll,
-        color: _accGreen,
-        child: ListView(
-          children: [
-            SizedBox(
-              height: 400,
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('🎉', style: TextStyle(fontSize: 52)),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Koi Udhaar Pending Nahi!',
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadAll,
-      color: _accGreen,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: _dues.length + 1,
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 14),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Total Udhaar (${_dues.length} buyers)',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: Colors.orange.shade900,
-                    ),
-                  ),
-                  Text(
-                    '₹${_totalDue.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 17,
-                      color: Colors.orange.shade900,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-          final d = _dues[index - 1];
-          return _dueCard(d);
-        },
-      ),
-    );
-  }
-
-  Widget _dueCard(_DueItem d) {
-    return GestureDetector(
-      onTap: d.onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: d.color.withOpacity(0.3)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: d.color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(
-                child: Text(d.emoji, style: const TextStyle(fontSize: 20)),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          d.buyerName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: d.color.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          d.category,
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.bold,
-                            color: d.color,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Bill: ₹${d.totalAmount.toStringAsFixed(0)}  •  Paid: ₹${d.paid.toStringAsFixed(0)}',
-                    style: const TextStyle(fontSize: 11, color: Colors.black54),
-                  ),
-                  if (d.date != null)
-                    Text(
-                      formatHistoryDateTime(d.date!.toIso8601String()),
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: Colors.black45,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '₹${d.due.toStringAsFixed(0)}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Colors.red.shade700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 18,
-                  color: Colors.grey.shade400,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // 💸 / 🛒 GENERIC LEDGER TAB (Kharcha & Kharida dono use karte hain)
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildLedgerTab(List<_LedgerItem> items, String emptyMsg) {
-    final double total = items.fold(0.0, (s, i) => s + i.amount);
-
-    if (items.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _loadAll,
-        color: _accGreen,
-        child: ListView(
-          children: [
-            SizedBox(
-              height: 400,
-              child: Center(
-                child: Text(
-                  emptyMsg,
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadAll,
-      color: _accGreen,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: items.length + 1,
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 14),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: _accGreen.withOpacity(0.07),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _accGreen.withOpacity(0.25)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Total (${items.length} entries)',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: _accGreen,
-                    ),
-                  ),
-                  Text(
-                    '₹${total.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 17,
-                      color: _accGreen,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-          final e = items[index - 1];
-          return _ledgerCard(e);
-        },
-      ),
-    );
-  }
-
-  Widget _ledgerCard(_LedgerItem e) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: e.color.withOpacity(0.25)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: e.color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Center(
-              child: Text(e.emoji, style: const TextStyle(fontSize: 20)),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  e.title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13.5,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  e.subtitle,
-                  style: const TextStyle(fontSize: 11.5, color: Colors.black54),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    if (e.addedBy.isNotEmpty)
-                      Expanded(
-                        child: Text(
-                          '👤 ${e.addedBy}',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.black45,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    if (e.date != null)
-                      Text(
-                        formatHistoryDateTime(e.date!.toIso8601String()),
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.black45,
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '₹${e.amount.toStringAsFixed(2)}',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-              color: e.color,
-            ),
-          ),
-        ],
       ),
     );
   }
