@@ -18,6 +18,11 @@ import 'feed_consumption_rule_screen.dart';
 import 'weight_growth_rule_screen.dart';
 import 'performance_alert_rule_screen.dart';
 import 'accounts_screen.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:google_ml_kit/google_ml_kit.dart';
+import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 
 class HomeScreen extends StatefulWidget {
   final String ownerName;
@@ -1723,7 +1728,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // =============================================================================
-  // 👷 LABOUR EXPENSE FORM
+  // 👷 LABOUR EXPENSE FORM (With ML Kit OCR Verification for Monthly Staff)
   // =============================================================================
   Future<void> _showLabourExpenseForm() async {
     final workerNameCtrl = TextEditingController();
@@ -1734,13 +1739,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     String selectedLabourType = 'General Labour';
     String hisaabMode = 'din';
 
+    // ── NEW KYC CONTROLLERS FOR MONTHLY STAFF ──
+    final mobileCtrl = TextEditingController();
+    final aadhaarCtrl = TextEditingController();
+    final panCtrl = TextEditingController();
+    final bankNameCtrl = TextEditingController();
+    final accNoCtrl = TextEditingController();
+    final ifscCtrl = TextEditingController();
+
+    String? aadhaarPath;
+    String? panPath;
+    String? photoPath;
+    String? signaturePath;
+    bool isOcrLoading = false;
+
+    // Manager roles added to the options
     final List<String> labourTypeOptions = [
       'Loading/Unloading',
       'Shed Cleaning',
       'Shed Repair',
       'Vaccination Help',
       'General Labour',
-      'Monthly',
+      'Manager - Farm',
+      'Manager - Accounts',
+      'Supervisor',
       'Other',
     ];
 
@@ -1756,6 +1778,119 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       builder: (context) => Dialog.fullscreen(
         child: StatefulBuilder(
           builder: (context, setModalState) {
+            // ── ML KIT OCR PROCESSING FUNCTION ──
+            Future<void> processOcrValidation(
+              String docType,
+              String filePath,
+            ) async {
+              setModalState(() => isOcrLoading = true);
+              bool validationPassed = false;
+              String blockReason =
+                  "Kripya sahi aur saaf document upload karein.";
+
+              try {
+                final inputImage = InputImage.fromFilePath(filePath);
+                final textRecognizer = GoogleMlKit.vision.textRecognizer();
+                final RecognizedText recognizedText = await textRecognizer
+                    .processImage(inputImage);
+                String extractedText = recognizedText.text.toUpperCase().trim();
+                await textRecognizer.close();
+
+                if (docType == 'Aadhaar') {
+                  bool hasName =
+                      extractedText.contains("NAME") ||
+                      extractedText.contains("\u0928\u093e\u092e");
+                  bool hasDob =
+                      extractedText.contains("DOB") ||
+                      extractedText.contains("YEAR OF BIRTH") ||
+                      extractedText.contains("\u091c\u0928\u094d\u092e");
+                  bool hasGovt =
+                      extractedText.contains("GOVERNMENT OF INDIA") ||
+                      extractedText.contains("GOVT OF INDIA") ||
+                      extractedText.contains(
+                        "\u092d\u093e\u0930\u0924 \u0938\u0930\u0915\u093e\u0930",
+                      );
+
+                  RegExp rx = RegExp(r'\d{4}\s?\d{4}\s?\d{4}');
+                  String num = rx.stringMatch(extractedText) ?? "";
+
+                  int kw = (hasName ? 1 : 0) + (hasDob ? 1 : 0);
+                  if (kw >= 1 || hasGovt) {
+                    validationPassed = true;
+                    aadhaarPath = filePath;
+                    if (num.isNotEmpty) {
+                      aadhaarCtrl.text = num.replaceAll(" ", "");
+                    }
+                  } else {
+                    blockReason =
+                        "Aadhaar Card nahi lag raha! 'GOVERNMENT OF INDIA' ya 'NAME/DOB' keywords nahi mile.";
+                  }
+                } else if (docType == 'PAN') {
+                  RegExp rx = RegExp(r'[A-Z]{5}[0-9]{4}[A-Z]{1}');
+                  String num = rx.stringMatch(extractedText) ?? "";
+                  bool hasPanKeyword =
+                      extractedText.contains("INCOME TAX") ||
+                      extractedText.contains("GOVT. OF INDIA") ||
+                      extractedText.contains("PERMANENT ACCOUNT");
+
+                  if (num.isNotEmpty && hasPanKeyword) {
+                    validationPassed = true;
+                    panPath = filePath;
+                    panCtrl.text = num;
+                  } else {
+                    blockReason =
+                        "Valid PAN Card nahi lag raha! Sahi format ya 'INCOME TAX' keyword nahi mila.";
+                  }
+                }
+
+                if (validationPassed) {
+                  Get.snackbar(
+                    'AI Verified ✅',
+                    '$docType successfully scan ho gaya!',
+                    backgroundColor: Colors.green,
+                    colorText: Colors.white,
+                  );
+                } else {
+                  Get.snackbar(
+                    'AI Blocked ⚠️',
+                    blockReason,
+                    backgroundColor: Colors.red,
+                    colorText: Colors.white,
+                    duration: const Duration(seconds: 4),
+                  );
+                }
+              } catch (e) {
+                Get.snackbar(
+                  'OCR Failed',
+                  'Document scan nahi ho paya. Saaf photo kheinchein.',
+                  backgroundColor: Colors.orange,
+                  colorText: Colors.white,
+                );
+              } finally {
+                setModalState(() => isOcrLoading = false);
+              }
+            }
+
+            Future<void> pickDocument(String docType) async {
+              try {
+                final XFile? f = await ImagePicker().pickImage(
+                  source: ImageSource.camera,
+                  imageQuality: 70,
+                );
+                if (f != null) {
+                  if (docType == 'Aadhaar' || docType == 'PAN') {
+                    await processOcrValidation(docType, f.path);
+                  } else if (docType == 'Photo') {
+                    setModalState(() => photoPath = f.path);
+                  } else if (docType == 'Signature') {
+                    setModalState(() => signaturePath = f.path);
+                  }
+                }
+              } catch (e) {
+                debugPrint("Image Pick Error: $e");
+              }
+            }
+
             double totalAmount = hisaabMode == 'monthly'
                 ? (double.tryParse(monthlySalaryCtrl.text.trim()) ?? 0.0)
                 : calcTotal(quantityCtrl, rateCtrl);
@@ -1778,7 +1913,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                     SizedBox(width: 8),
                     Text(
-                      'Labour Expense',
+                      'Labour / Manager Expense',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -1788,235 +1923,455 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ],
                 ),
               ),
-              body: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: workerNameCtrl,
-                      decoration: InputDecoration(
-                        labelText: 'Worker Ka Naam *',
-                        hintText: 'e.g. Ramesh Mistri',
-                        prefixIcon: const Icon(Icons.person_rounded),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Kaam Ka Type *',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: labourTypeOptions.map((type) {
-                        bool isSel = selectedLabourType == type;
-                        return GestureDetector(
-                          onTap: () =>
-                              setModalState(() => selectedLabourType = type),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 9,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isSel
-                                  ? Colors.orange.shade800
-                                  : Colors.orange.shade50,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: isSel
-                                    ? Colors.orange.shade800
-                                    : Colors.black12,
-                              ),
-                            ),
-                            child: Text(
-                              type,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: isSel
-                                    ? Colors.white
-                                    : Colors.orange.shade800,
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Hisaab Kis Tarah Karein? *',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
+              body: Stack(
+                children: [
+                  SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ChoiceChip(
-                          label: const Text('Din (Days)'),
-                          selected: hisaabMode == 'din',
-                          selectedColor: Colors.orange.shade800,
-                          labelStyle: TextStyle(
-                            color: hisaabMode == 'din'
-                                ? Colors.white
-                                : Colors.black87,
-                            fontWeight: FontWeight.bold,
+                        TextField(
+                          controller: workerNameCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'Worker / Manager Ka Naam *',
+                            hintText: 'e.g. Ramesh Mistri',
+                            prefixIcon: const Icon(Icons.person_rounded),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
-                          onSelected: (val) =>
-                              setModalState(() => hisaabMode = 'din'),
                         ),
-                        ChoiceChip(
-                          label: const Text('Ghanta (Hours)'),
-                          selected: hisaabMode == 'ghanta',
-                          selectedColor: Colors.orange.shade800,
-                          labelStyle: TextStyle(
-                            color: hisaabMode == 'ghanta'
-                                ? Colors.white
-                                : Colors.black87,
+                        const SizedBox(height: 16),
+
+                        const Text(
+                          'Kaam Ka Type / Role *',
+                          style: TextStyle(
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
+                            color: Colors.black54,
                           ),
-                          onSelected: (val) =>
-                              setModalState(() => hisaabMode = 'ghanta'),
                         ),
-                        ChoiceChip(
-                          label: const Text('Monthly (Fixed Salary)'),
-                          selected: hisaabMode == 'monthly',
-                          selectedColor: Colors.orange.shade800,
-                          labelStyle: TextStyle(
-                            color: hisaabMode == 'monthly'
-                                ? Colors.white
-                                : Colors.black87,
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: labourTypeOptions.map((type) {
+                            bool isSel = selectedLabourType == type;
+                            return GestureDetector(
+                              onTap: () => setModalState(
+                                () => selectedLabourType = type,
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 9,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isSel
+                                      ? Colors.orange.shade800
+                                      : Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: isSel
+                                        ? Colors.orange.shade800
+                                        : Colors.black12,
+                                  ),
+                                ),
+                                child: Text(
+                                  type,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSel
+                                        ? Colors.white
+                                        : Colors.orange.shade800,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 20),
+
+                        const Text(
+                          'Hisaab Kis Tarah Karein? *',
+                          style: TextStyle(
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
+                            color: Colors.black54,
                           ),
-                          onSelected: (val) =>
-                              setModalState(() => hisaabMode = 'monthly'),
                         ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            ChoiceChip(
+                              label: const Text('Din (Days)'),
+                              selected: hisaabMode == 'din',
+                              selectedColor: Colors.orange.shade800,
+                              labelStyle: TextStyle(
+                                color: hisaabMode == 'din'
+                                    ? Colors.white
+                                    : Colors.black87,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              onSelected: (val) =>
+                                  setModalState(() => hisaabMode = 'din'),
+                            ),
+                            ChoiceChip(
+                              label: const Text('Ghanta (Hours)'),
+                              selected: hisaabMode == 'ghanta',
+                              selectedColor: Colors.orange.shade800,
+                              labelStyle: TextStyle(
+                                color: hisaabMode == 'ghanta'
+                                    ? Colors.white
+                                    : Colors.black87,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              onSelected: (val) =>
+                                  setModalState(() => hisaabMode = 'ghanta'),
+                            ),
+                            ChoiceChip(
+                              label: const Text('Monthly (Fixed Salary)'),
+                              selected: hisaabMode == 'monthly',
+                              selectedColor: Colors.orange.shade800,
+                              labelStyle: TextStyle(
+                                color: hisaabMode == 'monthly'
+                                    ? Colors.white
+                                    : Colors.black87,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              onSelected: (val) =>
+                                  setModalState(() => hisaabMode = 'monthly'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        if (hisaabMode != 'monthly')
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: quantityCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  onChanged: (_) => setModalState(() {}),
+                                  decoration: InputDecoration(
+                                    labelText: hisaabMode == 'din'
+                                        ? 'Kitne Din *'
+                                        : 'Kitne Ghante *',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextField(
+                                  controller: rateCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  onChanged: (_) => setModalState(() {}),
+                                  decoration: InputDecoration(
+                                    labelText: hisaabMode == 'din'
+                                        ? 'Rate/Din (₹) *'
+                                        : 'Rate/Ghanta (₹) *',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        else ...[
+                          // ── MONTHLY SALARY & KYC SECTION ──
+                          TextField(
+                            controller: monthlySalaryCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged: (_) => setModalState(() {}),
+                            decoration: InputDecoration(
+                              labelText: 'Maheene Ki Salary (₹) *',
+                              prefixIcon: const Icon(
+                                Icons.calendar_month_rounded,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.blue.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Row(
+                                  children: [
+                                    Icon(
+                                      Icons.verified_user_rounded,
+                                      color: Colors.blue,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Staff KYC & Verification',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+
+                                // Mobile Number
+                                TextField(
+                                  controller: mobileCtrl,
+                                  keyboardType: TextInputType.phone,
+                                  maxLength: 10,
+                                  decoration: InputDecoration(
+                                    labelText: 'Mobile Number',
+                                    prefixIcon: const Icon(Icons.phone_android),
+                                    counterText: '',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Aadhaar with OCR
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: aadhaarCtrl,
+                                        keyboardType: TextInputType.number,
+                                        maxLength: 12,
+                                        decoration: InputDecoration(
+                                          labelText: 'Aadhaar Number',
+                                          counterText: '',
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      onPressed: () => pickDocument('Aadhaar'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: aadhaarPath != null
+                                            ? Colors.green
+                                            : Colors.blue,
+                                      ),
+                                      child: const Icon(
+                                        Icons.camera_alt,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+
+                                // PAN with OCR
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: panCtrl,
+                                        textCapitalization:
+                                            TextCapitalization.characters,
+                                        maxLength: 10,
+                                        decoration: InputDecoration(
+                                          labelText: 'PAN Number',
+                                          counterText: '',
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      onPressed: () => pickDocument('PAN'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: panPath != null
+                                            ? Colors.green
+                                            : Colors.blue,
+                                      ),
+                                      child: const Icon(
+                                        Icons.camera_alt,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+
+                                // Bank Details
+                                const Text(
+                                  'Bank Account Details',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: bankNameCtrl,
+                                  decoration: InputDecoration(
+                                    labelText: 'Bank Name',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: accNoCtrl,
+                                  keyboardType: TextInputType.number,
+                                  decoration: InputDecoration(
+                                    labelText: 'Account Number',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: ifscCtrl,
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  decoration: InputDecoration(
+                                    labelText: 'IFSC Code',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+
+                                // Photo & Signature Uploads
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => pickDocument('Photo'),
+                                        icon: Icon(
+                                          photoPath != null
+                                              ? Icons.check_circle
+                                              : Icons.person,
+                                        ),
+                                        label: const Text(
+                                          'Add Photo',
+                                          style: TextStyle(fontSize: 12),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: photoPath != null
+                                              ? Colors.green
+                                              : Colors.blue,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () =>
+                                            pickDocument('Signature'),
+                                        icon: Icon(
+                                          signaturePath != null
+                                              ? Icons.check_circle
+                                              : Icons.draw,
+                                        ),
+                                        label: const Text(
+                                          'Add Sign',
+                                          style: TextStyle(fontSize: 12),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: signaturePath != null
+                                              ? Colors.green
+                                              : Colors.blue,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 20),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade800,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                '💰 Total Amount',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                '₹${totalAmount.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        TextField(
+                          controller: noteCtrl,
+                          maxLines: 2,
+                          decoration: InputDecoration(
+                            labelText: 'Note (Optional)',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 30),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    if (hisaabMode != 'monthly')
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: quantityCtrl,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              onChanged: (_) => setModalState(() {}),
-                              decoration: InputDecoration(
-                                labelText: hisaabMode == 'din'
-                                    ? 'Kitne Din *'
-                                    : 'Kitne Ghante *',
-                                hintText: hisaabMode == 'din'
-                                    ? 'e.g. 2'
-                                    : 'e.g. 6',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: rateCtrl,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              onChanged: (_) => setModalState(() {}),
-                              decoration: InputDecoration(
-                                labelText: hisaabMode == 'din'
-                                    ? 'Rate/Din (₹) *'
-                                    : 'Rate/Ghanta (₹) *',
-                                hintText: 'e.g. 400',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    else
-                      TextField(
-                        controller: monthlySalaryCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        onChanged: (_) => setModalState(() {}),
-                        decoration: InputDecoration(
-                          labelText: 'Maheene Ki Salary (₹) *',
-                          hintText: 'e.g. 8000',
-                          helperText:
-                              'Ye worker ko mahine mein itna fixed milta hai',
-                          prefixIcon: const Icon(Icons.calendar_month_rounded),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 20),
+                  ),
+                  if (isOcrLoading)
                     Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade800,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            '💰 Total Amount',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '₹${totalAmount.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                      color: Colors.black45,
+                      child: const Center(
+                        child: CircularProgressIndicator(color: Colors.orange),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: noteCtrl,
-                      maxLines: 2,
-                      decoration: InputDecoration(
-                        labelText: 'Note (Optional)',
-                        hintText: 'e.g. Chicks unload karne ke liye',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                  ],
-                ),
+                ],
               ),
               bottomNavigationBar: Container(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
@@ -2041,12 +2396,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
                       if (workerName.isEmpty) {
                         Get.snackbar(
-                          'Worker Naam Chahiye ⚠️',
+                          'Naam Chahiye ⚠️',
                           'Worker ka naam bharna zaroori hai.',
                           backgroundColor: Colors.red,
                           colorText: Colors.white,
-                          snackPosition: SnackPosition.BOTTOM,
-                          margin: const EdgeInsets.all(15),
                         );
                         return;
                       }
@@ -2055,11 +2408,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         if (monthlySalary <= 0) {
                           Get.snackbar(
                             'Sahi Salary Daalein ⚠️',
-                            'Monthly salary zero ya negative nahi ho sakti.',
+                            'Monthly salary zero nahi ho sakti.',
                             backgroundColor: Colors.red,
                             colorText: Colors.white,
-                            snackPosition: SnackPosition.BOTTOM,
-                            margin: const EdgeInsets.all(15),
                           );
                           return;
                         }
@@ -2067,11 +2418,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         if (qty <= 0 || rate <= 0) {
                           Get.snackbar(
                             'Sahi Value Daalein ⚠️',
-                            'Din/Ghanta aur Rate zero ya negative nahi ho sakte.',
+                            'Din/Ghanta aur Rate theek se dalein.',
                             backgroundColor: Colors.red,
                             colorText: Colors.white,
-                            snackPosition: SnackPosition.BOTTOM,
-                            margin: const EdgeInsets.all(15),
                           );
                           return;
                         }
@@ -2090,6 +2439,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ? monthlySalary
                           : qty * rate;
 
+                      // Saving all data including the new KYC data
                       history.insert(0, {
                         'workerName': workerName,
                         'labourType': selectedLabourType,
@@ -2105,6 +2455,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         'addedByRole': addedByRole,
                         'addedByName': addedByName,
                         'date': DateTime.now().toIso8601String(),
+                        // Extra KYC fields
+                        'mobile': mobileCtrl.text.trim(),
+                        'aadhaar': aadhaarCtrl.text.trim(),
+                        'pan': panCtrl.text.trim(),
+                        'bankName': bankNameCtrl.text.trim(),
+                        'accountNo': accNoCtrl.text.trim(),
+                        'ifsc': ifscCtrl.text.trim(),
+                        'aadhaarPath': aadhaarPath,
+                        'panPath': panPath,
+                        'photoPath': photoPath,
+                        'signaturePath': signaturePath,
                       });
 
                       await CompanyStore.instance.setString(
@@ -2115,12 +2476,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       if (!mounted) return;
                       Navigator.pop(context);
                       Get.snackbar(
-                        'Labour Expense Saved ✅',
+                        'Saved ✅',
                         '$workerName ko ₹${finalTotal.toStringAsFixed(2)} ka kharcha darj ho gaya.',
                         backgroundColor: Colors.orange.shade800,
                         colorText: Colors.white,
-                        snackPosition: SnackPosition.BOTTOM,
-                        margin: const EdgeInsets.all(15),
                       );
                     },
                     child: const Text(
