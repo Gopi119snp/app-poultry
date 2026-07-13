@@ -5,6 +5,9 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:poultrypro/services/company_store.dart';
 import 'package:poultrypro/services/session_service.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:google_ml_kit/google_ml_kit.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔗 SHARED HELPERS — Farmer ka batch dhoondhna / naya batch ID banana

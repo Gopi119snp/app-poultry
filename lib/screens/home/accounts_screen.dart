@@ -1074,8 +1074,8 @@ class _AccountsScreenState extends State<AccountsScreen>
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🛒 KHARIDA TAB — Month-wise (ya Last-N-Months) Purchase Overview
-// 3 sections: Chicks / Feed / Medicine. Chicks aur Feed poori tarah kaam
-// karte hain (drill-down list + allocation split). Medicine abhi placeholder.
+// 3 sections: Chicks / Feed / Medicine. Teeno poori tarah kaam karte hain
+// (drill-down list + allocation split).
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _PurchasePeriod {
@@ -1513,12 +1513,12 @@ class _KharidaTabViewState extends State<_KharidaTabView> {
             amount: medTotals['amount']!,
             color: Colors.teal.shade700,
             onTap: () {
-              Get.snackbar(
-                'Jald Aayega 🚧',
-                'Medicine ka detailed view abhi kaam ho raha hai.',
-                backgroundColor: Colors.teal.shade700,
-                colorText: Colors.white,
-                snackPosition: SnackPosition.BOTTOM,
+              Get.to(
+                () => MedicineOverviewScreen(
+                  periodLabel: _period.label(),
+                  period: _period,
+                  medicineStock: _medicineStock,
+                ),
               );
             },
           ),
@@ -2544,6 +2544,628 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             '₹${(qty * rate).toStringAsFixed(0)}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyMsg(String msg) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        msg,
+        style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 💊 MEDICINE OVERVIEW SCREEN — Sirf un medicines ki list jinka is period
+// mein purchase hua ho, aur unka total purchase amount + base quantity.
+// ═══════════════════════════════════════════════════════════════════════════
+class MedicineOverviewScreen extends StatelessWidget {
+  final String periodLabel;
+  final _PurchasePeriod period;
+  final List<Map<String, dynamic>> medicineStock;
+
+  const MedicineOverviewScreen({
+    super.key,
+    required this.periodLabel,
+    required this.period,
+    required this.medicineStock,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final range = _computePurchaseRange(period);
+
+    // ✅ FIX: Sirf un medicines ko list mein rakho jinka is period mein
+    // kam se kam ek purchase hua ho — warna list bekar mein lambi ho
+    // jaati (har medicine dikhti chahe ₹0 hi kyun na ho), jaisa Feed mein
+    // sirf 3 fixed types hain issliye wahan problem nahi thi.
+    final List<Map<String, Object>> filtered = [];
+    for (final med in medicineStock) {
+      final List<dynamic> hist = (med['purchaseHistory'] as List?) ?? [];
+      double qtyBase = 0, amount = 0;
+      int count = 0;
+      for (final rawH in hist) {
+        final h = Map<String, dynamic>.from(rawH);
+        if (!_dateInRange(h['date']?.toString(), range)) continue;
+        final double qBase =
+            (h['qtyInBaseUnit'] as num?)?.toDouble() ??
+            (h['qty'] as num?)?.toDouble() ??
+            0.0;
+        final double price = (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
+        qtyBase += qBase;
+        amount += price;
+        count++;
+      }
+      if (count == 0) continue; // is period mein purchase nahi — hide karo
+      filtered.add({
+        'med': med,
+        'qtyBase': qtyBase,
+        'amount': amount,
+        'count': count,
+      });
+    }
+    filtered.sort(
+      (a, b) => (b['amount'] as double).compareTo(a['amount'] as double),
+    );
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.teal.shade700,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () => Get.back(),
+        ),
+        title: Text(
+          '💊 Medicine — $periodLabel',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      body: filtered.isEmpty
+          ? Center(
+              child: Text(
+                'Is period mein koi medicine purchase nahi hui.',
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: filtered.length,
+              itemBuilder: (context, index) {
+                final row = filtered[index];
+                final Map<String, dynamic> med =
+                    row['med'] as Map<String, dynamic>;
+                final double qtyBase = row['qtyBase'] as double;
+                final double amount = row['amount'] as double;
+                final int count = row['count'] as int;
+                final String name = med['name']?.toString() ?? '-';
+                final String baseUnit = med['unit']?.toString() ?? '';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: GestureDetector(
+                    onTap: () {
+                      Get.to(
+                        () => MedicineMonthlyDetailScreen(
+                          periodLabel: periodLabel,
+                          period: period,
+                          medicineData: med,
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.teal.shade200),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: Colors.teal.shade50,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Center(
+                              child: Text('💊', style: TextStyle(fontSize: 24)),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '$count purchase${count == 1 ? '' : 's'} • ${qtyBase.toStringAsFixed(2)} $baseUnit',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '₹${amount.toStringAsFixed(0)}',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.teal.shade700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: Colors.grey.shade400,
+                                size: 20,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 💊 MEDICINE MONTHLY DETAIL SCREEN — Ek medicine ka selected mahine ka
+// Purchase History + Company Farmer allocation vs Private Sale ka split.
+// ═══════════════════════════════════════════════════════════════════════════
+class MedicineMonthlyDetailScreen extends StatefulWidget {
+  final String periodLabel;
+  final _PurchasePeriod period;
+  final Map<String, dynamic> medicineData;
+
+  const MedicineMonthlyDetailScreen({
+    super.key,
+    required this.periodLabel,
+    required this.period,
+    required this.medicineData,
+  });
+
+  @override
+  State<MedicineMonthlyDetailScreen> createState() =>
+      _MedicineMonthlyDetailScreenState();
+}
+
+class _MedicineMonthlyDetailScreenState
+    extends State<MedicineMonthlyDetailScreen> {
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _privateSales = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrivateSales();
+  }
+
+  Future<void> _loadPrivateSales() async {
+    final range = _computePurchaseRange(widget.period);
+    final String mId = widget.medicineData['id']?.toString() ?? '';
+    final String? salesJson = await CompanyStore.instance.getString(
+      'medicineSalesHistory',
+    );
+
+    List<Map<String, dynamic>> salesList = [];
+    if (salesJson != null) {
+      try {
+        final List<dynamic> rawSales = json.decode(salesJson);
+        for (final sale in rawSales) {
+          if (!_dateInRange(sale['date']?.toString(), range)) continue;
+
+          final List<dynamic> items = sale['items'] as List<dynamic>? ?? [];
+          for (final item in items) {
+            if (item['medicineId']?.toString() == mId) {
+              salesList.add({
+                'buyerName': sale['buyerName'] ?? '-',
+                'date': sale['date'],
+                'qtyInBaseUnit':
+                    (item['qtyInBaseUnit'] as num?)?.toDouble() ??
+                    (item['qty'] as num?)?.toDouble() ??
+                    0.0,
+                'totalSale': (item['totalSale'] as num?)?.toDouble() ?? 0.0,
+              });
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      setState(() {
+        _privateSales = salesList;
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// ✅ FIX: Farmer allocation ka amount nikalne ke liye 'ratePerBase' field
+  /// primary hai (AllocateMedicineToFarmerScreen isi field ke saath save
+  /// karta hai), lekin agar kisi aur jagah/purane data se sirf 'rate' field
+  /// save hui ho, to us par bhi fallback karo — taaki amount kabhi galti
+  /// se ₹0 na dikhe.
+  double _allocRatePerBase(Map<String, dynamic> alloc) {
+    final double? ratePerBase = (alloc['ratePerBase'] as num?)?.toDouble();
+    if (ratePerBase != null && ratePerBase > 0) return ratePerBase;
+    return (alloc['rate'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: Colors.teal)),
+      );
+    }
+
+    final range = _computePurchaseRange(widget.period);
+    final String name = widget.medicineData['name']?.toString() ?? '-';
+    final String baseUnit = widget.medicineData['unit']?.toString() ?? '';
+
+    // ── Purchase History (period filtered) ──
+    final List<dynamic> histRaw =
+        (widget.medicineData['purchaseHistory'] as List?) ?? [];
+    final List<Map<String, dynamic>> purchases = histRaw
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((h) => _dateInRange(h['date']?.toString(), range))
+        .toList();
+
+    double totalPurchasedBase = 0, totalAmount = 0;
+    for (final h in purchases) {
+      totalPurchasedBase +=
+          (h['qtyInBaseUnit'] as num?)?.toDouble() ??
+          (h['qty'] as num?)?.toDouble() ??
+          0.0;
+      totalAmount += (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
+    }
+
+    // ── Company Farmer allocations (period filtered by allocatedOn) ──
+    final List<dynamic> allocRaw =
+        (widget.medicineData['allocations'] as List?) ?? [];
+    final List<Map<String, dynamic>> allocs = allocRaw
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((a) => _dateInRange(a['allocatedOn']?.toString(), range))
+        .toList();
+
+    double allocQtyBase = 0, allocAmt = 0;
+    for (final a in allocs) {
+      final double qBase =
+          (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+          (a['qty'] as num?)?.toDouble() ??
+          0.0;
+      final double rBase = _allocRatePerBase(a);
+      allocQtyBase += qBase;
+      allocAmt += qBase * rBase;
+    }
+
+    // ── Private Sales (period filtered) ──
+    double saleQtyBase = 0, saleAmt = 0;
+    for (final s in _privateSales) {
+      saleQtyBase += (s['qtyInBaseUnit'] as num?)?.toDouble() ?? 0.0;
+      saleAmt += (s['totalSale'] as num?)?.toDouble() ?? 0.0;
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.teal.shade700,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () => Get.back(),
+        ),
+        title: Text(
+          '💊 $name — ${widget.periodLabel}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // ── Total purchased header ──
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.teal.shade700,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Total Kharida (${purchases.length} purchase${purchases.length == 1 ? '' : 's'})',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${totalPurchasedBase.toStringAsFixed(2)} $baseUnit  •  ₹${totalAmount.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Allocation summary cards ──
+          _medBreakdownCard(
+            emoji: '🏢',
+            title: 'Company Farmers Ko Diya',
+            qty: allocQtyBase,
+            unit: baseUnit,
+            amount: allocAmt,
+            color: Colors.teal.shade700,
+          ),
+          const SizedBox(height: 12),
+          _medBreakdownCard(
+            emoji: '🛒',
+            title: 'Private Mein Becha',
+            qty: saleQtyBase,
+            unit: baseUnit,
+            amount: saleAmt,
+            color: Colors.green.shade700,
+          ),
+          const SizedBox(height: 24),
+
+          // ── Purchase entries list ──
+          const Text(
+            '📜 Purchase History',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          if (purchases.isEmpty)
+            _emptyMsg('Is period mein koi purchase nahi hui.')
+          else
+            ...purchases.map((h) {
+              final double qb =
+                  (h['qtyInBaseUnit'] as num?)?.toDouble() ??
+                  (h['qty'] as num?)?.toDouble() ??
+                  0.0;
+              final double actPrice =
+                  (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.teal.shade100),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${qb.toStringAsFixed(2)} $baseUnit',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            formatHistoryDateTime(h['date']?.toString()),
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Colors.black45,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '₹${actPrice.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.teal.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+
+          const SizedBox(height: 20),
+
+          // ── Farmer-wise list ──
+          if (allocs.isNotEmpty) ...[
+            const Text(
+              '🏢 Farmer-Wise List',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            ...allocs.map(
+              (a) => _medAllocTile(
+                name: a['farmerName']?.toString() ?? '-',
+                qty:
+                    (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+                    (a['qty'] as num?)?.toDouble() ??
+                    0.0,
+                unit: baseUnit,
+                amount:
+                    ((a['qtyInBaseUnit'] as num?)?.toDouble() ??
+                        (a['qty'] as num?)?.toDouble() ??
+                        0.0) *
+                    _allocRatePerBase(a),
+                color: Colors.teal.shade700,
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+
+          // ── Buyer-wise list ──
+          if (_privateSales.isNotEmpty) ...[
+            const Text(
+              '🛒 Private Buyer-Wise List',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            ..._privateSales.map(
+              (s) => _medAllocTile(
+                name: s['buyerName']?.toString() ?? '-',
+                qty: (s['qtyInBaseUnit'] as num?)?.toDouble() ?? 0.0,
+                unit: baseUnit,
+                amount: (s['totalSale'] as num?)?.toDouble() ?? 0.0,
+                color: Colors.green.shade700,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _medBreakdownCard({
+    required String emoji,
+    required String title,
+    required double qty,
+    required String unit,
+    required double amount,
+    required Color color,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 26)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${qty.toStringAsFixed(2)} $unit',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '₹${amount.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _medAllocTile({
+    required String name,
+    required double qty,
+    required String unit,
+    required double amount,
+    required Color color,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _cleanFarmerLabel(name),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Text(
+            '${qty.toStringAsFixed(2)} $unit',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '₹${amount.toStringAsFixed(0)}',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
