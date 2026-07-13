@@ -1873,21 +1873,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
             Future<void> pickDocument(String docType) async {
               try {
-                final XFile? f = await ImagePicker().pickImage(
-                  source: ImageSource.camera,
-                  imageQuality: 70,
-                );
-                if (f != null) {
-                  if (docType == 'Aadhaar' || docType == 'PAN') {
-                    await processOcrValidation(docType, f.path);
-                  } else if (docType == 'Photo') {
-                    setModalState(() => photoPath = f.path);
-                  } else if (docType == 'Signature') {
-                    setModalState(() => signaturePath = f.path);
+                if (docType == 'Aadhaar' || docType == 'PAN') {
+                  // Naya Smart Live Scanner khulega
+                  final capturedPath = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SmartScannerScreen(docType: docType),
+                    ),
+                  );
+
+                  if (capturedPath != null) {
+                    // Photo capture ho gayi, ab us path se OCR validaton chalao
+                    await processOcrValidation(docType, capturedPath);
+                  }
+                } else {
+                  // Photo aur Signature ke liye purana normal camera use hoga
+                  final XFile? f = await ImagePicker().pickImage(
+                    source: ImageSource.camera,
+                    imageQuality: 70,
+                  );
+                  if (f != null) {
+                    if (docType == 'Photo') {
+                      setModalState(() => photoPath = f.path);
+                    } else if (docType == 'Signature') {
+                      setModalState(() => signaturePath = f.path);
+                    }
                   }
                 }
               } catch (e) {
-                debugPrint("Image Pick Error: $e");
+                debugPrint("Camera Error: $e");
               }
             }
 
@@ -6769,6 +6783,225 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 8),
           const Text('Jald aayega!', style: TextStyle(color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── ✅ YAHAN SE SMARTSCANNER CLASSES (HomeScreen ke BAHAR) ──
+
+// =============================================================================
+// 📸 SMART AI DOCUMENT SCANNER (Live Auto-Capture)
+// =============================================================================
+class SmartScannerScreen extends StatefulWidget {
+  final String docType;
+  const SmartScannerScreen({super.key, required this.docType});
+
+  @override
+  State<SmartScannerScreen> createState() => _SmartScannerScreenState();
+}
+
+class _SmartScannerScreenState extends State<SmartScannerScreen> {
+  CameraController? _cameraController;
+  bool _isProcessing = false;
+  Color _boxColor = Colors.red.shade500;
+  String _statusText = "Document ko dabbe ke andar rakhein";
+
+  @override
+  void initState() {
+    super.initState();
+    _initCamera();
+  }
+
+  Future<void> _initCamera() async {
+    final cameras = await availableCameras();
+    if (cameras.isEmpty) return;
+
+    _cameraController = CameraController(
+      cameras.first,
+      ResolutionPreset.high,
+      enableAudio: false,
+    );
+
+    await _cameraController!.initialize();
+    if (!mounted) return;
+    setState(() {});
+
+    _cameraController!.startImageStream((CameraImage image) {
+      if (!_isProcessing) {
+        _processCameraImage(image);
+      }
+    });
+  }
+
+  Future<void> _processCameraImage(CameraImage image) async {
+    _isProcessing = true;
+    try {
+      final WriteBuffer allBytes = WriteBuffer();
+      for (final Plane plane in image.planes) {
+        allBytes.putUint8List(plane.bytes);
+      }
+      final bytes = allBytes.done().buffer.asUint8List();
+
+      final Size imageSize = Size(
+        image.width.toDouble(),
+        image.height.toDouble(),
+      );
+      final camera = _cameraController!.description;
+      final imageRotation =
+          InputImageRotationValue.fromRawValue(camera.sensorOrientation) ??
+          InputImageRotation.rotation0deg;
+      final inputImageFormat =
+          InputImageFormatValue.fromRawValue(image.format.raw) ??
+          InputImageFormat.nv21;
+
+      final inputImageData = InputImageMetadata(
+        size: imageSize,
+        rotation: imageRotation,
+        format: inputImageFormat,
+        bytesPerRow: image.planes[0].bytesPerRow,
+      );
+
+      final inputImage = InputImage.fromBytes(
+        bytes: bytes,
+        metadata: inputImageData,
+      );
+      final textRecognizer = GoogleMlKit.vision.textRecognizer();
+      final RecognizedText recognizedText = await textRecognizer.processImage(
+        inputImage,
+      );
+      String extractedText = recognizedText.text.toUpperCase();
+      await textRecognizer.close();
+
+      bool found = false;
+
+      // ── LOGIC FOR AADHAAR / PAN DETECTION ──
+      if (widget.docType == 'Aadhaar') {
+        if (extractedText.contains("GOVERNMENT OF INDIA") ||
+            extractedText.contains("GOVT OF INDIA") ||
+            RegExp(r'\d{4}\s?\d{4}\s?\d{4}').hasMatch(extractedText)) {
+          found = true;
+        }
+      } else if (widget.docType == 'PAN') {
+        if (extractedText.contains("INCOME TAX") ||
+            RegExp(r'[A-Z]{5}[0-9]{4}[A-Z]{1}').hasMatch(extractedText)) {
+          found = true;
+        }
+      }
+
+      if (found) {
+        // Stop stream, change color to GREEN, and capture!
+        await _cameraController!.stopImageStream();
+        setState(() {
+          _boxColor = Colors.greenAccent.shade700;
+          _statusText = "Perfect! Capturing...";
+        });
+
+        await Future.delayed(
+          const Duration(milliseconds: 500),
+        ); // Show green box briefly
+        final XFile file = await _cameraController!.takePicture();
+        if (mounted) Navigator.pop(context, file.path);
+        return;
+      }
+    } catch (e) {
+      debugPrint("Live OCR Error: $e");
+    }
+
+    await Future.delayed(
+      const Duration(milliseconds: 500),
+    ); // Prevent CPU overload
+    _isProcessing = false;
+  }
+
+  @override
+  void dispose() {
+    _cameraController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator(color: Colors.orange)),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          CameraPreview(_cameraController!),
+          // Overlay UI
+          ColorFiltered(
+            colorFilter: ColorFilter.mode(
+              Colors.black.withOpacity(0.7),
+              BlendMode.srcOut,
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.black,
+                    backgroundBlendMode: BlendMode.dstOut,
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.center,
+                  child: Container(
+                    height: 250,
+                    width: 350,
+                    decoration: BoxDecoration(
+                      color: Colors.red, // Creates the transparent hole
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Colored Border Box
+          Align(
+            alignment: Alignment.center,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              height: 250,
+              width: 350,
+              decoration: BoxDecoration(
+                border: Border.all(color: _boxColor, width: 4),
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+          // Status Text
+          Positioned(
+            top: 100,
+            left: 0,
+            right: 0,
+            child: Text(
+              _statusText,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _boxColor,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          // Back Button
+          Positioned(
+            top: 40,
+            left: 20,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
         ],
       ),
     );
