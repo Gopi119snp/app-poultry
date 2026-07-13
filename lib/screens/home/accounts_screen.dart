@@ -25,6 +25,17 @@ import 'sales_screen.dart'
 
 const Color _accGreen = Color(0xFF1B5E20);
 
+/// Farmer dropdown se select karte waqt "Naam - Mobile - Jagah" jaisa poora
+/// string kabhi kabhi farmerName field mein save ho jaata hai (galti se).
+/// Display ke liye sirf naam nikaal lo — purane aur naye dono data ke liye
+/// safe hai.
+String _cleanFarmerLabel(String raw) {
+  if (raw.contains(' - ')) {
+    return raw.split(' - ').first.trim();
+  }
+  return raw;
+}
+
 // ── Data models (internal use) ──────────────────────────────────────────────
 class _DueItem {
   final String category; // Chicks / Feed / Medicine
@@ -838,7 +849,7 @@ class _AccountsScreenState extends State<AccountsScreen>
                     children: [
                       Expanded(
                         child: Text(
-                          d.buyerName,
+                          _cleanFarmerLabel(d.buyerName),
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
@@ -2016,7 +2027,7 @@ class ChicksLotAllocationBreakdownScreen extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              name,
+              _cleanFarmerLabel(name),
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               overflow: TextOverflow.ellipsis,
             ),
@@ -2521,7 +2532,7 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              name,
+              _cleanFarmerLabel(name),
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               overflow: TextOverflow.ellipsis,
             ),

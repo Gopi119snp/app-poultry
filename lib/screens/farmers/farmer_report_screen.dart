@@ -699,12 +699,14 @@ class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
                 'Total Lots',
                 '${_filtered.length}',
                 Colors.white.withOpacity(0.15),
+                emoji: '📦',
               ),
               const SizedBox(width: 8),
               kpiChip(
                 'Total Sale',
                 '₹${fmt(totalSale)}',
                 Colors.white.withOpacity(0.15),
+                emoji: '🪙',
               ),
               const SizedBox(width: 8),
               kpiChip(
@@ -713,6 +715,7 @@ class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
                 totalCompanyEarning >= 0
                     ? Colors.green.shade700.withOpacity(0.6)
                     : Colors.red.shade700.withOpacity(0.6),
+                emoji: '📈',
               ),
             ],
           ),
@@ -785,16 +788,29 @@ class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
 // functions use karte hain, taaki look-and-feel same rahe.
 // ═══════════════════════════════════════════════════════════════════════════
 
-Widget kpiChip(String label, String value, Color bg) {
+Widget kpiChip(String label, String value, Color bg, {String? emoji}) {
   return Expanded(
     child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         children: [
+          if (emoji != null) ...[
+            Container(
+              width: 28,
+              height: 28,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(emoji, style: const TextStyle(fontSize: 15)),
+            ),
+            const SizedBox(height: 6),
+          ],
           Text(
             value,
             style: const TextStyle(
@@ -829,9 +845,6 @@ Widget buildLotCard(_LotEarning e) {
   final Color iconBg = isCompleted
       ? Colors.green.shade100
       : Colors.orange.shade100;
-  final Color iconColor = isCompleted
-      ? Colors.green.shade700
-      : Colors.orange.shade700;
 
   return Container(
     margin: const EdgeInsets.only(bottom: 20),
@@ -866,15 +879,16 @@ Widget buildLotCard(_LotEarning e) {
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: iconBg,
-                  borderRadius: BorderRadius.circular(10),
+                  shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  isCompleted ? Icons.lock_rounded : Icons.egg_alt_rounded,
-                  color: iconColor,
-                  size: 18,
+                alignment: Alignment.center,
+                child: Text(
+                  isCompleted ? '🔒' : '🐣',
+                  style: const TextStyle(fontSize: 18),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1086,7 +1100,7 @@ Widget buildBreakdownTable(_LotEarning e) {
   return Column(
     children: [
       breakRow(
-        Icons.egg_alt_rounded,
+        '🐥',
         Colors.orange.shade600,
         'Chicks Se Company Income',
         e.chicksIncome,
@@ -1095,7 +1109,7 @@ Widget buildBreakdownTable(_LotEarning e) {
       ),
       const SizedBox(height: 8),
       breakRow(
-        Icons.grass_rounded,
+        '🌾',
         Colors.blue.shade600,
         'Feed Se Company Income',
         e.feedIncome,
@@ -1104,7 +1118,7 @@ Widget buildBreakdownTable(_LotEarning e) {
       ),
       const SizedBox(height: 8),
       breakRow(
-        Icons.medication_rounded,
+        '💊',
         Colors.purple.shade600,
         'Medicine Se Company Income',
         e.medicineIncome,
@@ -1113,7 +1127,7 @@ Widget buildBreakdownTable(_LotEarning e) {
       ),
       const SizedBox(height: 8),
       breakRow(
-        Icons.admin_panel_settings_rounded,
+        '🛡️',
         Colors.teal.shade600,
         'Admin Income',
         e.adminIncome,
@@ -1210,7 +1224,7 @@ Widget buildBreakdownTable(_LotEarning e) {
 }
 
 Widget breakRow(
-  IconData icon,
+  String emoji,
   Color color,
   String label,
   double value, {
@@ -1220,14 +1234,16 @@ Widget breakRow(
   return Row(
     children: [
       Container(
-        padding: const EdgeInsets.all(6),
+        width: 38,
+        height: 38,
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
+          color: color.withOpacity(0.15),
+          shape: BoxShape.circle,
         ),
-        child: Icon(icon, size: 14, color: color),
+        alignment: Alignment.center,
+        child: Text(emoji, style: const TextStyle(fontSize: 17)),
       ),
-      const SizedBox(width: 10),
+      const SizedBox(width: 12),
       Expanded(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1302,18 +1318,14 @@ Widget buildTotalSummaryCard({
     margin: const EdgeInsets.only(top: 4, bottom: 8),
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF0F3D12), Color(0xFF1B5E20), Color(0xFF2E7D32)],
-        stops: [0.0, 0.5, 1.0],
-      ),
+      color: Colors.white,
       borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: Colors.green.shade200, width: 1.2),
       boxShadow: [
         BoxShadow(
-          color: primaryGreen.withOpacity(0.35),
-          blurRadius: 14,
-          offset: const Offset(0, 5),
+          color: Colors.black.withOpacity(0.05),
+          blurRadius: 8,
+          offset: const Offset(0, 3),
         ),
       ],
     ),
@@ -1323,24 +1335,24 @@ Widget buildTotalSummaryCard({
         Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(10),
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                color: primaryGreen,
+                shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.assessment_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
+              alignment: Alignment.center,
+              child: const Text('📊', style: TextStyle(fontSize: 18)),
             ),
             const SizedBox(width: 12),
-            Text(
-              'Total Income — $nLabel Lots',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
+            Expanded(
+              child: Text(
+                'Income Summary — $nLabel Lots',
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
             ),
           ],
@@ -1352,28 +1364,39 @@ Widget buildTotalSummaryCard({
         totalRow('Medicine Se Income', totalMedIncome, isGood: true),
         totalRow('Admin Income', totalAdmin, isGood: true),
 
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
-          child: Divider(color: Colors.white24, height: 1),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Divider(color: Colors.grey.shade200, height: 1),
         ),
         totalRow(
           'Batch Ke Dauraan Total Income',
           totalBatchIncome,
           isGood: true,
+          isBold: true,
         ),
 
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 10),
-          child: Divider(color: Colors.white24, height: 1),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Divider(color: Colors.grey.shade200, height: 1),
+        ),
+
+        const Text(
+          'BATCH-WISE INCOME SHARE',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: Colors.black45,
+            letterSpacing: 0.5,
+          ),
         ),
 
         // ✅ NEW: Batch-wise pie chart — kis batch se kitna income aaya,
         // tap karke dekho
         _BatchIncomePieChart(earnings: earnings),
 
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 10),
-          child: Divider(color: Colors.white24, height: 1),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Divider(color: Colors.grey.shade200, height: 1),
         ),
 
         totalRow('Total Sale Proceeds', totalSale),
@@ -1382,70 +1405,85 @@ Widget buildTotalSummaryCard({
           totalFarmerPayout,
           isNegative: true,
         ),
+        const SizedBox(height: 12),
 
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 10),
-          child: Divider(color: Colors.white38, height: 1),
-        ),
-
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // ✅ FIX: Label ab Expanded ke andar hai — pehle Column apni
-            // poori intrinsic width lene ki koshish karta tha jo amount
-            // wale Text ke saath milkar Row se bahar (right-overflow) chala
-            // jaata tha. Ab label available space mein hi wrap hoga.
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    totalCompanyEarning >= 0
-                        ? '📈 Batch End — Company Ka Total Bacha'
-                        : '📉 Batch End — Company Ka Total Nuksaan',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
+        // Hero box — halka green-tinted box, per-lot card jaisa hi look
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: totalCompanyEarning >= 0
+                ? primaryGreen.withOpacity(0.07)
+                : Colors.red.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: totalCompanyEarning >= 0
+                  ? primaryGreen.withOpacity(0.3)
+                  : Colors.red.shade200,
+              width: 1.2,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      totalCompanyEarning >= 0
+                          ? '📈 Batch End — Company Ka Total Bacha'
+                          : '📉 Batch End — Company Ka Total Nuksaan',
+                      style: TextStyle(
+                        color: totalCompanyEarning >= 0
+                            ? primaryGreen
+                            : Colors.red.shade700,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '$nLabel lots ka combined result (Sale − Payout)',
-                    style: const TextStyle(color: Colors.white60, fontSize: 10),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      '$nLabel lots ka combined result (Sale − Payout)',
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              '${totalCompanyEarning >= 0 ? "+" : ""}₹${fmt(totalCompanyEarning)}',
-              style: TextStyle(
-                color: totalCompanyEarning >= 0
-                    ? Colors.greenAccent.shade200
-                    : Colors.red.shade300,
-                fontWeight: FontWeight.bold,
-                fontSize: 22,
+              const SizedBox(width: 10),
+              Text(
+                '${totalCompanyEarning >= 0 ? "+" : ""}₹${fmt(totalCompanyEarning)}',
+                style: TextStyle(
+                  color: totalCompanyEarning >= 0
+                      ? primaryGreen
+                      : Colors.red.shade700,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
 
         if (n > 0) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade200),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 miniStat('Per Lot Avg', '₹${fmt(totalCompanyEarning / n)}'),
-                Container(width: 1, height: 28, color: Colors.white24),
+                Container(width: 1, height: 28, color: Colors.grey.shade300),
                 miniStat('Total Lots', '$n lots'),
-                Container(width: 1, height: 28, color: Colors.white24),
+                Container(width: 1, height: 28, color: Colors.grey.shade300),
                 miniStat('Total Sale', '₹${fmt(totalSale)}'),
               ],
             ),
@@ -1461,30 +1499,35 @@ Widget totalRow(
   double value, {
   bool isGood = false,
   bool isNegative = false,
+  bool isBold = false,
 }) {
-  Color valColor = Colors.white70;
+  Color valColor = Colors.black87;
   String prefix = '';
   if (isGood) {
-    valColor = Colors.greenAccent.shade200;
+    valColor = Colors.teal.shade700;
     prefix = '+';
   } else if (isNegative) {
-    valColor = Colors.red.shade300;
+    valColor = Colors.red.shade600;
     prefix = '- ';
   }
   return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
+    padding: const EdgeInsets.symmetric(vertical: 4),
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           label,
-          style: const TextStyle(color: Colors.white60, fontSize: 12),
+          style: TextStyle(
+            color: isBold ? Colors.black87 : Colors.black54,
+            fontSize: 12,
+            fontWeight: isBold ? FontWeight.w600 : FontWeight.normal,
+          ),
         ),
         Text(
           '$prefix₹${fmt(value)}',
           style: TextStyle(
             color: valColor,
-            fontSize: 12,
+            fontSize: isBold ? 13 : 12,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -1499,13 +1542,13 @@ Widget miniStat(String label, String value) {
       Text(
         value,
         style: const TextStyle(
-          color: Colors.white,
+          color: Colors.black87,
           fontWeight: FontWeight.bold,
           fontSize: 12,
         ),
       ),
       const SizedBox(height: 2),
-      Text(label, style: const TextStyle(color: Colors.white54, fontSize: 9)),
+      Text(label, style: const TextStyle(color: Colors.black45, fontSize: 9)),
     ],
   );
 }
@@ -1595,15 +1638,6 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'BATCH-WISE INCOME SHARE',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            color: Colors.white60,
-            letterSpacing: 0.5,
-          ),
-        ),
         const SizedBox(height: 14),
         Center(
           child: GestureDetector(
@@ -1636,7 +1670,7 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: Colors.black87,
                               fontWeight: FontWeight.bold,
                               fontSize: 10,
                             ),
@@ -1647,8 +1681,8 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: valid[_selectedIndex!].companyEarning >= 0
-                                  ? Colors.greenAccent.shade200
-                                  : Colors.red.shade300,
+                                  ? primaryGreen
+                                  : Colors.red.shade600,
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
                             ),
@@ -1677,10 +1711,12 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? Colors.white.withOpacity(0.18)
-                      : Colors.white.withOpacity(0.06),
+                      ? Colors.green.shade50
+                      : Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(8),
-                  border: isSelected ? Border.all(color: Colors.white54) : null,
+                  border: isSelected
+                      ? Border.all(color: Colors.green.shade300)
+                      : Border.all(color: Colors.grey.shade200),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1697,7 +1733,7 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
                     Text(
                       valid[i].batchId,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: Colors.black87,
                         fontSize: 10.5,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1753,7 +1789,7 @@ class _PieChartPainter extends CustomPainter {
       canvas.drawArc(rect, startAngle, sweep, true, fillPaint);
 
       final Paint borderPaint = Paint()
-        ..color = const Color(0xFF1B5E20)
+        ..color = Colors.white
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.5;
       canvas.drawArc(rect, startAngle, sweep, true, borderPaint);
@@ -1761,8 +1797,8 @@ class _PieChartPainter extends CustomPainter {
       startAngle += sweep;
     }
 
-    // Donut hole — card ke background jaisa
-    final Paint holePaint = Paint()..color = const Color(0xFF1B5E20);
+    // Donut hole — white card ke background jaisa
+    final Paint holePaint = Paint()..color = Colors.white;
     canvas.drawCircle(center, baseRadius * 0.5, holePaint);
   }
 
