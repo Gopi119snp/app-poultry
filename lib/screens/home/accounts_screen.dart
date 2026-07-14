@@ -101,9 +101,54 @@ class _AccountsScreenState extends State<AccountsScreen>
   List<_LedgerItem> _expenses = [];
   List<_LedgerItem> _purchases = [];
 
-  double get _totalDue => _dues.fold(0.0, (s, d) => s + d.due);
-  double get _totalExpense => _expenses.fold(0.0, (s, e) => s + e.amount);
-  double get _totalPurchase => _purchases.fold(0.0, (s, p) => s + p.amount);
+  // =============================================================================
+  // 🗓️ 24-MONTH LIMIT & MULTI-MONTH FILTER LOGIC
+  // =============================================================================
+
+  final List<String> _dateFilters = [
+    'Current Month',
+    'Last 3 Months',
+    'Last 6 Months',
+    'Max Data (24 Months)',
+  ];
+  String _selectedFilter = 'Current Month';
+
+  bool _isDataValid(String? dateStr) {
+    if (dateStr == null) return false;
+    DateTime date = DateTime.tryParse(dateStr) ?? DateTime.now();
+    DateTime now = DateTime.now();
+
+    // 🔴 HARD LIMIT: 24 mahine se purana data read nahi hoga
+    DateTime maxLimit = now.subtract(const Duration(days: 730));
+    if (date.isBefore(maxLimit)) return false;
+
+    // 🟢 USER RANGE FILTER
+    if (_selectedFilter == 'Current Month') {
+      return date.year == now.year && date.month == now.month;
+    } else if (_selectedFilter == 'Last 3 Months') {
+      return date.isAfter(now.subtract(const Duration(days: 90)));
+    } else if (_selectedFilter == 'Last 6 Months') {
+      return date.isAfter(now.subtract(const Duration(days: 180)));
+    }
+    // 'Max Data (24 Months)' — bas hard limit hi kaafi hai
+    return true;
+  }
+
+  // Filtered getters – used throughout the UI
+  List<_DueItem> get _filteredDues =>
+      _dues.where((d) => _isDataValid(d.date?.toIso8601String())).toList();
+
+  List<_LedgerItem> get _filteredExpenses =>
+      _expenses.where((e) => _isDataValid(e.date?.toIso8601String())).toList();
+
+  List<_LedgerItem> get _filteredPurchases =>
+      _purchases.where((p) => _isDataValid(p.date?.toIso8601String())).toList();
+
+  double get _totalDue => _filteredDues.fold(0.0, (s, d) => s + d.due);
+  double get _totalExpense =>
+      _filteredExpenses.fold(0.0, (s, e) => s + e.amount);
+  double get _totalPurchase =>
+      _filteredPurchases.fold(0.0, (s, p) => s + p.amount);
 
   @override
   void initState() {
@@ -439,6 +484,31 @@ class _AccountsScreenState extends State<AccountsScreen>
             ),
           ],
         ),
+        actions: [
+          DropdownButton<String>(
+            value: _selectedFilter,
+            dropdownColor: Colors.white,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+            underline: const SizedBox(),
+            icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+            items: _dateFilters.map((String val) {
+              return DropdownMenuItem<String>(
+                value: val,
+                child: Text(val, style: const TextStyle(color: Colors.black87)),
+              );
+            }).toList(),
+            onChanged: (newValue) {
+              setState(() {
+                _selectedFilter = newValue!;
+              });
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
@@ -464,7 +534,7 @@ class _AccountsScreenState extends State<AccountsScreen>
               children: [
                 _buildOverviewTab(),
                 _buildDuesTab(),
-                _buildLedgerTab(_expenses, 'Koi expense record nahi.'),
+                _buildLedgerTab(_filteredExpenses, 'Koi expense record nahi.'),
                 const _KharidaTabView(),
               ],
             ),
@@ -485,11 +555,11 @@ class _AccountsScreenState extends State<AccountsScreen>
       return map;
     }
 
-    final expByCat = byCategory(_expenses);
-    final purByCat = byCategory(_purchases);
+    final expByCat = byCategory(_filteredExpenses);
+    final purByCat = byCategory(_filteredPurchases);
 
     Map<String, double> dueByCat = {};
-    for (final d in _dues) {
+    for (final d in _filteredDues) {
       dueByCat[d.category] = (dueByCat[d.category] ?? 0.0) + d.due;
     }
 
@@ -732,7 +802,8 @@ class _AccountsScreenState extends State<AccountsScreen>
   // ⏳ UDHAAR (DUES) TAB
   // ═══════════════════════════════════════════════════════════════════════
   Widget _buildDuesTab() {
-    if (_dues.isEmpty) {
+    final filteredDues = _filteredDues;
+    if (filteredDues.isEmpty) {
       return RefreshIndicator(
         onRefresh: _loadAll,
         color: _accGreen,
@@ -768,7 +839,7 @@ class _AccountsScreenState extends State<AccountsScreen>
       color: _accGreen,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: _dues.length + 1,
+        itemCount: filteredDues.length + 1,
         itemBuilder: (context, index) {
           if (index == 0) {
             return Container(
@@ -783,7 +854,7 @@ class _AccountsScreenState extends State<AccountsScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Total Udhaar (${_dues.length} buyers)',
+                    'Total Udhaar (${filteredDues.length} buyers)',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
@@ -802,7 +873,7 @@ class _AccountsScreenState extends State<AccountsScreen>
               ),
             );
           }
-          final d = _dues[index - 1];
+          final d = filteredDues[index - 1];
           return _dueCard(d);
         },
       ),
@@ -2834,7 +2905,7 @@ class _MedicineMonthlyDetailScreenState
   /// ✅ FIX: Farmer allocation ka amount nikalne ke liye 'ratePerBase' field
   /// primary hai (AllocateMedicineToFarmerScreen isi field ke saath save
   /// karta hai), lekin agar kisi aur jagah/purane data se sirf 'rate' field
-  /// save hui ho, to us par bhi fallback karo — taaki amount kabhi galti
+  /// save hui hai, to us par bhi fallback karo — taaki amount kabhi galti
   /// se ₹0 na dikhe.
   double _allocRatePerBase(Map<String, dynamic> alloc) {
     final double? ratePerBase = (alloc['ratePerBase'] as num?)?.toDouble();
