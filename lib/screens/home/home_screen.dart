@@ -1796,7 +1796,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 String extractedText = recognizedText.text.toUpperCase().trim();
                 await textRecognizer.close();
 
-                if (docType == 'Aadhaar') {
+                // Accept both 'Aadhaar' and 'AadhaarFront' for front-side validation
+                if (docType == 'Aadhaar' || docType == 'AadhaarFront') {
                   bool hasName =
                       extractedText.contains("NAME") ||
                       extractedText.contains("\u0928\u093e\u092e");
@@ -1817,7 +1818,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   int kw = (hasName ? 1 : 0) + (hasDob ? 1 : 0);
                   if (kw >= 1 || hasGovt) {
                     validationPassed = true;
-                    aadhaarPath = filePath;
+                    // Don't override aadhaarPath here; we'll set it after both scans
                     if (num.isNotEmpty) {
                       aadhaarCtrl.text = num.replaceAll(" ", "");
                     }
@@ -1871,33 +1872,76 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               }
             }
 
+            // ── DUAL SCANNING LOGIC (UPDATED) ──
             Future<void> pickDocument(String docType) async {
               try {
-                if (docType == 'Aadhaar' || docType == 'PAN') {
-                  // Naya Smart Live Scanner khulega
-                  final capturedPath = await Navigator.push(
+                if (docType == 'Aadhaar') {
+                  // 1. Front Side Capture
+                  Get.snackbar(
+                    'Aadhaar Scan',
+                    'Pehle Front Side scan karein',
+                    backgroundColor: Colors.blue,
+                  );
+                  final frontPath = await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => SmartScannerScreen(docType: docType),
+                      builder: (_) =>
+                          const SmartScannerScreen(docType: 'Aadhaar'),
                     ),
                   );
 
+                  if (frontPath != null) {
+                    await processOcrValidation('AadhaarFront', frontPath);
+
+                    // 2. Back Side Capture
+                    await Future.delayed(const Duration(seconds: 1));
+                    Get.snackbar(
+                      'Aadhaar Scan',
+                      'Ab Back Side scan karein',
+                      backgroundColor: Colors.blue,
+                    );
+                    final backPath = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const SmartScannerScreen(docType: 'AadhaarBack'),
+                      ),
+                    );
+
+                    if (backPath != null) {
+                      setModalState(() {
+                        aadhaarPath =
+                            "$frontPath|$backPath"; // Dono path ek saath store kar rahe hain
+                      });
+                      Get.snackbar(
+                        'Success',
+                        'Dono sides scan ho gayi!',
+                        backgroundColor: Colors.green,
+                      );
+                    }
+                  }
+                } else if (docType == 'PAN') {
+                  // PAN ke liye normal flow
+                  final capturedPath = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SmartScannerScreen(docType: 'PAN'),
+                    ),
+                  );
                   if (capturedPath != null) {
-                    // Photo capture ho gayi, ab us path se OCR validaton chalao
-                    await processOcrValidation(docType, capturedPath);
+                    await processOcrValidation('PAN', capturedPath);
+                    setModalState(() => panPath = capturedPath);
                   }
                 } else {
-                  // Photo aur Signature ke liye purana normal camera use hoga
+                  // Normal photo/sign
                   final XFile? f = await ImagePicker().pickImage(
                     source: ImageSource.camera,
-                    imageQuality: 70,
                   );
                   if (f != null) {
-                    if (docType == 'Photo') {
-                      setModalState(() => photoPath = f.path);
-                    } else if (docType == 'Signature') {
-                      setModalState(() => signaturePath = f.path);
-                    }
+                    setModalState(() {
+                      if (docType == 'Photo') photoPath = f.path;
+                      if (docType == 'Signature') signaturePath = f.path;
+                    });
                   }
                 }
               } catch (e) {
@@ -6877,10 +6921,18 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
       bool found = false;
 
       // ── LOGIC FOR AADHAAR / PAN DETECTION ──
+      // Front side Aadhaar (contains GOVT OF INDIA) or back side (ADDRESS / PO:)
       if (widget.docType == 'Aadhaar') {
         if (extractedText.contains("GOVERNMENT OF INDIA") ||
             extractedText.contains("GOVT OF INDIA") ||
             RegExp(r'\d{4}\s?\d{4}\s?\d{4}').hasMatch(extractedText)) {
+          found = true;
+        }
+      } else if (widget.docType == 'AadhaarBack') {
+        // Back side ke liye keywords
+        if (extractedText.contains("ADDRESS") ||
+            extractedText.contains("PO:") ||
+            extractedText.contains("P.O.")) {
           found = true;
         }
       } else if (widget.docType == 'PAN') {
