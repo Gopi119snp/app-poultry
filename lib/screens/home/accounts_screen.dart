@@ -16,19 +16,11 @@ import 'sales_screen.dart'
         MedicineSaleDetailScreen;
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 💼 ACCOUNTS SCREEN — Company ka poora paisa hisaab ek jagah:
-// 1. Overview     — sab kuch ek nazar mein
-// 2. Udhaar       — private buyers (Chicks/Feed/Medicine) jinka payment baki
-// 3. Kharcha      — Labour + Other expense
-// 4. Kharida      — Chicks + Feed + Medicine purchase cost (month-wise)
+// 💼 ACCOUNTS SCREEN
 // ═══════════════════════════════════════════════════════════════════════════
 
 const Color _accGreen = Color(0xFF1B5E20);
 
-/// Farmer dropdown se select karte waqt "Naam - Mobile - Jagah" jaisa poora
-/// string kabhi kabhi farmerName field mein save ho jaata hai (galti se).
-/// Display ke liye sirf naam nikaal lo — purane aur naye dono data ke liye
-/// safe hai.
 String _cleanFarmerLabel(String raw) {
   if (raw.contains(' - ')) {
     return raw.split(' - ').first.trim();
@@ -36,9 +28,39 @@ String _cleanFarmerLabel(String raw) {
   return raw;
 }
 
+// ── Dynamic Date Filter Data Model ──────────────────────────────────────────
+class AppDateFilter {
+  final String label;
+  final DateTime? start;
+  final DateTime? end;
+  final bool isAllTime;
+
+  AppDateFilter({
+    required this.label,
+    this.start,
+    this.end,
+    this.isAllTime = false,
+  });
+}
+
+// Global Filter Helper function
+bool isDateInFilter(String? dateStr, AppDateFilter filter) {
+  if (filter.isAllTime) return true;
+
+  DateTime d = (dateStr != null && dateStr.isNotEmpty)
+      ? (DateTime.tryParse(dateStr) ?? DateTime(2000))
+      : DateTime(2000);
+
+  if (filter.start != null && filter.end != null) {
+    return d.isAfter(filter.start!.subtract(const Duration(seconds: 1))) &&
+        d.isBefore(filter.end!.add(const Duration(days: 1)));
+  }
+  return false;
+}
+
 // ── Data models (internal use) ──────────────────────────────────────────────
 class _DueItem {
-  final String category; // Chicks / Feed / Medicine
+  final String category;
   final String buyerName;
   final String mobile;
   final double totalAmount;
@@ -101,59 +123,25 @@ class _AccountsScreenState extends State<AccountsScreen>
   List<_LedgerItem> _expenses = [];
   List<_LedgerItem> _purchases = [];
 
-  // =============================================================================
-  // 🗓️ 24-MONTH LIMIT & MULTI-MONTH FILTER LOGIC
-  // =============================================================================
+  List<Map<String, dynamic>> _rawChicksPurchases = [];
+  List<Map<String, dynamic>> _rawFeedStock = [];
+  List<Map<String, dynamic>> _rawMedicineStock = [];
 
-  final List<String> _dateFilters = [
-    'Current Month',
-    'Last 3 Months',
-    'Last 6 Months',
-    'Max Data (24 Months)',
-  ];
-  String _selectedFilter = 'Current Month';
-
-  bool _isDataValid(String? dateStr) {
-    if (dateStr == null) return false;
-    DateTime date = DateTime.tryParse(dateStr) ?? DateTime.now();
-    DateTime now = DateTime.now();
-
-    // 🔴 HARD LIMIT: 24 mahine se purana data read nahi hoga
-    DateTime maxLimit = now.subtract(const Duration(days: 730));
-    if (date.isBefore(maxLimit)) return false;
-
-    // 🟢 USER RANGE FILTER
-    if (_selectedFilter == 'Current Month') {
-      return date.year == now.year && date.month == now.month;
-    } else if (_selectedFilter == 'Last 3 Months') {
-      return date.isAfter(now.subtract(const Duration(days: 90)));
-    } else if (_selectedFilter == 'Last 6 Months') {
-      return date.isAfter(now.subtract(const Duration(days: 180)));
-    }
-    // 'Max Data (24 Months)' — bas hard limit hi kaafi hai
-    return true;
-  }
-
-  // Filtered getters – used throughout the UI
-  List<_DueItem> get _filteredDues =>
-      _dues.where((d) => _isDataValid(d.date?.toIso8601String())).toList();
-
-  List<_LedgerItem> get _filteredExpenses =>
-      _expenses.where((e) => _isDataValid(e.date?.toIso8601String())).toList();
-
-  List<_LedgerItem> get _filteredPurchases =>
-      _purchases.where((p) => _isDataValid(p.date?.toIso8601String())).toList();
-
-  double get _totalDue => _filteredDues.fold(0.0, (s, d) => s + d.due);
-  double get _totalExpense =>
-      _filteredExpenses.fold(0.0, (s, e) => s + e.amount);
-  double get _totalPurchase =>
-      _filteredPurchases.fold(0.0, (s, p) => s + p.amount);
+  // ── FILTER STATE ──
+  late AppDateFilter _selectedFilter;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+
+    final now = DateTime.now();
+    _selectedFilter = AppDateFilter(
+      label: 'Current Month',
+      start: DateTime(now.year, now.month, 1),
+      end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
+    );
+
     _loadAll();
   }
 
@@ -162,6 +150,25 @@ class _AccountsScreenState extends State<AccountsScreen>
     _tabController.dispose();
     super.dispose();
   }
+
+  // Filtered getters
+  List<_DueItem> get _filteredDues => _dues
+      .where((d) => isDateInFilter(d.date?.toIso8601String(), _selectedFilter))
+      .toList();
+
+  List<_LedgerItem> get _filteredExpenses => _expenses
+      .where((e) => isDateInFilter(e.date?.toIso8601String(), _selectedFilter))
+      .toList();
+
+  List<_LedgerItem> get _filteredPurchases => _purchases
+      .where((p) => isDateInFilter(p.date?.toIso8601String(), _selectedFilter))
+      .toList();
+
+  double get _totalDue => _filteredDues.fold(0.0, (s, d) => s + d.due);
+  double get _totalExpense =>
+      _filteredExpenses.fold(0.0, (s, e) => s + e.amount);
+  double get _totalPurchase =>
+      _filteredPurchases.fold(0.0, (s, p) => s + p.amount);
 
   DateTime? _parseDate(String? raw) {
     if (raw == null || raw.isEmpty) return null;
@@ -175,17 +182,18 @@ class _AccountsScreenState extends State<AccountsScreen>
     final List<_LedgerItem> expenses = [];
     final List<_LedgerItem> purchases = [];
 
-    // ═══════════════════════════════════════════════════════════════════
-    // 🐣 CHICKS — Private allocations ka due + Purchase cost
-    // ═══════════════════════════════════════════════════════════════════
+    // 🐣 CHICKS
     final String? chicksJson = await CompanyStore.instance.getString(
       'chicksPurchaseHistory',
     );
     if (chicksJson != null) {
       try {
         final List<dynamic> rawChicks = json.decode(chicksJson);
-        for (final raw in rawChicks) {
-          final Map<String, dynamic> purchase = Map<String, dynamic>.from(raw);
+        _rawChicksPurchases = rawChicks
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+
+        for (final purchase in _rawChicksPurchases) {
           final String lotName = purchase['company']?.toString() ?? 'Lot';
           final double effRate =
               (purchase['effectiveRate'] as num?)?.toDouble() ??
@@ -250,10 +258,7 @@ class _AccountsScreenState extends State<AccountsScreen>
       } catch (_) {}
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // 🌾 FEED — Private sales ka due (feedSalesHistory) + Purchase cost
-    // (per-type feedStockList se, taaki Purchase History jaisa hi total ho)
-    // ═══════════════════════════════════════════════════════════════════
+    // 🌾 FEED
     final String? feedSalesJson = await CompanyStore.instance.getString(
       'feedSalesHistory',
     );
@@ -286,9 +291,8 @@ class _AccountsScreenState extends State<AccountsScreen>
     }
 
     try {
-      final List<Map<String, dynamic>> feedStock =
-          await ensureFeedStockMigrated();
-      for (final feedType in feedStock) {
+      _rawFeedStock = await ensureFeedStockMigrated();
+      for (final feedType in _rawFeedStock) {
         final String id = feedType['id']?.toString() ?? '';
         final String name =
             feedType['name']?.toString() ?? kFeedTypeNames[id] ?? id;
@@ -316,9 +320,7 @@ class _AccountsScreenState extends State<AccountsScreen>
       }
     } catch (_) {}
 
-    // ═══════════════════════════════════════════════════════════════════
-    // 💊 MEDICINE — Private sales ka due (medicineSalesHistory) + Purchase
-    // ═══════════════════════════════════════════════════════════════════
+    // 💊 MEDICINE
     final String? medSalesJson = await CompanyStore.instance.getString(
       'medicineSalesHistory',
     );
@@ -356,8 +358,10 @@ class _AccountsScreenState extends State<AccountsScreen>
     if (medStockJson != null) {
       try {
         final List<dynamic> rawMeds = json.decode(medStockJson);
-        for (final rawMed in rawMeds) {
-          final Map<String, dynamic> med = Map<String, dynamic>.from(rawMed);
+        _rawMedicineStock = rawMeds
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+        for (final med in _rawMedicineStock) {
           final String name = med['name']?.toString() ?? '-';
           final String unit = med['unit']?.toString() ?? '';
           final List<dynamic> hist =
@@ -384,9 +388,7 @@ class _AccountsScreenState extends State<AccountsScreen>
       } catch (_) {}
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // 👷 LABOUR + 📋 OTHER — Company expenses
-    // ═══════════════════════════════════════════════════════════════════
+    // 👷 LABOUR + 📋 OTHER
     final String? labourJson = await CompanyStore.instance.getString(
       'labourExpenseHistory',
     );
@@ -437,7 +439,7 @@ class _AccountsScreenState extends State<AccountsScreen>
       } catch (_) {}
     }
 
-    // ── Sort ──
+    // Sort
     dues.sort((a, b) => b.due.compareTo(a.due));
     expenses.sort(
       (a, b) => (b.date ?? DateTime(2000)).compareTo(a.date ?? DateTime(2000)),
@@ -452,6 +454,294 @@ class _AccountsScreenState extends State<AccountsScreen>
         _expenses = expenses;
         _purchases = purchases;
         _isLoading = false;
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🌟 NEW DYNAMIC FILTER SYSTEM: Sirf wahi dikhega jiska data exist karta hai
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Ye function app ka poora data scan karke sirf un mahino ki list nikalta
+  /// hai jinka record tumne app me add kiya hai.
+  List<DateTime> _getAvailableMonthsWithData() {
+    Set<String> uniqueMonths = {};
+    List<DateTime> result = [];
+
+    void addDate(DateTime? d) {
+      if (d != null) {
+        // Year-Month ke format me unique key banate hain taaki ek mahina do baar na aaye
+        String key = '${d.year}-${d.month.toString().padLeft(2, '0')}';
+        if (!uniqueMonths.contains(key)) {
+          uniqueMonths.add(key);
+          result.add(DateTime(d.year, d.month, 1));
+        }
+      }
+    }
+
+    // Saare data se dates nikalna
+    for (final d in _dues) addDate(d.date);
+    for (final e in _expenses) addDate(e.date);
+    for (final p in _purchases) addDate(p.date);
+
+    // ✅ Current Month HAMESHA list me rahega (chahe entry zero hi kyun na ho)
+    addDate(DateTime.now());
+
+    // Naye mahine sabse upar dikhane ke liye sort (Descending)
+    result.sort((a, b) => b.compareTo(a));
+    return result;
+  }
+
+  void _showFilterBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Data Kab Ka Dekhna Hai?',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(
+                  Icons.all_inclusive_rounded,
+                  color: _accGreen,
+                ),
+                title: const Text(
+                  'Pura Data (All Time)',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text(
+                  'Shuru se ab tak ka sab kuch',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                onTap: () {
+                  setState(
+                    () => _selectedFilter = AppDateFilter(
+                      label: 'All Time',
+                      isAllTime: true,
+                    ),
+                  );
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.calendar_today_rounded,
+                  color: _accGreen,
+                ),
+                title: const Text(
+                  'Current Month',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                onTap: () {
+                  final now = DateTime.now();
+                  setState(
+                    () => _selectedFilter = AppDateFilter(
+                      label: 'Current Month',
+                      start: DateTime(now.year, now.month, 1),
+                      end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
+                    ),
+                  );
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.calendar_month_rounded,
+                  color: _accGreen,
+                ),
+                title: const Text(
+                  'Koi Ek Mahina Chune',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showSingleMonthPicker();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.date_range_rounded, color: _accGreen),
+                title: const Text(
+                  'Custom Range',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text(
+                  'Kisi bhi do dates ke beech ka',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickCustomDateRange();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSingleMonthPicker() {
+    // 🛠️ Yahan ab Hardcoded "24 Months" ki jagah hamara Naya Dynamic List aayega
+    final List<DateTime> months = _getAvailableMonthsWithData();
+    final List<String> monthNames = [
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.65,
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            Container(
+              width: 44,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Text(
+                'Mahina Chuniye',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: months.length,
+                itemBuilder: (c, i) {
+                  final m = months[i];
+                  final label = '${monthNames[m.month]} ${m.year}';
+                  return ListTile(
+                    title: Text(label, style: const TextStyle(fontSize: 14)),
+                    trailing: const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: Colors.grey,
+                    ),
+                    onTap: () {
+                      setState(() {
+                        _selectedFilter = AppDateFilter(
+                          label: label,
+                          start: m,
+                          end: DateTime(m.year, m.month + 1, 0, 23, 59, 59),
+                        );
+                      });
+                      Navigator.pop(ctx);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickCustomDateRange() async {
+    DateTime? minDate;
+
+    void checkMin(DateTime? d) {
+      if (d != null) {
+        if (minDate == null || d.isBefore(minDate!)) {
+          minDate = d;
+        }
+      }
+    }
+
+    // Check oldest date in all records
+    for (final d in _dues) checkMin(d.date);
+    for (final e in _expenses) checkMin(e.date);
+    for (final p in _purchases) checkMin(p.date);
+
+    // Agar app me bilkul data hi nahi hai, to default is mahine se shuru karo
+    DateTime firstAllowedDate =
+        minDate ?? DateTime(DateTime.now().year, DateTime.now().month, 1);
+
+    // UI clean dikhane ke liye oldest record wale mahine ki 1 tareekh par lock kar do
+    firstAllowedDate = DateTime(
+      firstAllowedDate.year,
+      firstAllowedDate.month,
+      1,
+    );
+
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate:
+          firstAllowedDate, // ✅ FIX: Ab calendar galti se bhi isse pichhe nahi jayega
+      lastDate: DateTime.now(), // Aaj tak ki date allow karo
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: _accGreen,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        String startStr =
+            '${picked.start.day}/${picked.start.month}/${picked.start.year}';
+        String endStr =
+            '${picked.end.day}/${picked.end.month}/${picked.end.year}';
+        _selectedFilter = AppDateFilter(
+          label: '$startStr - $endStr',
+          start: picked.start,
+          end: DateTime(
+            picked.end.year,
+            picked.end.month,
+            picked.end.day,
+            23,
+            59,
+            59,
+          ),
+        );
       });
     }
   }
@@ -485,29 +775,40 @@ class _AccountsScreenState extends State<AccountsScreen>
           ],
         ),
         actions: [
-          DropdownButton<String>(
-            value: _selectedFilter,
-            dropdownColor: Colors.white,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
+          // Filter Button in AppBar
+          InkWell(
+            onTap: _showFilterBottomSheet,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.filter_alt_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 100),
+                    child: Text(
+                      _selectedFilter.label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Icon(Icons.arrow_drop_down, color: Colors.white),
+                ],
+              ),
             ),
-            underline: const SizedBox(),
-            icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-            items: _dateFilters.map((String val) {
-              return DropdownMenuItem<String>(
-                value: val,
-                child: Text(val, style: const TextStyle(color: Colors.black87)),
-              );
-            }).toList(),
-            onChanged: (newValue) {
-              setState(() {
-                _selectedFilter = newValue!;
-              });
-            },
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -535,7 +836,13 @@ class _AccountsScreenState extends State<AccountsScreen>
                 _buildOverviewTab(),
                 _buildDuesTab(),
                 _buildLedgerTab(_filteredExpenses, 'Koi expense record nahi.'),
-                const _KharidaTabView(),
+                _KharidaTabView(
+                  selectedFilter: _selectedFilter,
+                  chicksPurchases: _rawChicksPurchases,
+                  feedStock: _rawFeedStock,
+                  medicineStock: _rawMedicineStock,
+                  onRefresh: _loadAll,
+                ),
               ],
             ),
     );
@@ -990,7 +1297,7 @@ class _AccountsScreenState extends State<AccountsScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 💸 GENERIC LEDGER TAB (Kharcha use karta hai)
+  // 💸 GENERIC LEDGER TAB
   // ═══════════════════════════════════════════════════════════════════════
   Widget _buildLedgerTab(List<_LedgerItem> items, String emptyMsg) {
     final double total = items.fold(0.0, (s, i) => s + i.amount);
@@ -1144,156 +1451,38 @@ class _AccountsScreenState extends State<AccountsScreen>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🛒 KHARIDA TAB — Month-wise (ya Last-N-Months) Purchase Overview
-// 3 sections: Chicks / Feed / Medicine. Teeno poori tarah kaam karte hain
-// (drill-down list + allocation split).
+// 🛒 KHARIDA TAB
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _PurchasePeriod {
-  final bool isRange;
-  final int year;
-  final int month; // 1-12 (single mode)
-  final int rangeMonths; // (range mode)
+class _KharidaTabView extends StatelessWidget {
+  final AppDateFilter selectedFilter;
+  final List<Map<String, dynamic>> chicksPurchases;
+  final List<Map<String, dynamic>> feedStock;
+  final List<Map<String, dynamic>> medicineStock;
+  final Future<void> Function() onRefresh;
 
-  const _PurchasePeriod.single(this.year, this.month)
-    : isRange = false,
-      rangeMonths = 1;
-
-  const _PurchasePeriod.range(this.rangeMonths)
-    : isRange = true,
-      year = 0,
-      month = 0;
-
-  String label() {
-    if (!isRange) return '${_monthName(month)} $year';
-    return 'Last $rangeMonths Mahine';
-  }
-}
-
-const List<String> _kMonthNames = [
-  '',
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-String _monthName(int m) => _kMonthNames[m];
-
-DateTimeRange _computePurchaseRange(_PurchasePeriod p) {
-  final now = DateTime.now();
-  if (!p.isRange) {
-    final start = DateTime(p.year, p.month, 1);
-    final end = DateTime(p.year, p.month + 1, 1);
-    return DateTimeRange(start: start, end: end);
-  }
-  int totalMonthsBack = p.rangeMonths - 1;
-  int startMonth = now.month - totalMonthsBack;
-  int startYear = now.year;
-  while (startMonth <= 0) {
-    startMonth += 12;
-    startYear -= 1;
-  }
-  final start = DateTime(startYear, startMonth, 1);
-  final end = DateTime(now.year, now.month + 1, 1);
-  return DateTimeRange(start: start, end: end);
-}
-
-bool _dateInRange(String? isoStr, DateTimeRange range) {
-  if (isoStr == null || isoStr.isEmpty) return false;
-  final dt = DateTime.tryParse(isoStr);
-  if (dt == null) return false;
-  return !dt.isBefore(range.start) && dt.isBefore(range.end);
-}
-
-class _KharidaTabView extends StatefulWidget {
-  const _KharidaTabView();
-
-  @override
-  State<_KharidaTabView> createState() => _KharidaTabViewState();
-}
-
-class _KharidaTabViewState extends State<_KharidaTabView> {
-  bool _isLoading = true;
-
-  List<Map<String, dynamic>> _allChicksPurchases = [];
-  List<Map<String, dynamic>> _feedStock = [];
-  List<Map<String, dynamic>> _medicineStock = [];
-
-  late _PurchasePeriod _period;
-
-  @override
-  void initState() {
-    super.initState();
-    final now = DateTime.now();
-    _period = _PurchasePeriod.single(now.year, now.month);
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-
-    List<Map<String, dynamic>> chicks = [];
-    final String? chicksJson = await CompanyStore.instance.getString(
-      'chicksPurchaseHistory',
-    );
-    if (chicksJson != null) {
-      try {
-        final List<dynamic> raw = json.decode(chicksJson);
-        chicks = raw.map((e) => Map<String, dynamic>.from(e)).toList();
-      } catch (_) {}
-    }
-
-    List<Map<String, dynamic>> feedStock = [];
-    try {
-      feedStock = await ensureFeedStockMigrated();
-    } catch (_) {}
-
-    List<Map<String, dynamic>> medStock = [];
-    final String? medJson = await CompanyStore.instance.getString(
-      'medicineStockList',
-    );
-    if (medJson != null) {
-      try {
-        final List<dynamic> raw = json.decode(medJson);
-        medStock = raw.map((e) => Map<String, dynamic>.from(e)).toList();
-      } catch (_) {}
-    }
-
-    if (mounted) {
-      setState(() {
-        _allChicksPurchases = chicks;
-        _feedStock = feedStock;
-        _medicineStock = medStock;
-        _isLoading = false;
-      });
-    }
-  }
+  const _KharidaTabView({
+    required this.selectedFilter,
+    required this.chicksPurchases,
+    required this.feedStock,
+    required this.medicineStock,
+    required this.onRefresh,
+  });
 
   List<Map<String, dynamic>> get _chicksInPeriod {
-    final range = _computePurchaseRange(_period);
-    return _allChicksPurchases
-        .where((p) => _dateInRange(p['date']?.toString(), range))
+    return chicksPurchases
+        .where((p) => isDateInFilter(p['date']?.toString(), selectedFilter))
         .toList();
   }
 
   Map<String, double> get _feedTotalsInPeriod {
-    final range = _computePurchaseRange(_period);
     double bags = 0, amount = 0;
     int count = 0;
-    for (final feedType in _feedStock) {
+    for (final feedType in feedStock) {
       final hist = (feedType['purchaseHistory'] as List?) ?? [];
       for (final rawH in hist) {
         final h = Map<String, dynamic>.from(rawH);
-        if (!_dateInRange(h['date']?.toString(), range)) continue;
+        if (!isDateInFilter(h['date']?.toString(), selectedFilter)) continue;
         final double b = (h['bags'] as num?)?.toDouble() ?? 0.0;
         final double perBag = (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
         bags += b;
@@ -1305,14 +1494,13 @@ class _KharidaTabViewState extends State<_KharidaTabView> {
   }
 
   Map<String, double> get _medicineTotalsInPeriod {
-    final range = _computePurchaseRange(_period);
     double amount = 0;
     int count = 0;
-    for (final med in _medicineStock) {
+    for (final med in medicineStock) {
       final hist = (med['purchaseHistory'] as List?) ?? [];
       for (final rawH in hist) {
         final h = Map<String, dynamic>.from(rawH);
-        if (!_dateInRange(h['date']?.toString(), range)) continue;
+        if (!isDateInFilter(h['date']?.toString(), selectedFilter)) continue;
         amount += (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
         count++;
       }
@@ -1320,167 +1508,8 @@ class _KharidaTabViewState extends State<_KharidaTabView> {
     return {'amount': amount, 'count': count.toDouble()};
   }
 
-  void _openPeriodPicker() async {
-    final now = DateTime.now();
-    final List<_PurchasePeriod> monthOptions = List.generate(24, (i) {
-      int m = now.month - i;
-      int y = now.year;
-      while (m <= 0) {
-        m += 12;
-        y -= 1;
-      }
-      return _PurchasePeriod.single(y, m);
-    });
-
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(ctx).size.height * 0.75,
-        ),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(24),
-            topRight: Radius.circular(24),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 14),
-            Container(
-              width: 44,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.calendar_month_rounded,
-                    color: _accGreen,
-                    size: 20,
-                  ),
-                  SizedBox(width: 8),
-                  Text(
-                    'Period Chuniye',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Last N Mahine (Max 2 Saal)',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [2, 3, 5, 6, 12, 24].map((n) {
-                  return ActionChip(
-                    label: Text('Last $n'),
-                    backgroundColor: _accGreen.withOpacity(0.08),
-                    labelStyle: const TextStyle(
-                      color: _accGreen,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                    onPressed: () {
-                      setState(() => _period = _PurchasePeriod.range(n));
-                      Navigator.pop(ctx);
-                    },
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Ek Mahina Chuniye',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ),
-            ),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: monthOptions.length,
-                itemBuilder: (c, i) {
-                  final opt = monthOptions[i];
-                  final bool isSelected =
-                      !_period.isRange &&
-                      _period.year == opt.year &&
-                      _period.month == opt.month;
-                  return ListTile(
-                    dense: true,
-                    title: Text(
-                      opt.label(),
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: isSelected
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                        color: isSelected ? _accGreen : Colors.black87,
-                      ),
-                    ),
-                    trailing: isSelected
-                        ? const Icon(
-                            Icons.check_circle_rounded,
-                            color: _accGreen,
-                            size: 20,
-                          )
-                        : null,
-                    onTap: () {
-                      setState(() => _period = opt);
-                      Navigator.pop(ctx);
-                    },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator(color: _accGreen));
-    }
-
     final chicksList = _chicksInPeriod;
     final double chicksQty = chicksList.fold(
       0.0,
@@ -1495,47 +1524,34 @@ class _KharidaTabViewState extends State<_KharidaTabView> {
     final medTotals = _medicineTotalsInPeriod;
 
     return RefreshIndicator(
-      onRefresh: _loadData,
+      onRefresh: onRefresh,
       color: _accGreen,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          GestureDetector(
-            onTap: _openPeriodPicker,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: _accGreen,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: _accGreen.withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_month_rounded, color: Colors.white),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      _period.label(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: _accGreen.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _accGreen.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.filter_alt_rounded, color: _accGreen),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Filter: ${selectedFilter.label}',
+                    style: const TextStyle(
+                      color: _accGreen,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
                     ),
                   ),
-                  const Icon(
-                    Icons.arrow_drop_down_rounded,
-                    color: Colors.white,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 18),
@@ -1550,7 +1566,7 @@ class _KharidaTabViewState extends State<_KharidaTabView> {
             onTap: () {
               Get.to(
                 () => ChicksMonthlyPurchaseListScreen(
-                  periodLabel: _period.label(),
+                  selectedFilter: selectedFilter,
                   purchases: chicksList,
                 ),
               );
@@ -1568,9 +1584,8 @@ class _KharidaTabViewState extends State<_KharidaTabView> {
             onTap: () {
               Get.to(
                 () => FeedTypesOverviewScreen(
-                  periodLabel: _period.label(),
-                  period: _period,
-                  feedStock: _feedStock,
+                  selectedFilter: selectedFilter,
+                  feedStock: feedStock,
                 ),
               );
             },
@@ -1586,9 +1601,8 @@ class _KharidaTabViewState extends State<_KharidaTabView> {
             onTap: () {
               Get.to(
                 () => MedicineOverviewScreen(
-                  periodLabel: _period.label(),
-                  period: _period,
-                  medicineStock: _medicineStock,
+                  selectedFilter: selectedFilter,
+                  medicineStock: medicineStock,
                 ),
               );
             },
@@ -1686,15 +1700,15 @@ class _KharidaTabViewState extends State<_KharidaTabView> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🐣 CHICKS MONTHLY PURCHASE LIST — Us period ke saare chicks lots
+// 🐣 CHICKS MONTHLY PURCHASE LIST
 // ═══════════════════════════════════════════════════════════════════════════
 class ChicksMonthlyPurchaseListScreen extends StatelessWidget {
-  final String periodLabel;
+  final AppDateFilter selectedFilter;
   final List<Map<String, dynamic>> purchases;
 
   const ChicksMonthlyPurchaseListScreen({
     super.key,
-    required this.periodLabel,
+    required this.selectedFilter,
     required this.purchases,
   });
 
@@ -1721,7 +1735,7 @@ class ChicksMonthlyPurchaseListScreen extends StatelessWidget {
           onPressed: () => Get.back(),
         ),
         title: Text(
-          '🐣 Chicks — $periodLabel',
+          '🐣 Chicks — ${selectedFilter.label}',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -1855,8 +1869,7 @@ class ChicksMonthlyPurchaseListScreen extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🐣 CHICKS LOT ALLOCATION BREAKDOWN — Ek lot ka Company-Farmer vs
-// Private-Sale split (total qty + total amount dono jagah)
+// 🐣 CHICKS LOT ALLOCATION BREAKDOWN
 // ═══════════════════════════════════════════════════════════════════════════
 class ChicksLotAllocationBreakdownScreen extends StatelessWidget {
   final Map<String, dynamic> purchase;
@@ -2123,25 +2136,20 @@ class ChicksLotAllocationBreakdownScreen extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🌾 FEED TYPES OVERVIEW — 3 alag section (Starter/Grower/Finisher), har ek
-// ka us period mein kitna purchase hua wo dikhata hai
+// 🌾 FEED TYPES OVERVIEW
 // ═══════════════════════════════════════════════════════════════════════════
 class FeedTypesOverviewScreen extends StatelessWidget {
-  final String periodLabel;
-  final _PurchasePeriod period;
+  final AppDateFilter selectedFilter;
   final List<Map<String, dynamic>> feedStock;
 
   const FeedTypesOverviewScreen({
     super.key,
-    required this.periodLabel,
-    required this.period,
+    required this.selectedFilter,
     required this.feedStock,
   });
 
   @override
   Widget build(BuildContext context) {
-    final range = _computePurchaseRange(period);
-
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -2154,7 +2162,7 @@ class FeedTypesOverviewScreen extends StatelessWidget {
           onPressed: () => Get.back(),
         ),
         title: Text(
-          '🌾 Feed — $periodLabel',
+          '🌾 Feed — ${selectedFilter.label}',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -2179,7 +2187,8 @@ class FeedTypesOverviewScreen extends StatelessWidget {
           int count = 0;
           for (final rawH in hist) {
             final h = Map<String, dynamic>.from(rawH);
-            if (!_dateInRange(h['date']?.toString(), range)) continue;
+            if (!isDateInFilter(h['date']?.toString(), selectedFilter))
+              continue;
             final double b = (h['bags'] as num?)?.toDouble() ?? 0.0;
             final double perBag = (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
             bags += b;
@@ -2193,8 +2202,7 @@ class FeedTypesOverviewScreen extends StatelessWidget {
               onTap: () {
                 Get.to(
                   () => FeedTypeMonthlyDetailScreen(
-                    periodLabel: periodLabel,
-                    period: period,
+                    selectedFilter: selectedFilter,
                     feedTypeData: typeData,
                     typeId: id,
                     typeName: name,
@@ -2287,12 +2295,10 @@ class FeedTypesOverviewScreen extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🌾 FEED TYPE MONTHLY DETAIL — Us period mein: Purchase History list +
-// Company Farmer allocation vs Private Sale ka split (qty + amount + list)
+// 🌾 FEED TYPE MONTHLY DETAIL
 // ═══════════════════════════════════════════════════════════════════════════
 class FeedTypeMonthlyDetailScreen extends StatelessWidget {
-  final String periodLabel;
-  final _PurchasePeriod period;
+  final AppDateFilter selectedFilter;
   final Map<String, dynamic> feedTypeData;
   final String typeId;
   final String typeName;
@@ -2300,8 +2306,7 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
 
   const FeedTypeMonthlyDetailScreen({
     super.key,
-    required this.periodLabel,
-    required this.period,
+    required this.selectedFilter,
     required this.feedTypeData,
     required this.typeId,
     required this.typeName,
@@ -2310,15 +2315,14 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final range = _computePurchaseRange(period);
-
-    // ── Purchase History (period filtered) ──
+    // ── Purchase History ──
     final List<dynamic> histRaw =
         (feedTypeData['purchaseHistory'] as List?) ?? [];
     final List<Map<String, dynamic>> purchases = histRaw
         .map((e) => Map<String, dynamic>.from(e))
-        .where((h) => _dateInRange(h['date']?.toString(), range))
+        .where((h) => isDateInFilter(h['date']?.toString(), selectedFilter))
         .toList();
+
     double totalBags = 0, totalAmount = 0;
     for (final h in purchases) {
       final double b = (h['bags'] as num?)?.toDouble() ?? 0.0;
@@ -2327,12 +2331,15 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
       totalAmount += b * perBag;
     }
 
-    // ── Company Farmer allocations (period filtered by allocatedOn) ──
+    // ── Company Farmer allocations ──
     final List<dynamic> allocRaw = (feedTypeData['allocations'] as List?) ?? [];
     final List<Map<String, dynamic>> allocs = allocRaw
         .map((e) => Map<String, dynamic>.from(e))
-        .where((a) => _dateInRange(a['allocatedOn']?.toString(), range))
+        .where(
+          (a) => isDateInFilter(a['allocatedOn']?.toString(), selectedFilter),
+        )
         .toList();
+
     double allocQty = 0, allocAmt = 0;
     for (final a in allocs) {
       final double q = (a['qty'] as num?)?.toDouble() ?? 0.0;
@@ -2341,12 +2348,13 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
       allocAmt += q * r;
     }
 
-    // ── Private Sales (period filtered by date) ──
+    // ── Private Sales ──
     final List<dynamic> saleRaw = (feedTypeData['privateSales'] as List?) ?? [];
     final List<Map<String, dynamic>> sales = saleRaw
         .map((e) => Map<String, dynamic>.from(e))
-        .where((s) => _dateInRange(s['date']?.toString(), range))
+        .where((s) => isDateInFilter(s['date']?.toString(), selectedFilter))
         .toList();
+
     double saleQty = 0, saleAmt = 0;
     for (final s in sales) {
       final double q = (s['qty'] as num?)?.toDouble() ?? 0.0;
@@ -2367,7 +2375,7 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
           onPressed: () => Get.back(),
         ),
         title: Text(
-          '$emoji $typeName — $periodLabel',
+          '$emoji $typeName — ${selectedFilter.label}',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -2379,7 +2387,6 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ── Total purchased header ──
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -2407,7 +2414,6 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          // ── Allocation summary cards ──
           _feedBreakdownCard(
             emoji: '🏢',
             title: 'Company Farmers Ko Diya',
@@ -2425,7 +2431,6 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // ── Purchase entries list ──
           const Text(
             '📜 Purchase History',
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
@@ -2490,7 +2495,6 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
 
           const SizedBox(height: 20),
 
-          // ── Farmer-wise list ──
           if (allocs.isNotEmpty) ...[
             const Text(
               '🏢 Farmer-Wise List',
@@ -2508,7 +2512,6 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
             const SizedBox(height: 20),
           ],
 
-          // ── Buyer-wise list ──
           if (sales.isNotEmpty) ...[
             const Text(
               '🛒 Private Buyer-Wise List',
@@ -2644,29 +2647,20 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 💊 MEDICINE OVERVIEW SCREEN — Sirf un medicines ki list jinka is period
-// mein purchase hua ho, aur unka total purchase amount + base quantity.
+// 💊 MEDICINE OVERVIEW SCREEN
 // ═══════════════════════════════════════════════════════════════════════════
 class MedicineOverviewScreen extends StatelessWidget {
-  final String periodLabel;
-  final _PurchasePeriod period;
+  final AppDateFilter selectedFilter;
   final List<Map<String, dynamic>> medicineStock;
 
   const MedicineOverviewScreen({
     super.key,
-    required this.periodLabel,
-    required this.period,
+    required this.selectedFilter,
     required this.medicineStock,
   });
 
   @override
   Widget build(BuildContext context) {
-    final range = _computePurchaseRange(period);
-
-    // ✅ FIX: Sirf un medicines ko list mein rakho jinka is period mein
-    // kam se kam ek purchase hua ho — warna list bekar mein lambi ho
-    // jaati (har medicine dikhti chahe ₹0 hi kyun na ho), jaisa Feed mein
-    // sirf 3 fixed types hain issliye wahan problem nahi thi.
     final List<Map<String, Object>> filtered = [];
     for (final med in medicineStock) {
       final List<dynamic> hist = (med['purchaseHistory'] as List?) ?? [];
@@ -2674,7 +2668,7 @@ class MedicineOverviewScreen extends StatelessWidget {
       int count = 0;
       for (final rawH in hist) {
         final h = Map<String, dynamic>.from(rawH);
-        if (!_dateInRange(h['date']?.toString(), range)) continue;
+        if (!isDateInFilter(h['date']?.toString(), selectedFilter)) continue;
         final double qBase =
             (h['qtyInBaseUnit'] as num?)?.toDouble() ??
             (h['qty'] as num?)?.toDouble() ??
@@ -2684,7 +2678,7 @@ class MedicineOverviewScreen extends StatelessWidget {
         amount += price;
         count++;
       }
-      if (count == 0) continue; // is period mein purchase nahi — hide karo
+      if (count == 0) continue;
       filtered.add({
         'med': med,
         'qtyBase': qtyBase,
@@ -2708,7 +2702,7 @@ class MedicineOverviewScreen extends StatelessWidget {
           onPressed: () => Get.back(),
         ),
         title: Text(
-          '💊 Medicine — $periodLabel',
+          '💊 Medicine — ${selectedFilter.label}',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -2743,8 +2737,7 @@ class MedicineOverviewScreen extends StatelessWidget {
                     onTap: () {
                       Get.to(
                         () => MedicineMonthlyDetailScreen(
-                          periodLabel: periodLabel,
-                          period: period,
+                          selectedFilter: selectedFilter,
                           medicineData: med,
                         ),
                       );
@@ -2831,18 +2824,15 @@ class MedicineOverviewScreen extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 💊 MEDICINE MONTHLY DETAIL SCREEN — Ek medicine ka selected mahine ka
-// Purchase History + Company Farmer allocation vs Private Sale ka split.
+// 💊 MEDICINE MONTHLY DETAIL SCREEN
 // ═══════════════════════════════════════════════════════════════════════════
 class MedicineMonthlyDetailScreen extends StatefulWidget {
-  final String periodLabel;
-  final _PurchasePeriod period;
+  final AppDateFilter selectedFilter;
   final Map<String, dynamic> medicineData;
 
   const MedicineMonthlyDetailScreen({
     super.key,
-    required this.periodLabel,
-    required this.period,
+    required this.selectedFilter,
     required this.medicineData,
   });
 
@@ -2863,7 +2853,6 @@ class _MedicineMonthlyDetailScreenState
   }
 
   Future<void> _loadPrivateSales() async {
-    final range = _computePurchaseRange(widget.period);
     final String mId = widget.medicineData['id']?.toString() ?? '';
     final String? salesJson = await CompanyStore.instance.getString(
       'medicineSalesHistory',
@@ -2874,7 +2863,8 @@ class _MedicineMonthlyDetailScreenState
       try {
         final List<dynamic> rawSales = json.decode(salesJson);
         for (final sale in rawSales) {
-          if (!_dateInRange(sale['date']?.toString(), range)) continue;
+          if (!isDateInFilter(sale['date']?.toString(), widget.selectedFilter))
+            continue;
 
           final List<dynamic> items = sale['items'] as List<dynamic>? ?? [];
           for (final item in items) {
@@ -2902,11 +2892,6 @@ class _MedicineMonthlyDetailScreenState
     }
   }
 
-  /// ✅ FIX: Farmer allocation ka amount nikalne ke liye 'ratePerBase' field
-  /// primary hai (AllocateMedicineToFarmerScreen isi field ke saath save
-  /// karta hai), lekin agar kisi aur jagah/purane data se sirf 'rate' field
-  /// save hui hai, to us par bhi fallback karo — taaki amount kabhi galti
-  /// se ₹0 na dikhe.
   double _allocRatePerBase(Map<String, dynamic> alloc) {
     final double? ratePerBase = (alloc['ratePerBase'] as num?)?.toDouble();
     if (ratePerBase != null && ratePerBase > 0) return ratePerBase;
@@ -2921,16 +2906,17 @@ class _MedicineMonthlyDetailScreenState
       );
     }
 
-    final range = _computePurchaseRange(widget.period);
     final String name = widget.medicineData['name']?.toString() ?? '-';
     final String baseUnit = widget.medicineData['unit']?.toString() ?? '';
 
-    // ── Purchase History (period filtered) ──
+    // ── Purchase History ──
     final List<dynamic> histRaw =
         (widget.medicineData['purchaseHistory'] as List?) ?? [];
     final List<Map<String, dynamic>> purchases = histRaw
         .map((e) => Map<String, dynamic>.from(e))
-        .where((h) => _dateInRange(h['date']?.toString(), range))
+        .where(
+          (h) => isDateInFilter(h['date']?.toString(), widget.selectedFilter),
+        )
         .toList();
 
     double totalPurchasedBase = 0, totalAmount = 0;
@@ -2942,12 +2928,17 @@ class _MedicineMonthlyDetailScreenState
       totalAmount += (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
     }
 
-    // ── Company Farmer allocations (period filtered by allocatedOn) ──
+    // ── Company Farmer allocations ──
     final List<dynamic> allocRaw =
         (widget.medicineData['allocations'] as List?) ?? [];
     final List<Map<String, dynamic>> allocs = allocRaw
         .map((e) => Map<String, dynamic>.from(e))
-        .where((a) => _dateInRange(a['allocatedOn']?.toString(), range))
+        .where(
+          (a) => isDateInFilter(
+            a['allocatedOn']?.toString(),
+            widget.selectedFilter,
+          ),
+        )
         .toList();
 
     double allocQtyBase = 0, allocAmt = 0;
@@ -2961,7 +2952,7 @@ class _MedicineMonthlyDetailScreenState
       allocAmt += qBase * rBase;
     }
 
-    // ── Private Sales (period filtered) ──
+    // ── Private Sales ──
     double saleQtyBase = 0, saleAmt = 0;
     for (final s in _privateSales) {
       saleQtyBase += (s['qtyInBaseUnit'] as num?)?.toDouble() ?? 0.0;
@@ -2980,7 +2971,7 @@ class _MedicineMonthlyDetailScreenState
           onPressed: () => Get.back(),
         ),
         title: Text(
-          '💊 $name — ${widget.periodLabel}',
+          '💊 $name — ${widget.selectedFilter.label}',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -2992,7 +2983,6 @@ class _MedicineMonthlyDetailScreenState
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ── Total purchased header ──
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -3020,7 +3010,6 @@ class _MedicineMonthlyDetailScreenState
           ),
           const SizedBox(height: 20),
 
-          // ── Allocation summary cards ──
           _medBreakdownCard(
             emoji: '🏢',
             title: 'Company Farmers Ko Diya',
@@ -3040,7 +3029,6 @@ class _MedicineMonthlyDetailScreenState
           ),
           const SizedBox(height: 24),
 
-          // ── Purchase entries list ──
           const Text(
             '📜 Purchase History',
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
@@ -3101,7 +3089,6 @@ class _MedicineMonthlyDetailScreenState
 
           const SizedBox(height: 20),
 
-          // ── Farmer-wise list ──
           if (allocs.isNotEmpty) ...[
             const Text(
               '🏢 Farmer-Wise List',
@@ -3127,7 +3114,6 @@ class _MedicineMonthlyDetailScreenState
             const SizedBox(height: 20),
           ],
 
-          // ── Buyer-wise list ──
           if (_privateSales.isNotEmpty) ...[
             const Text(
               '🛒 Private Buyer-Wise List',
