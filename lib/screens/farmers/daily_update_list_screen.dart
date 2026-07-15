@@ -10,22 +10,6 @@ import '../../../utils/performance_alert_engine.dart';
 
 // =============================================================================
 // 📅 DAILY UPDATE LIST SCREEN
-// -----------------------------------------------------------------------------
-// Batch Start Date se lekar aaj tak, har din ka poora breakdown ek table mein:
-// Date, Day, Live Chicks, Mortality, Total Mortality, Mortality%,
-// Daily Feed(kg), Total Feed(kg), Feed Stock(kg), Body Weight (Auto+Manual),
-// FCR (Auto+Manual, cumulative), aur Cost/Kg (running estimate).
-//
-// Automatic Body Weight & Daily Feed dono company ke configured rules
-// (FeedConsumptionRuleConfig / WeightGrowthRuleConfig) se aate hain.
-// Manual Body Weight wahi hai jo Flock Record ('cost' type entry) mein
-// us din ke liye actual mein daala gaya tha.
-//
-// Row par TAP karke us din ke liye seedha ek naya Flock Record ('cost' type)
-// entry add ki ja sakti hai — bilkul "+Flock Record" button jaisa hi, bas
-// date pehle se fix hoti hai. Yeh CompanyFarmers/SharedPreferences mein
-// waisa hi save hota hai jaisa Batch Detail Screen karta hai, isliye dono
-// jagah data hamesha sync rehta hai.
 // =============================================================================
 class DailyUpdateListScreen extends StatefulWidget {
   final Map<String, dynamic> batchData;
@@ -47,7 +31,6 @@ class DailyUpdateListScreen extends StatefulWidget {
   State<DailyUpdateListScreen> createState() => _DailyUpdateListScreenState();
 }
 
-/// Ek din ki poori calculated row.
 class _DayRow {
   final DateTime date;
   final int day;
@@ -58,6 +41,8 @@ class _DayRow {
   final double dailyFeedKg;
   final double totalFeedKg;
   final double feedStockKg;
+  final bool isShortfall; // ✅ NEW: true if feedStockKg is negative
+  final double returnFeedKgToday; // ✅ NEW: return feed for this day
   final double autoWeightKg;
   final double? manualWeightKg;
   final double autoFcr;
@@ -77,6 +62,8 @@ class _DayRow {
     required this.dailyFeedKg,
     required this.totalFeedKg,
     required this.feedStockKg,
+    required this.isShortfall,
+    required this.returnFeedKgToday, // ✅ NEW
     required this.autoWeightKg,
     required this.manualWeightKg,
     required this.autoFcr,
@@ -100,14 +87,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
   WeightGrowthRuleConfig _weightConfig = WeightGrowthRuleConfig();
   PerformanceAlertConfig _performanceConfig = PerformanceAlertConfig();
 
-  // ── Cost Rates for "Per Kg Rate" column ─────────────────────────────────
-  // Priority: Rule 1 (Big/Small Auto Size) ka saved config > fallback
-  // standalone settings (jab Rule 2 active ho ya koi rule set na ho, kyunki
-  // Rule 2 mein abhi chick/feed/admin cost fields exist hi nahi karte).
   int? _appliedRuleId;
   Map<String, dynamic>? _rule1Config;
 
-  // Fallback (Rule 2 / no-rule case) ke liye
+  // Fallback (Rule 2 / no-rule case)
   double _fallbackChickPrice = 45.0;
   double _fallbackFeedRate = 38.0;
   double _fallbackAdminCost = 2.0;
@@ -124,7 +107,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
   }
 
   Future<void> _loadAndCompute() async {
-    // Weight Growth Rule load
     final weightRaw = await CompanyStore.instance.getString(
       'weightGrowthRuleConfig',
     );
@@ -134,7 +116,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       } catch (_) {}
     }
 
-    // Performance Alert Rule load (FCR + Mortality Red/Green/Yellow)
     final perfAlertRaw = await CompanyStore.instance.getString(
       'performanceAlertConfig',
     );
@@ -146,7 +127,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       } catch (_) {}
     }
 
-    // Applied Settlement Rule load (Rule 1 = Big/Small Auto Size)
     _appliedRuleId = await CompanyStore.instance.getInt('appliedCompanyRuleId');
     if (_appliedRuleId == 1) {
       final rule1Raw = await CompanyStore.instance.getString(
@@ -159,7 +139,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       }
     }
 
-    // Fallback Running Cost Config load (Rule 2 / no-rule case ke liye)
     final costRaw = await CompanyStore.instance.getString('runningCostConfig');
     if (costRaw != null && costRaw.isNotEmpty) {
       try {
@@ -176,9 +155,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     setState(() => _loading = false);
   }
 
-  /// Us din ke weight ke hisaab se sahi cost rates return karta hai —
-  /// Rule 1 active hone par Big/Small auto-detect (>1.2kg = Big), warna
-  /// fallback settings.
   ({double chickPrice, double feedRate, double adminCost, double kgPerBag})
   _resolveCostRates(double weightKgForSizeCheck) {
     if (_appliedRuleId == 1 && _rule1Config != null) {
@@ -200,7 +176,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         );
       }
     }
-    // Rule 2 active hai ya koi rule set nahi — fallback settings use karo
     return (
       chickPrice: _fallbackChickPrice,
       feedRate: _fallbackFeedRate,
@@ -223,10 +198,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         );
       }
     } catch (_) {}
-    // ✅ FIX: Agar "dd/MM/yyyy" format mein parse nahi hua (e.g. purane
-    // corrupt-format batches jinka startDate ISO string mein save ho gaya
-    // tha), to ISO format bhi try karo — warna DateTime.now() par fallback
-    // hoke sirf "1 din" ki list ban jaati thi.
     try {
       return DateTime.parse(s);
     } catch (_) {
@@ -246,7 +217,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     int chicksAgeDays = today.difference(startDate).inDays + 1;
     if (chicksAgeDays < 1) chicksAgeDays = 1;
 
-    // Cost-type entries pehle se parse kar lo (date ke saath)
     final List<Map<String, dynamic>> costEntries = [];
     for (final e in _localDailyEntries) {
       if (e['type'].toString().toLowerCase() != 'cost') continue;
@@ -260,6 +230,20 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         'remainingFeedBags': int.tryParse(e['remainingFeed'].toString()) ?? 0,
         'hasMismatch': e['hasMismatch'] == true,
         'mismatchReason': e['mismatchReason']?.toString(),
+      });
+    }
+
+    // ---- NEW: Parse return feed entries ----
+    final List<Map<String, dynamic>> returnFeedEntries = [];
+    for (final e in _localDailyEntries) {
+      if (e['type'].toString().toLowerCase() != 'returnfeed') continue;
+      final d = _parseDdMmYyyy(e['date']);
+      if (d == null) continue;
+      returnFeedEntries.add({
+        'date': d,
+        'kg': (e['returnFeedKg'] is num)
+            ? (e['returnFeedKg'] as num).toDouble()
+            : double.tryParse(e['returnFeedKg'].toString()) ?? 0.0,
       });
     }
 
@@ -280,6 +264,14 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       int? remainingFeedBagsToday;
       bool hasMismatchToday = false;
       final List<String> mismatchReasonsToday = [];
+
+      // ---- NEW: Accumulate return feed for this day ----
+      double returnFeedKgToday = 0.0;
+      for (final rf in returnFeedEntries) {
+        if (_sameDay(rf['date'] as DateTime, date)) {
+          returnFeedKgToday += rf['kg'] as double;
+        }
+      }
 
       for (final entry in costEntries) {
         if (_sameDay(entry['date'] as DateTime, date)) {
@@ -308,7 +300,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           ? (cumulativeMortality / initialChicks) * 100
           : 0.0;
 
-      // ── Daily Feed Consumption (kg) — automatic, rule-based ─────────────
       final double dailyFeedKg = FeedConsumptionEngine.calculateDayFeedKg(
         config: _feedConfig,
         liveChicks: liveChicks,
@@ -317,7 +308,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       );
       cumulativeFeedConsumedKg += dailyFeedKg;
 
-      // ── Body Weight — Automatic (rule-based) + Manual (agar entry hai) ──
       final double autoWeightKg =
           WeightGrowthEngine.getBodyWeightGram(
             config: _weightConfig,
@@ -330,26 +320,32 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       }
       final double? manualWeightKg = lastManualWeightKg;
 
-      // ── Cost Rates resolve karo (Rule 1 Big/Small auto-detect, warna
-      // fallback) — size-check ke liye manual weight ko priority, warna auto ──
       final ratesToday = _resolveCostRates(manualWeightKg ?? autoWeightKg);
 
+      // ---- Feed stock calculation with reconciliation ----
+      cumulativeFeedDeliveredKg += feedBagsDeliveredToday * ratesToday.kgPerBag;
+
+      // ---- NEW: Subtract return feed immediately ----
+      cumulativeFeedDeliveredKg -= returnFeedKgToday;
+
+      double feedStockKg = cumulativeFeedDeliveredKg - cumulativeFeedConsumedKg;
+
+      // 🔥 FIX: If the field has reported actual remaining feed, use it as ground truth
+      // and correct cumulative delivered so that future days stay in sync.
       if (remainingFeedBagsToday != null) {
-        lastActualRemainingFeedKg =
+        final double reportedStockKg =
             remainingFeedBagsToday * ratesToday.kgPerBag;
+        final double drift = reportedStockKg - feedStockKg;
+        cumulativeFeedDeliveredKg += drift; // ← correct the drift
+        feedStockKg = reportedStockKg; // set to actual reported
+        lastActualRemainingFeedKg = reportedStockKg;
         remainingFeedEverReported = true;
       }
 
-      // ── Feed Stock in Farm (kg) — deliveries (jitni baar bhi aayi) minus
-      // ab tak consume hua feed ─────────────────────────────────────────
-      cumulativeFeedDeliveredKg += feedBagsDeliveredToday * ratesToday.kgPerBag;
-      final double feedStockKg =
-          (cumulativeFeedDeliveredKg - cumulativeFeedConsumedKg).clamp(
-            0,
-            double.infinity,
-          );
+      // ✅ No clamp – keep negative values to highlight shortfall
+      final bool isShortfall = feedStockKg < 0;
 
-      // ── FCR — Cumulative, dono Automatic aur Manual weight ke basis pe ──
+      // ---- FCR ----
       final double autoBiomassKg = liveChicks * autoWeightKg;
       final double autoFcr = autoBiomassKg > 0
           ? cumulativeFeedConsumedKg / autoBiomassKg
@@ -363,20 +359,22 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
             : null;
       }
 
-      // ── Per Kg Rate — ab tak ka production cost ÷ live biomass ─────────
-      // (Running estimate — batch abhi active hai, koi sale nahi hui hai।
-      // Rates seedha active Settlement Rule se aate hain — dekho _resolveCostRates)
+      // Cost per kg (using manual weight if available)
+      final double biomassForCost =
+          (manualWeightKg != null && manualWeightKg > 0)
+          ? liveChicks * manualWeightKg
+          : autoBiomassKg;
+
       final double cumulativeChickCost = initialChicks * ratesToday.chickPrice;
       final double cumulativeFeedCost =
           cumulativeFeedConsumedKg * ratesToday.feedRate;
-      final double cumulativeAdminCost = autoBiomassKg * ratesToday.adminCost;
+      final double cumulativeAdminCost = biomassForCost * ratesToday.adminCost;
       final double cumulativeProductionCost =
           cumulativeChickCost + cumulativeFeedCost + cumulativeAdminCost;
-      final double costPerKg = autoBiomassKg > 0
-          ? cumulativeProductionCost / autoBiomassKg
+      final double costPerKg = biomassForCost > 0
+          ? cumulativeProductionCost / biomassForCost
           : 0.0;
 
-      // ── 🚨 Fraud Risk Assessment (Feed-per-Bird + Purchase Reconciliation) ──
       final FraudRiskAssessment fraud = FraudRiskEngine.assess(
         feedDeliveredKg: cumulativeFeedDeliveredKg,
         expectedConsumedKg: cumulativeFeedConsumedKg,
@@ -395,6 +393,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           dailyFeedKg: dailyFeedKg,
           totalFeedKg: cumulativeFeedConsumedKg,
           feedStockKg: feedStockKg,
+          isShortfall: isShortfall,
+          returnFeedKgToday: returnFeedKgToday, // ✅ added
           autoWeightKg: autoWeightKg,
           manualWeightKg: manualWeightKg,
           autoFcr: autoFcr,
@@ -673,11 +673,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     );
   }
 
-  // ── Row Tap → Us din ke liye naya Flock Record ('cost') entry add karo ───
-  // NOTE: Feed Bags (delivered) field yahan JAAN-BOOJH KAR nahi hai — woh
-  // Office Manager "+Flock Record" (Cost Entry) se seedha batch_detail_screen
-  // se bharte hain. Yeh dialog sirf Field-level entries (Mortality, Weight,
-  // Remaining Feed) ke liye hai.
   void _showEditDayDialog(_DayRow row) {
     final mortalityCtrl = TextEditingController();
     final weightCtrl = TextEditingController();
@@ -969,9 +964,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         return;
       }
 
-      // ✅ FIX: CompanyStore.setString use kiya (raw prefs.setString nahi) —
-      // isse yeh cloud (Firestore) pe bhi push hoga, warna app-restart pe
-      // purana data wapas load ho ke isko overwrite kar deta.
       await CompanyStore.instance.setString(
         'companyFarmers',
         jsonEncode(farmersList),
@@ -1080,7 +1072,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
               ),
               child: Column(
                 children: [
-                  // ── 💰 Cost info banner (floating glassy card) ──
+                  // Cost banner
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
                     child: Container(
@@ -1148,7 +1140,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                     ),
                   ),
 
-                  // ── 🔍 List Zoom — neumorphic pill control ──
+                  // Zoom control
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
                     child: Container(
@@ -1247,7 +1239,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                     ),
                   ),
 
-                  // ── 👉 Tip banner ──
+                  // Tip banner
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                     child: Container(
@@ -1285,7 +1277,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                     ),
                   ),
 
-                  // ── 📊 Table — floating elevated card ──
+                  // Table
                   Expanded(
                     child: _rows.isEmpty
                         ? const Center(child: Text('Koi din data nahi hai'))
@@ -1473,9 +1465,37 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                               r.totalFeedKg.toStringAsFixed(2),
                                             ),
                                           ),
+                                          // ── 🔥 FEED STOCK CELL with shortfall and return marker ──
                                           DataCell(
-                                            Text(
-                                              r.feedStockKg.toStringAsFixed(2),
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                r.feedStockKg < 0
+                                                    ? Text(
+                                                        'Shortfall: ${r.feedStockKg.abs().toStringAsFixed(2)}',
+                                                        style: const TextStyle(
+                                                          color: Colors.red,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      )
+                                                    : Text(
+                                                        r.feedStockKg
+                                                            .toStringAsFixed(2),
+                                                      ),
+                                                if (r.returnFeedKgToday > 0)
+                                                  Text(
+                                                    '↩️ Return: ${r.returnFeedKgToday.toStringAsFixed(1)} KG',
+                                                    style: const TextStyle(
+                                                      color: Colors.teal,
+                                                      fontSize: 10,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                              ],
                                             ),
                                           ),
                                           DataCell(
@@ -1536,7 +1556,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     );
   }
 
-  // ── Neumorphic circular zoom (−/+) button ──
   Widget _zoomButton({required IconData icon, required VoidCallback onTap}) {
     return InkWell(
       borderRadius: BorderRadius.circular(20),
@@ -1560,8 +1579,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     );
   }
 
-  // ── ✅ NEW: Sirf Aaj + pichle 2 din (total 3 din) hi editable hain,
-  // uske pehle ke saare din locked/read-only rahenge. ─────────────────────
   bool _isEditableDate(DateTime d) {
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
@@ -1570,8 +1587,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     return diffDays >= 0 && diffDays <= 2;
   }
 
-  // ── Locked (read-only) din ke liye grey lock icon — tap karne par
-  // info snackbar dikhata hai. ────────────────────────────────────────────
   Widget _lockedButton() {
     return InkWell(
       borderRadius: BorderRadius.circular(20),
@@ -1599,7 +1614,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     );
   }
 
-  // ── Raised gradient circular Edit button (row action) ──
   Widget _editButton(VoidCallback onTap) {
     return InkWell(
       borderRadius: BorderRadius.circular(20),

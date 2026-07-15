@@ -24,9 +24,9 @@ import 'package:google_ml_kit/google_ml_kit.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Assuming these helpers are defined elsewhere – you must have them.
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── ✅ Imports for stock history screens
+import 'feed_stock_history_screen.dart';
+// ── Assuming these helpers are defined elsewhere – you must have them.
 // Future<List<Map<String, dynamic>>> ensureFeedStockMigrated() async { ... }
 // double computeFeedRemaining(Map<String, dynamic> feedEntry) { ... }
 // Future<double> computeMedicineRemainingBaseQty(Map<String, dynamic> med) async { ... }
@@ -94,12 +94,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _loadKpiData();
     _loadStockData();
     _loadAppliedRuleState();
-    _instantRefreshTimer = Timer.periodic(const Duration(milliseconds: 500), (
-      timer,
-    ) {
-      _loadKpiData();
-      _loadStockData();
-    });
+    _instantRefreshTimer = Timer.periodic(
+      const Duration(seconds: 15), // ⬅️ increased interval for performance
+      (timer) {
+        _loadKpiData();
+        _loadStockData();
+      },
+    );
 
     _chickBounceController = AnimationController(
       vsync: this,
@@ -613,6 +614,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
     await _saveMedicineStock();
 
+    // ✅ Refresh remaining base map after use
+    await _loadStockData();
+
     return {
       'success': true,
       'cost': deductedCost,
@@ -626,6 +630,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _medicineStock.removeWhere((m) => m['id'] == medicineId);
     });
     await _saveMedicineStock();
+    await _loadStockData();
   }
 
   Future<void> _devMasterResetAllData() async {
@@ -1449,6 +1454,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           addedByRole: addedByRole,
                         );
                       }
+
+                      await _loadStockData(); // ✅ refresh feed stock list
 
                       if (!mounted) return;
                       Navigator.pop(context);
@@ -3102,6 +3109,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           addedByRole: addedByRole,
                         );
                       }
+
+                      await _loadStockData();
 
                       if (!mounted) return;
                       Navigator.pop(context);
@@ -6218,6 +6227,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // ─────────────────── FEED STOCK TAB ───────────────────────────────────────
   // ✅ STEP 5: REPLACED _buildFeedStockTab() with new version using _feedStockList
+  // Also removed the old "Allocate / Details" button — only the new history button remains.
   Widget _buildFeedStockTab() {
     final Map<String, MaterialColor> colors = {
       'starter': Colors.blue,
@@ -6242,43 +6252,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Feed Bags Inventory',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  await _showFeedPurchaseForm();
-                  _loadStockData();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryGreen,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                icon: const Icon(Icons.add, size: 16, color: Colors.white),
-                label: const Text(
-                  'Add Stock',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
+          // ── ✅ Only title remains (no Add Stock button) ──
+          const Text(
+            'Feed Bags Inventory',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
           ),
           const SizedBox(height: 16),
           Expanded(
@@ -6424,6 +6405,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ],
                         ),
                       ),
+                      // ── The old "Allocate / Details" button is removed ──
+                      // Only the history button remains:
                       Divider(height: 1, color: c.shade50),
                       Padding(
                         padding: const EdgeInsets.all(12),
@@ -6432,9 +6415,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           child: OutlinedButton.icon(
                             onPressed: () async {
                               await Get.to(
-                                () => FeedHistoryScreen(
-                                  onFeedTap: _showFeedPurchaseForm,
-                                ),
+                                () => FeedStockHistoryHubScreen(feedTypeId: id),
                               );
                               _loadStockData();
                             },
@@ -6446,14 +6427,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            icon: const Icon(
-                              Icons.people_alt_rounded,
-                              size: 18,
-                            ),
+                            icon: const Icon(Icons.history_rounded, size: 18),
                             label: const Text(
-                              'Allocate / Details',
+                              'Farmers Allocation / Private Sales History',
+                              textAlign: TextAlign.center,
                               style: TextStyle(
-                                fontSize: 13,
+                                fontSize: 12,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -6472,46 +6451,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // ─────────────────── MEDICINE STOCK TAB ───────────────────────────────────
+  // ✅ "Add Medicine" button removed as requested
   Widget _buildMedicineStockTab() {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Medicine Inventory',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: _showAddMedicineDialog,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                icon: const Icon(Icons.add, size: 16, color: Colors.white),
-                label: const Text(
-                  'Add Medicine',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
+          // ── ✅ Only title, no Add Medicine button ──
+          const Text(
+            'Medicine Inventory',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
           ),
           const SizedBox(height: 16),
           Expanded(
@@ -6544,6 +6498,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // ✅ STEP 6: REPLACED _medicineStockCard() with new version using _medicineRemainingBase
+  // Also replaced "Allocate to Farmer" button with "Farmers Allocation / Private Sales History"
   Widget _medicineStockCard(Map<String, dynamic> medicine) {
     final String mId = medicine['id']?.toString() ?? '';
     final String unit = medicine['unit']?.toString() ?? '';
@@ -6684,40 +6639,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(height: 12),
+          // ── ✅ New history button (replaces "Allocate to Farmer") ──
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: isOut
-                  ? null
-                  : () async {
-                      await Get.to(
-                        () => AllocateMedicineToFarmerScreen(
-                          medicines: _medicineStock,
-                          availBaseQty: _medicineRemainingBase,
-                        ),
-                      );
-                      _loadStockData();
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                disabledBackgroundColor: Colors.grey.shade300,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Get.to(
+                  () => MedicineStockHistoryHubScreen(
+                    medicineId: mId,
+                    medicineName: medicine['name']?.toString() ?? '-',
+                    unit: unit,
+                  ),
+                );
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.teal.shade800,
+                side: BorderSide(color: Colors.teal.shade200, width: 1.4),
+                padding: const EdgeInsets.symmetric(vertical: 10),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
-                padding: const EdgeInsets.symmetric(vertical: 10),
               ),
-              icon: const Icon(
-                Icons.medication_liquid_rounded,
-                size: 16,
-                color: Colors.white,
-              ),
+              icon: const Icon(Icons.history_rounded, size: 16),
               label: const Text(
-                'Allocate to Farmer',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
+                'Farmers Allocation / Private Sales History',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ),
           ),
