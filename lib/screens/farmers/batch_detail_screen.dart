@@ -855,7 +855,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double avgSaleRate,
     required double latestAvgWeight,
     required int totalFeedBags,
-    required double totalFeedKg,
+    required double totalFeedKg, // ✅ FIX: new param
     required double totalChickCost,
     required double totalFeedCost,
     required double totalAdminCost,
@@ -1487,6 +1487,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               '${latestAvgWeight.toStringAsFixed(2)} KG',
             ),
             pdfDataRow('Size Category', sizeLabel),
+            // ✅ FIX: Show both bags and KG
             pdfDataRow(
               'Total Feed Used',
               '$totalFeedBags Bags (${totalFeedKg.toStringAsFixed(1)} KG)',
@@ -1888,7 +1889,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required int liveChicks,
     required double latestAvgWeight,
     required int totalFeedBags,
-    required double totalFeedKg,
+    required double totalFeedKg, // ✅ FIX: new param
     required int totalMortality,
     required int totalChicksSold,
     required double totalWeightSoldKg,
@@ -1938,7 +1939,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               Navigator.pop(ctx);
               _generateAndShowSettlementRasid(
                 totalFeedBags: totalFeedBags,
-                totalFeedKg: totalFeedKg,
+                totalFeedKg: totalFeedKg, // ✅ FIX: pass new param
                 totalMortality: totalMortality,
                 totalChicksSold: totalChicksSold,
                 totalWeightSoldKg: totalWeightSoldKg,
@@ -1962,7 +1963,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
   void _generateAndShowSettlementRasid({
     required int totalFeedBags,
-    required double totalFeedKg,
+    required double totalFeedKg, // ✅ FIX: new param
     required int totalMortality,
     required int totalChicksSold,
     required double totalWeightSoldKg,
@@ -1983,7 +1984,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         isBigSize: isBigSize,
         initialChicks: initialChicks,
         totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg,
+        totalFeedKg: totalFeedKg, // ✅ FIX
         totalMortality: totalMortality,
         totalChicksSold: totalChicksSold,
         totalWeightSoldKg: totalWeightSoldKg,
@@ -1995,7 +1996,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       _showRule2SettlementRasid(
         initialChicks: initialChicks,
         totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg,
+        totalFeedKg: totalFeedKg, // ✅ FIX
         totalMortality: totalMortality,
         totalChicksSold: totalChicksSold,
         totalWeightSoldKg: totalWeightSoldKg,
@@ -2042,7 +2043,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required bool isBigSize,
     required int initialChicks,
     required int totalFeedBags,
-    required double totalFeedKg,
+    required double totalFeedKg, // ✅ FIX: new param
     required int totalMortality,
     required int totalChicksSold,
     required double totalWeightSoldKg,
@@ -2067,7 +2068,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     bool medInProd = isBigSize ? _r1BigMedicineInProd : _r1SmMedicineInProd;
 
     double totalChickCost = initialChicks * chicksRate;
-    double totalFeedKgCal = totalFeedBags * kgPerBag;
+    double totalFeedKgCal = totalFeedBags * kgPerBag; // use given totalFeedBags
     double totalFeedCost = totalFeedKgCal * feedRate;
     double totalAdminCost = totalWeightSoldKg * adminCost;
 
@@ -2125,7 +2126,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       avgSaleRate: avgSaleRate,
       latestAvgWeight: latestAvgWeight,
       totalFeedBags: totalFeedBags,
-      totalFeedKg: totalFeedKg,
+      totalFeedKg: totalFeedKg, // ✅ FIX
       totalChickCost: totalChickCost,
       totalFeedCost: totalFeedCost,
       totalAdminCost: totalAdminCost,
@@ -2151,7 +2152,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   void _showRule2SettlementRasid({
     required int initialChicks,
     required int totalFeedBags,
-    required double totalFeedKg,
+    required double totalFeedKg, // ✅ FIX: new param
     required int totalMortality,
     required int totalChicksSold,
     required double totalWeightSoldKg,
@@ -2174,7 +2175,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       avgSaleRate: avgSaleRate,
       latestAvgWeight: latestAvgWeight,
       totalFeedBags: totalFeedBags,
-      totalFeedKg: totalFeedKg,
+      totalFeedKg: totalFeedKg, // ✅ FIX
       totalChickCost: 0,
       totalFeedCost: 0,
       totalAdminCost: 0,
@@ -2212,7 +2213,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double avgSaleRate,
     required double latestAvgWeight,
     required int totalFeedBags,
-    required double totalFeedKg,
+    required double totalFeedKg, // ✅ FIX: new param
     required double totalChickCost,
     required double totalFeedCost,
     required double totalAdminCost,
@@ -2480,6 +2481,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       '${latestAvgWeight.toStringAsFixed(2)} KG',
                     ),
                     _rasidRow('Size Category', sizeLabel),
+                    // ✅ FIX: Show both bags and KG
                     _rasidRow(
                       'Total Feed Used',
                       '$totalFeedBags Bags (${totalFeedKg.toStringAsFixed(1)} KG)',
@@ -2703,7 +2705,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                           avgSaleRate: avgSaleRate,
                           latestAvgWeight: latestAvgWeight,
                           totalFeedBags: totalFeedBags,
-                          totalFeedKg: totalFeedKg,
+                          totalFeedKg: totalFeedKg, // ✅ FIX
                           totalChickCost: totalChickCost,
                           totalFeedCost: totalFeedCost,
                           totalAdminCost: totalAdminCost,
@@ -2759,7 +2761,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                           avgSaleRate: avgSaleRate,
                           latestAvgWeight: latestAvgWeight,
                           totalFeedBags: totalFeedBags,
-                          totalFeedKg: totalFeedKg,
+                          totalFeedKg: totalFeedKg, // ✅ FIX
                           totalChickCost: totalChickCost,
                           totalFeedCost: totalFeedCost,
                           totalAdminCost: totalAdminCost,
@@ -2944,7 +2946,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double avgSaleRate,
     required double latestAvgWeight,
     required int totalFeedBags,
-    required double totalFeedKg,
+    required double totalFeedKg, // ✅ FIX: new param
     required double totalChickCost,
     required double totalFeedCost,
     required double totalAdminCost,
@@ -2982,7 +2984,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         avgSaleRate: avgSaleRate,
         latestAvgWeight: latestAvgWeight,
         totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg,
+        totalFeedKg: totalFeedKg, // ✅ FIX
         totalChickCost: totalChickCost,
         totalFeedCost: totalFeedCost,
         totalAdminCost: totalAdminCost,
@@ -3029,7 +3031,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         avgSaleRate: avgSaleRate,
         latestAvgWeight: latestAvgWeight,
         totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg,
+        totalFeedKg: totalFeedKg, // ✅ FIX
         totalChickCost: totalChickCost,
         totalFeedCost: totalFeedCost,
         totalAdminCost: totalAdminCost,
@@ -3107,7 +3109,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double avgSaleRate,
     required double latestAvgWeight,
     required int totalFeedBags,
-    required double totalFeedKg,
+    required double totalFeedKg, // ✅ FIX: new param
     required double totalChickCost,
     required double totalFeedCost,
     required double totalAdminCost,
@@ -3157,7 +3159,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         avgSaleRate: avgSaleRate,
         latestAvgWeight: latestAvgWeight,
         totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg,
+        totalFeedKg: totalFeedKg, // ✅ FIX
         totalChickCost: totalChickCost,
         totalFeedCost: totalFeedCost,
         totalAdminCost: totalAdminCost,
@@ -5202,9 +5204,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     double totalWeightSoldKg = 0.0;
     double totalSaleMoney = 0.0;
     double totalMedicineExpense = 0.0;
-    String actualRemainingBags = '0';
+    String actualRemainingBags = '0'; // last reported (for fraud risk)
     bool hasRemainingFeedLogged = false;
-    double totalReturnFeedKg = 0.0;
+    double totalReturnFeedKg = 0.0; // ✅ NEW
 
     for (var entry in _dailyEntries) {
       String currentType = entry['type'].toString().toLowerCase();
@@ -5239,12 +5241,14 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         totalMedicineExpense +=
             double.tryParse(entry['price'].toString()) ?? 0.0;
       } else if (currentType == 'returnfeed') {
+        // ✅ NEW
         totalReturnFeedKg += (entry['returnFeedKg'] is num)
             ? (entry['returnFeedKg'] as num).toDouble()
             : double.tryParse(entry['returnFeedKg'].toString()) ?? 0.0;
       }
     }
 
+    // ✅ Return Feed ko net consumption se minus karo
     double netTotalFeedKgSum = totalFeedKgSum - totalReturnFeedKg;
     if (netTotalFeedKgSum < 0) netTotalFeedKgSum = 0.0;
     int netTotalFeedBags = (netTotalFeedKgSum / 50.0).round();
@@ -5258,6 +5262,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     );
     int idealTargetWeight = _getAppStandardTargetWeight(chicksAgeDays);
 
+    // ── Expected consumed feed from engine ────────────────────────────────
     DateTime batchStartDate;
     try {
       final parts = (_liveBatchData['startDate'] ?? '').toString().split('/');
@@ -5283,17 +5288,23 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       );
     }
 
+    // ── Expected remaining feed (bags) from engine ──────────────────────
     double engineEstimatedRemainingKg =
-        netTotalFeedKgSum - totalExpectedConsumedKg;
+        netTotalFeedKgSum - totalExpectedConsumedKg; // ✅ use net
     if (engineEstimatedRemainingKg < 0) engineEstimatedRemainingKg = 0.0;
     double engineEstimatedRemainingBags = engineEstimatedRemainingKg / 50.0;
 
+    // ── For backward compatibility: expected consumed in bags ───────────
     double expectedConsumedBags = totalExpectedConsumedKg / 50.0;
-    double expectedRemainingBags = engineEstimatedRemainingBags;
+    double expectedRemainingBags =
+        engineEstimatedRemainingBags; // same as engine
 
+    // ── Reported actual remaining (for fraud risk) ──────────────────────
     double actualRemainingBagsNum = double.tryParse(actualRemainingBags) ?? 0.0;
 
-    double calculatedConsumedBags = netTotalFeedBags - actualRemainingBagsNum;
+    // ── FCR calculation ──────────────────────────────────────────────────
+    double calculatedConsumedBags =
+        netTotalFeedBags - actualRemainingBagsNum; // ✅ use net
     if (!hasRemainingFeedLogged && actualRemainingBagsNum == 0.0) {
       calculatedConsumedBags = expectedConsumedBags > netTotalFeedBags
           ? netTotalFeedBags.toDouble()
@@ -5307,8 +5318,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         ? (actualFeedConsumedKg / totalBiomassProducedKg)
         : 0.0;
 
+    // ── Fraud Risk ──────────────────────────────────────────────────────
     final FraudRiskAssessment fraudAssessment = FraudRiskEngine.assess(
-      feedDeliveredKg: netTotalFeedKgSum,
+      feedDeliveredKg: netTotalFeedKgSum, // ✅ use net
       expectedConsumedKg: totalExpectedConsumedKg,
       actualRemainingKg: actualRemainingBagsNum * 50.0,
       remainingFeedEverReported: hasRemainingFeedLogged,
@@ -5376,7 +5388,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     liveChicks: liveChicks,
                     latestAvgWeight: latestAvgWeight,
                     totalFeedBags: netTotalFeedBags,
-                    totalFeedKg: netTotalFeedKgSum,
+                    totalFeedKg: netTotalFeedKgSum, // ✅ FIX: pass KG
                     totalMortality: totalMortality,
                     totalChicksSold: totalChicksSold,
                     totalWeightSoldKg: totalWeightSoldKg,
@@ -5435,934 +5447,871 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             ),
         ],
       ),
-      // ====== BODY: SINGLECHILDSCROLLVIEW WITH SLIDING WHITE CONTAINER ======
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          children: [
-            // ── GREEN HEADER (unchanged) ──────────────────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-              decoration: const BoxDecoration(
-                color: primaryGreen,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(24),
-                  bottomRight: Radius.circular(24),
+      body: Column(
+        children: [
+          // ── TOP LIVE STATS HEADER ───────────────────────────────────
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+            decoration: const BoxDecoration(
+              color: primaryGreen,
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(24),
+                bottomRight: Radius.circular(24),
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildStatBlock('Chicks Quantity', '$initialChicks 🐥'),
+                    _buildStatBlock('Live Chicks', '$liveChicks 🐥'),
+                    _buildStatBlock('Days Old', '$chicksAgeDays Din 📅'),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildStatBlock(
+                      'Total Feed Bags',
+                      totalReturnFeedKg > 0
+                          ? 'Net: $netTotalFeedBags Bags 📦\n(${netTotalFeedKgSum.toStringAsFixed(1)} KG)\n'
+                                'Delivered: ${totalFeedKgSum.toStringAsFixed(1)} KG\n'
+                                'Returned: ${totalReturnFeedKg.toStringAsFixed(1)} KG'
+                          : '$netTotalFeedBags Bags 📦\n(${netTotalFeedKgSum.toStringAsFixed(1)} KG)',
+                    ),
+                    _buildStatBlock(
+                      'Mortality',
+                      '$totalMortality (${mortalityPercent.toStringAsFixed(2)}%) 💀',
+                      alert: PerformanceAlertEngine.evaluateMortality(
+                        mortalityPercent,
+                        _performanceConfig,
+                        dayNumber: chicksAgeDays,
+                      ),
+                    ),
+                    _buildStatBlock(
+                      'Start Date',
+                      _formatStartDateForDisplay(_liveBatchData['startDate']),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildStatBlock(
+                      'Current Weight',
+                      '${latestAvgWeight > 0 ? latestAvgWeight.toStringAsFixed(2) : "0.00"} kg ⚖️',
+                    ),
+                    _buildStatBlock(
+                      'Target Weight',
+                      '${(idealTargetWeight / 1000).toStringAsFixed(3)} kg 🎯',
+                    ),
+                    _buildStatBlock(
+                      'Live FCR Index',
+                      '${fcr > 0 ? fcr.toStringAsFixed(2) : "0.00"} 📊',
+                      alert: fcr > 0
+                          ? PerformanceAlertEngine.evaluateFcr(
+                              fcr,
+                              _performanceConfig,
+                              dayNumber: chicksAgeDays,
+                            )
+                          : null,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildStatBlock(
+                      'Expected Consumed',
+                      '${expectedConsumedBags.toStringAsFixed(1)} Bags 📉\n(${totalExpectedConsumedKg.toStringAsFixed(1)} KG)',
+                    ),
+                    _buildStatBlock(
+                      'Expected Balance',
+                      '${expectedRemainingBags.toStringAsFixed(1)} Bags 📊\n${(expectedRemainingBags * 50.0).toStringAsFixed(1)} KG',
+                    ),
+                    _buildStatBlock(
+                      'Actual Farm Stock',
+                      hasRemainingFeedLogged
+                          ? '$actualRemainingBags Bags 🚜\n${(actualRemainingBagsNum * 50.0).toStringAsFixed(1)} KG'
+                          : 'Not Reported Yet ⚠️',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'STATUS: $dynamicStatus',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── 🚨 FRAUD RISK INDICATOR ───────────────────────────────────
+          if (fraudAssessment.hasAnyData)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: _buildFraudRiskCard(fraudAssessment),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      color: Colors.grey.shade600,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Fraud Risk check tab shuru hoga jab kabhi "Actual Remaining Feed" '
+                        '(Flock Record mein) report hui ho.',
+                        style: TextStyle(fontSize: 11.5, color: Colors.black54),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _buildStatBlock('Chicks Quantity', '$initialChicks 🐥'),
-                      _buildStatBlock('Live Chicks', '$liveChicks 🐥'),
-                      _buildStatBlock('Days Old', '$chicksAgeDays Din 📅'),
-                    ],
+            ),
+
+          const SizedBox(height: 16),
+
+          // ── BATCH END BANNER ──────────────────────────────────────────
+          if (showBatchEndBtn)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: GestureDetector(
+                onTap: () => _showReturnFeedDialog(
+                  onDone: () => _showBatchEndConfirmation(
+                    liveChicks: liveChicks,
+                    latestAvgWeight: latestAvgWeight,
+                    totalFeedBags: netTotalFeedBags,
+                    totalFeedKg: netTotalFeedKgSum, // ✅ FIX: pass KG
+                    totalMortality: totalMortality,
+                    totalChicksSold: totalChicksSold,
+                    totalWeightSoldKg: totalWeightSoldKg,
+                    totalSaleMoney: totalSaleMoney,
+                    totalMedicineExpense: totalMedicineExpense,
                   ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                ),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.red.shade300, width: 1.5),
+                  ),
+                  child: Row(
                     children: [
-                      _buildStatBlock(
-                        'Total Feed Bags',
-                        totalReturnFeedKg > 0
-                            ? 'Net: $netTotalFeedBags Bags 📦\n(${netTotalFeedKgSum.toStringAsFixed(1)} KG)\n'
-                                  'Delivered: ${totalFeedKgSum.toStringAsFixed(1)} KG\n'
-                                  'Returned: ${totalReturnFeedKg.toStringAsFixed(1)} KG'
-                            : '$netTotalFeedBags Bags 📦\n(${netTotalFeedKgSum.toStringAsFixed(1)} KG)',
-                      ),
-                      _buildStatBlock(
-                        'Mortality',
-                        '$totalMortality (${mortalityPercent.toStringAsFixed(2)}%) 💀',
-                        alert: PerformanceAlertEngine.evaluateMortality(
-                          mortalityPercent,
-                          _performanceConfig,
-                          dayNumber: chicksAgeDays,
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade100,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.flag_rounded,
+                          color: Colors.red,
+                          size: 22,
                         ),
                       ),
-                      _buildStatBlock(
-                        'Start Date',
-                        _formatStartDateForDisplay(_liveBatchData['startDate']),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '🎉 Saari Murgiyan Bik Gayi!',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Batch End karo aur Settlement Rasid generate karo',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.red,
+                        size: 22,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                ),
+              ),
+            ),
+
+          if (showBatchEndBtn) const SizedBox(height: 12),
+
+          // ── SETTLEMENT RASID BUTTON ───────────────────────────────────
+          if (showSettlementRasidBtn)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: GestureDetector(
+                onTap: () => _generateAndShowSettlementRasid(
+                  totalFeedBags: netTotalFeedBags,
+                  totalFeedKg: netTotalFeedKgSum, // ✅ FIX: pass KG
+                  totalMortality: totalMortality,
+                  totalChicksSold: totalChicksSold,
+                  totalWeightSoldKg: totalWeightSoldKg,
+                  totalSaleMoney: totalSaleMoney,
+                  totalMedicineExpense: totalMedicineExpense,
+                  latestAvgWeight: latestAvgWeight,
+                ),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: primaryGreen.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: primaryGreen, width: 1.5),
+                  ),
+                  child: Row(
                     children: [
-                      _buildStatBlock(
-                        'Current Weight',
-                        '${latestAvgWeight > 0 ? latestAvgWeight.toStringAsFixed(2) : "0.00"} kg ⚖️',
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: primaryGreen.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.receipt_long_rounded,
+                          color: primaryGreen,
+                          size: 22,
+                        ),
                       ),
-                      _buildStatBlock(
-                        'Target Weight',
-                        '${(idealTargetWeight / 1000).toStringAsFixed(3)} kg 🎯',
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '🧾 Settlement Rasid Dekho',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: primaryGreen,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Tap karo — PDF Download aur Share bhi kar sakte ho',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      _buildStatBlock(
-                        'Live FCR Index',
-                        '${fcr > 0 ? fcr.toStringAsFixed(2) : "0.00"} 📊',
-                        alert: fcr > 0
-                            ? PerformanceAlertEngine.evaluateFcr(
-                                fcr,
-                                _performanceConfig,
-                                dayNumber: chicksAgeDays,
-                              )
-                            : null,
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: primaryGreen,
+                        size: 22,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _buildStatBlock(
-                        'Expected Consumed',
-                        '${expectedConsumedBags.toStringAsFixed(1)} Bags 📉\n(${totalExpectedConsumedKg.toStringAsFixed(1)} KG)',
-                      ),
-                      _buildStatBlock(
-                        'Expected Balance',
-                        '${expectedRemainingBags.toStringAsFixed(1)} Bags 📊\n${(expectedRemainingBags * 50.0).toStringAsFixed(1)} KG',
-                      ),
-                      _buildStatBlock(
-                        'Actual Farm Stock',
-                        hasRemainingFeedLogged
-                            ? '$actualRemainingBags Bags 🚜\n${(actualRemainingBagsNum * 50.0).toStringAsFixed(1)} KG'
-                            : 'Not Reported Yet ⚠️',
-                      ),
-                    ],
+                ),
+              ),
+            ),
+
+          if (showSettlementRasidBtn) const SizedBox(height: 12),
+
+          // ── QUICK ACTION BUTTONS ──────────────────────────────────────
+          if (dynamicStatus != 'COMPLETED')
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  _buildQuickActionCard(
+                    label: '+ Flock Record',
+                    icon: Icons.add_circle_outline_rounded,
+                    accentColor: primaryGreen,
+                    onTap: _showDailyEntryDialog,
                   ),
-                  const SizedBox(height: 18),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      'STATUS: $dynamicStatus',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
+                  _buildQuickActionCard(
+                    label: '+ Sale',
+                    icon: Icons.monetization_on_outlined,
+                    accentColor: Colors.orange,
+                    onTap: _showSalesEntryDialog,
+                  ),
+                  _buildQuickActionCard(
+                    label: 'Medicine',
+                    icon: Icons.medical_services_outlined,
+                    accentColor: Colors.purple,
+                    onTap: _showMedicineEntryDialog,
                   ),
                 ],
               ),
             ),
 
-            // ── NEW: WHITE ROUNDED CONTAINER WITH SLIDING EFFECT ──────────
-            Transform.translate(
-              offset: const Offset(0, -18),
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF5F5F5),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-                ),
-                padding: const EdgeInsets.only(top: 16),
-                child: Column(
-                  children: [
-                    // ── FRAUD RISK CARD ──────────────────────────────────
-                    if (fraudAssessment.hasAnyData)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: _buildFraudRiskCard(fraudAssessment),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade300),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline_rounded,
-                                color: Colors.grey.shade600,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'Fraud Risk check tab shuru hoga jab kabhi "Actual Remaining Feed" '
-                                  '(Flock Record mein) report hui ho.',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    color: Colors.black54,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+          if (dynamicStatus != 'COMPLETED') const SizedBox(height: 16),
 
-                    const SizedBox(height: 16),
-
-                    // ── BATCH END BANNER ──────────────────────────────────
-                    if (showBatchEndBtn)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: GestureDetector(
-                          onTap: () => _showReturnFeedDialog(
-                            onDone: () => _showBatchEndConfirmation(
-                              liveChicks: liveChicks,
-                              latestAvgWeight: latestAvgWeight,
-                              totalFeedBags: netTotalFeedBags,
-                              totalFeedKg: netTotalFeedKgSum,
-                              totalMortality: totalMortality,
-                              totalChicksSold: totalChicksSold,
-                              totalWeightSoldKg: totalWeightSoldKg,
-                              totalSaleMoney: totalSaleMoney,
-                              totalMedicineExpense: totalMedicineExpense,
-                            ),
-                          ),
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: Colors.red.shade300,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.shade100,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Icon(
-                                    Icons.flag_rounded,
-                                    color: Colors.red,
-                                    size: 22,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                const Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '🎉 Saari Murgiyan Bik Gayi!',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.red,
-                                        ),
-                                      ),
-                                      SizedBox(height: 2),
-                                      Text(
-                                        'Batch End karo aur Settlement Rasid generate karo',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.black54,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: Colors.red,
-                                  size: 22,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    if (showBatchEndBtn) const SizedBox(height: 12),
-
-                    // ── SETTLEMENT RASID BUTTON ──────────────────────────
-                    if (showSettlementRasidBtn)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: GestureDetector(
-                          onTap: () => _generateAndShowSettlementRasid(
-                            totalFeedBags: netTotalFeedBags,
-                            totalFeedKg: netTotalFeedKgSum,
-                            totalMortality: totalMortality,
-                            totalChicksSold: totalChicksSold,
-                            totalWeightSoldKg: totalWeightSoldKg,
-                            totalSaleMoney: totalSaleMoney,
-                            totalMedicineExpense: totalMedicineExpense,
-                            latestAvgWeight: latestAvgWeight,
-                          ),
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: primaryGreen.withOpacity(0.06),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: primaryGreen,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: primaryGreen.withOpacity(0.12),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Icon(
-                                    Icons.receipt_long_rounded,
-                                    color: primaryGreen,
-                                    size: 22,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                const Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '🧾 Settlement Rasid Dekho',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color: primaryGreen,
-                                        ),
-                                      ),
-                                      SizedBox(height: 2),
-                                      Text(
-                                        'Tap karo — PDF Download aur Share bhi kar sakte ho',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.black54,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: primaryGreen,
-                                  size: 22,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    if (showSettlementRasidBtn) const SizedBox(height: 12),
-
-                    // ── QUICK ACTION BUTTONS ──────────────────────────────
-                    if (dynamicStatus != 'COMPLETED')
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Row(
-                          children: [
-                            _buildQuickActionCard(
-                              label: '+ Flock Record',
-                              icon: Icons.add_circle_outline_rounded,
-                              accentColor: primaryGreen,
-                              onTap: _showDailyEntryDialog,
-                            ),
-                            _buildQuickActionCard(
-                              label: '+ Sale',
-                              icon: Icons.monetization_on_outlined,
-                              accentColor: Colors.orange,
-                              onTap: _showSalesEntryDialog,
-                            ),
-                            _buildQuickActionCard(
-                              label: 'Medicine',
-                              icon: Icons.medical_services_outlined,
-                              accentColor: Colors.purple,
-                              onTap: _showMedicineEntryDialog,
-                            ),
-                          ],
-                        ),
-                      ),
-
-                    if (dynamicStatus != 'COMPLETED')
-                      const SizedBox(height: 16),
-
-                    // ── DATA SHEETS HEADER ──────────────────────────────
-                    const Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          '📋 DATA SHEETS',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 11,
-                            color: Colors.black54,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // ── DAILY UPDATE LIST BUTTON ──────────────────────────
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 44,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: primaryGreen,
-                            side: BorderSide(
-                              color: primaryGreen.withOpacity(0.6),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          icon: const Icon(
-                            Icons.calendar_view_day_rounded,
-                            size: 20,
-                          ),
-                          label: const Text(
-                            'Daily Update List Dekho',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          onPressed: () async {
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => DailyUpdateListScreen(
-                                  batchData: _liveBatchData,
-                                  dailyEntries: _dailyEntries,
-                                  feedRuleConfig: _feedRuleConfig,
-                                  farmerId: widget.farmerId,
-                                  userRole: widget.userRole,
-                                ),
-                              ),
-                            );
-                            await _loadFreshBatchData();
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    // ── DATA LIST (shrink-wrapped, non-scrollable) ──────
-                    _dailyEntries.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 40),
-                            child: Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.analytics_rounded,
-                                    size: 48,
-                                    color: Colors.grey.shade300,
-                                  ),
-                                  const SizedBox(height: 10),
-                                  const Text(
-                                    'Abhi is batch ka koi daily record nahi hai.\nUpar button se log entry shuru karein.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 6,
-                            ),
-                            itemCount: _dailyEntries.length,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemBuilder: (context, index) {
-                              final logRow =
-                                  _dailyEntries[_dailyEntries.length -
-                                      1 -
-                                      index];
-                              String rowType = logRow['type']
-                                  .toString()
-                                  .toLowerCase();
-
-                              if (rowType == 'sale') {
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    side: const BorderSide(
-                                      color: Colors.orange,
-                                      width: 1.2,
-                                    ),
-                                  ),
-                                  child: Container(
-                                    color: Colors.orange.withOpacity(0.02),
-                                    padding: const EdgeInsets.all(14),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            const Text(
-                                              '💰 Sales Entry Successfully',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13,
-                                                color: Colors.orange,
-                                              ),
-                                            ),
-                                            const Spacer(),
-                                            Text(
-                                              '${logRow['date']}',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.black54,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const Divider(
-                                          color: Colors.orange,
-                                          height: 16,
-                                        ),
-                                        Text(
-                                          '👤 Buyer Name: ${logRow['buyerName']}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              '🐥 Sold: ${logRow['chicksSold']} pcs',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            Text(
-                                              '⚖️ Total Wt: ${logRow['totalWeightSold']} kg',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            Text(
-                                              '🏷️ Rate: ₹${logRow['pricePerKg']}/kg',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              '🐔 Avg Weight: ${logRow['avgWeightSold']} kg',
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                color: Colors.black54,
-                                                fontStyle: FontStyle.italic,
-                                              ),
-                                            ),
-                                            Text(
-                                              'Total Cash Received: ₹${logRow['totalMoney']}',
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.green,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Align(
-                                          alignment: Alignment.bottomRight,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.orange.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              border: Border.all(
-                                                color: Colors.orange.shade200,
-                                              ),
-                                            ),
-                                            child: Text(
-                                              'By: ${logRow['enteredBy'] ?? 'Staff'}',
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                color: Colors.orange.shade900,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              if (rowType == 'medicine') {
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    side: const BorderSide(
-                                      color: Colors.purple,
-                                      width: 1.2,
-                                    ),
-                                  ),
-                                  child: Container(
-                                    color: Colors.purple.withOpacity(0.01),
-                                    padding: const EdgeInsets.all(14),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            const Text(
-                                              '💊 Medicine Administered',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13,
-                                                color: Colors.purple,
-                                              ),
-                                            ),
-                                            const Spacer(),
-                                            Text(
-                                              '${logRow['date']}',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.black54,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const Divider(
-                                          color: Colors.purple,
-                                          height: 16,
-                                        ),
-                                        Text(
-                                          '🧪 Item Name: ${logRow['medicineName']}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                            color: Colors.black87,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              '📦 Vol/Qty: ${logRow['quantity']} ${logRow['unit']}',
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.black54,
-                                              ),
-                                            ),
-                                            Text(
-                                              'Exp Price: ₹${(double.tryParse(logRow['price'].toString()) ?? 0.0).toStringAsFixed(2)}',
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.purple,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Align(
-                                          alignment: Alignment.bottomRight,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.purple.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                            child: Text(
-                                              'By: ${logRow['enteredBy'] ?? 'Staff'}',
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                color: Colors.purple.shade900,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              if (rowType == 'cost') {
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    side: BorderSide(
-                                      color: Colors.grey.shade200,
-                                    ),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(14),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Text(
-                                              '📅 Din ki Entry: ${logRow['date']}',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 14,
-                                                color: Colors.black87,
-                                              ),
-                                            ),
-                                            const Spacer(),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 3,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey.shade100,
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                              ),
-                                              child: Text(
-                                                'By: ${logRow['enteredBy'] ?? 'Staff'}',
-                                                style: const TextStyle(
-                                                  fontSize: 10,
-                                                  color: Colors.black54,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const Divider(
-                                          color: Color(0xFFF5F5F5),
-                                          height: 16,
-                                        ),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            _buildLogMetricRow(
-                                              '⚖️ Avg Weight',
-                                              '${logRow['weight']} kg',
-                                            ),
-                                            _buildLogMetricRow(
-                                              '💀 Mortality',
-                                              '${logRow['mortality']}',
-                                            ),
-                                            _buildLogMetricRow(
-                                              (int.tryParse(
-                                                            logRow['feed']
-                                                                .toString(),
-                                                          ) ??
-                                                          0) <
-                                                      0
-                                                  ? '📦 Feed Correction ❌'
-                                                  : '📦 Feed Bags Arrived',
-                                              '${logRow['feed']} Bag'
-                                              '${logRow['feedTotalKg'] is num ? ' (${(logRow['feedTotalKg'] as num).toStringAsFixed(1)} KG)' : ''}',
-                                            ),
-                                          ],
-                                        ),
-                                        if (logRow['remainingFeed'] != null &&
-                                            logRow['remainingFeed'] != '0') ...[
-                                          const SizedBox(height: 6),
-                                          Row(
-                                            children: [
-                                              const Icon(
-                                                Icons.inventory_2_outlined,
-                                                size: 14,
-                                                color: Colors.blueGrey,
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                'Farm Stock Balance Checked: ${logRow['remainingFeed']} Bags bache hain',
-                                                style: const TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.blueGrey,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                        if (logRow['hasMismatch'] == true) ...[
-                                          const SizedBox(height: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.red.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              border: Border.all(
-                                                color: Colors.red.shade300,
-                                              ),
-                                            ),
-                                            child: Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                const Icon(
-                                                  Icons.error_outline,
-                                                  size: 14,
-                                                  color: Colors.red,
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Expanded(
-                                                  child: Text(
-                                                    '⚠️ Photo Mismatch: '
-                                                    '${logRow['mismatchReason'] ?? 'Entered value photo se match nahi hua'}',
-                                                    style: TextStyle(
-                                                      fontSize: 10.5,
-                                                      color:
-                                                          Colors.red.shade800,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              if (rowType == 'returnfeed') {
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    side: const BorderSide(
-                                      color: Colors.teal,
-                                      width: 1.2,
-                                    ),
-                                  ),
-                                  child: Container(
-                                    color: Colors.teal.withOpacity(0.02),
-                                    padding: const EdgeInsets.all(14),
-                                    child: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.assignment_return_rounded,
-                                          color: Colors.teal,
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                '↩️ Return Feed',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
-                                                  color: Colors.teal,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 3),
-                                              Text(
-                                                '${logRow['returnFeedKg']} KG farm se waapas aaya',
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.black87,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        Text(
-                                          '${logRow['date']}',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.black54,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              return const SizedBox.shrink();
-                            },
-                          ),
-
-                    const SizedBox(height: 24), // ✅ bottom padding
-                  ],
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '📋 DATA SHEETS',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                  color: Colors.black54,
+                  letterSpacing: 0.5,
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: primaryGreen,
+                  side: BorderSide(color: primaryGreen.withOpacity(0.6)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                icon: const Icon(Icons.calendar_view_day_rounded, size: 20),
+                label: const Text(
+                  'Daily Update List Dekho',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DailyUpdateListScreen(
+                        batchData: _liveBatchData,
+                        dailyEntries: _dailyEntries,
+                        feedRuleConfig: _feedRuleConfig,
+                        farmerId: widget.farmerId,
+                        userRole: widget.userRole,
+                      ),
+                    ),
+                  );
+                  await _loadFreshBatchData();
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // ── DATA LIST ─────────────────────────────────────────────────
+          Expanded(
+            child: _dailyEntries.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.analytics_rounded,
+                          size: 48,
+                          color: Colors.grey.shade300,
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Abhi is batch ka koi daily record nahi hai.\nUpar button se log entry shuru karein.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    itemCount: _dailyEntries.length,
+                    physics: const BouncingScrollPhysics(),
+                    itemBuilder: (context, index) {
+                      final logRow =
+                          _dailyEntries[_dailyEntries.length - 1 - index];
+                      String rowType = logRow['type'].toString().toLowerCase();
+
+                      if (rowType == 'sale') {
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: const BorderSide(
+                              color: Colors.orange,
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Container(
+                            color: Colors.orange.withOpacity(0.02),
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Text(
+                                      '💰 Sales Entry Successfully',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Colors.orange,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      '${logRow['date']}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.black54,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Divider(color: Colors.orange, height: 16),
+                                Text(
+                                  '👤 Buyer Name: ${logRow['buyerName']}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      '🐥 Sold: ${logRow['chicksSold']} pcs',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      '⚖️ Total Wt: ${logRow['totalWeightSold']} kg',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      '🏷️ Rate: ₹${logRow['pricePerKg']}/kg',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      '🐔 Avg Weight: ${logRow['avgWeightSold']} kg',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.black54,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Total Cash Received: ₹${logRow['totalMoney']}',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Align(
+                                  alignment: Alignment.bottomRight,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.shade50,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: Colors.orange.shade200,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'By: ${logRow['enteredBy'] ?? 'Staff'}',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.orange.shade900,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      if (rowType == 'medicine') {
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: const BorderSide(
+                              color: Colors.purple,
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Container(
+                            color: Colors.purple.withOpacity(0.01),
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Text(
+                                      '💊 Medicine Administered',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Colors.purple,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      '${logRow['date']}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.black54,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Divider(color: Colors.purple, height: 16),
+                                Text(
+                                  '🧪 Item Name: ${logRow['medicineName']}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      '📦 Vol/Qty: ${logRow['quantity']} ${logRow['unit']}',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black54,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Exp Price: ₹${(double.tryParse(logRow['price'].toString()) ?? 0.0).toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.purple,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Align(
+                                  alignment: Alignment.bottomRight,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple.shade50,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'By: ${logRow['enteredBy'] ?? 'Staff'}',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.purple.shade900,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      // ── COST ENTRY CARD ─────────────────────────────
+                      if (rowType == 'cost') {
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      '📅 Din ki Entry: ${logRow['date']}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        'By: ${logRow['enteredBy'] ?? 'Staff'}',
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.black54,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Divider(
+                                  color: Color(0xFFF5F5F5),
+                                  height: 16,
+                                ),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    _buildLogMetricRow(
+                                      '⚖️ Avg Weight',
+                                      '${logRow['weight']} kg',
+                                    ),
+                                    _buildLogMetricRow(
+                                      '💀 Mortality',
+                                      '${logRow['mortality']}',
+                                    ),
+                                    _buildLogMetricRow(
+                                      (int.tryParse(
+                                                    logRow['feed'].toString(),
+                                                  ) ??
+                                                  0) <
+                                              0
+                                          ? '📦 Feed Correction ❌'
+                                          : '📦 Feed Bags Arrived',
+                                      '${logRow['feed']} Bag'
+                                      '${logRow['feedTotalKg'] is num ? ' (${(logRow['feedTotalKg'] as num).toStringAsFixed(1)} KG)' : ''}',
+                                    ),
+                                  ],
+                                ),
+                                if (logRow['remainingFeed'] != null &&
+                                    logRow['remainingFeed'] != '0') ...[
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.inventory_2_outlined,
+                                        size: 14,
+                                        color: Colors.blueGrey,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Farm Stock Balance Checked: ${logRow['remainingFeed']} Bags bache hain',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blueGrey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                if (logRow['hasMismatch'] == true) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.red.shade300,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(
+                                          Icons.error_outline,
+                                          size: 14,
+                                          color: Colors.red,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            '⚠️ Photo Mismatch: '
+                                            '${logRow['mismatchReason'] ?? 'Entered value photo se match nahi hua'}',
+                                            style: TextStyle(
+                                              fontSize: 10.5,
+                                              color: Colors.red.shade800,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      // ── ✅ NEW: RETURN FEED CARD ──────────────────────────
+                      if (rowType == 'returnfeed') {
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: const BorderSide(
+                              color: Colors.teal,
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Container(
+                            color: Colors.teal.withOpacity(0.02),
+                            padding: const EdgeInsets.all(14),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.assignment_return_rounded,
+                                  color: Colors.teal,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        '↩️ Return Feed',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: Colors.teal,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '${logRow['returnFeedKg']} KG farm se waapas aaya',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  '${logRow['date']}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black54,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      // fallback if any other type
+                      return const SizedBox.shrink();
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }
