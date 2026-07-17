@@ -122,10 +122,14 @@ class _AccountsScreenState extends State<AccountsScreen>
   List<_DueItem> _dues = [];
   List<_LedgerItem> _expenses = [];
   List<_LedgerItem> _purchases = [];
+  List<_LedgerItem> _sales = []; // ✅ NEW: Central Sales List
 
   List<Map<String, dynamic>> _rawChicksPurchases = [];
   List<Map<String, dynamic>> _rawFeedStock = [];
   List<Map<String, dynamic>> _rawMedicineStock = [];
+
+  List<Map<String, dynamic>> _rawFeedSales = [];
+  List<Map<String, dynamic>> _rawMedicineSales = [];
 
   // ── FILTER STATE ──
   late AppDateFilter _selectedFilter;
@@ -133,7 +137,7 @@ class _AccountsScreenState extends State<AccountsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
 
     final now = DateTime.now();
     _selectedFilter = AppDateFilter(
@@ -164,11 +168,17 @@ class _AccountsScreenState extends State<AccountsScreen>
       .where((p) => isDateInFilter(p.date?.toIso8601String(), _selectedFilter))
       .toList();
 
+  List<_LedgerItem> get _filteredSales => _sales
+      .where((s) => isDateInFilter(s.date?.toIso8601String(), _selectedFilter))
+      .toList();
+
   double get _totalDue => _filteredDues.fold(0.0, (s, d) => s + d.due);
   double get _totalExpense =>
       _filteredExpenses.fold(0.0, (s, e) => s + e.amount);
   double get _totalPurchase =>
       _filteredPurchases.fold(0.0, (s, p) => s + p.amount);
+  double get _totalSales =>
+      _filteredSales.fold(0.0, (s, item) => s + item.amount);
 
   DateTime? _parseDate(String? raw) {
     if (raw == null || raw.isEmpty) return null;
@@ -181,6 +191,7 @@ class _AccountsScreenState extends State<AccountsScreen>
     final List<_DueItem> dues = [];
     final List<_LedgerItem> expenses = [];
     final List<_LedgerItem> purchases = [];
+    final List<_LedgerItem> sales = [];
 
     // 🐣 CHICKS
     final String? chicksJson = await CompanyStore.instance.getString(
@@ -229,6 +240,21 @@ class _AccountsScreenState extends State<AccountsScreen>
             final double paid = (alloc['paid'] as num?)?.toDouble() ?? 0.0;
             final double total = qty * rate;
             final double due = (total - paid).clamp(0.0, double.infinity);
+
+            // ✅ SALES ENTRY (Added even if fully paid)
+            sales.add(
+              _LedgerItem(
+                category: 'Chicks',
+                title: '🐣 Private Sale',
+                subtitle: '${qty.toStringAsFixed(0)} pcs',
+                amount: total,
+                date: _parseDate(alloc['allocatedOn']?.toString()),
+                emoji: '🐣',
+                color: Colors.orange.shade800,
+                addedBy: alloc['allocatedByName']?.toString() ?? '',
+              ),
+            );
+
             if (due <= 0.01) continue;
 
             dues.add(
@@ -265,9 +291,28 @@ class _AccountsScreenState extends State<AccountsScreen>
     if (feedSalesJson != null) {
       try {
         final List<dynamic> rawSales = json.decode(feedSalesJson);
-        for (final raw in rawSales) {
-          final Map<String, dynamic> sale = Map<String, dynamic>.from(raw);
+        _rawFeedSales = rawSales
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+        for (final sale in _rawFeedSales) {
           final double due = (sale['dueAmount'] as num?)?.toDouble() ?? 0.0;
+          final double totalSaleAmount =
+              (sale['totalSaleAmount'] as num?)?.toDouble() ?? 0.0;
+
+          // ✅ SALES ENTRY
+          sales.add(
+            _LedgerItem(
+              category: 'Feed',
+              title: '🌾 Feed Sale',
+              subtitle: sale['buyerName']?.toString() ?? '-',
+              amount: totalSaleAmount,
+              date: _parseDate(sale['date']?.toString()),
+              emoji: '🌾',
+              color: Colors.blue.shade700,
+              addedBy: sale['addedByName']?.toString() ?? '',
+            ),
+          );
+
           if (due <= 0.01) continue;
 
           dues.add(
@@ -275,7 +320,7 @@ class _AccountsScreenState extends State<AccountsScreen>
               category: 'Feed',
               buyerName: sale['buyerName']?.toString() ?? '-',
               mobile: sale['mobile']?.toString() ?? '',
-              totalAmount: (sale['totalSaleAmount'] as num?)?.toDouble() ?? 0.0,
+              totalAmount: totalSaleAmount,
               paid: (sale['paidAmount'] as num?)?.toDouble() ?? 0.0,
               due: due,
               date: _parseDate(sale['date']?.toString()),
@@ -327,9 +372,28 @@ class _AccountsScreenState extends State<AccountsScreen>
     if (medSalesJson != null) {
       try {
         final List<dynamic> rawSales = json.decode(medSalesJson);
-        for (final raw in rawSales) {
-          final Map<String, dynamic> sale = Map<String, dynamic>.from(raw);
+        _rawMedicineSales = rawSales
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+        for (final sale in _rawMedicineSales) {
           final double due = (sale['dueAmount'] as num?)?.toDouble() ?? 0.0;
+          final double totalSaleAmount =
+              (sale['totalSaleAmount'] as num?)?.toDouble() ?? 0.0;
+
+          // ✅ SALES ENTRY
+          sales.add(
+            _LedgerItem(
+              category: 'Medicine',
+              title: '💊 Medicine Sale',
+              subtitle: sale['buyerName']?.toString() ?? '-',
+              amount: totalSaleAmount,
+              date: _parseDate(sale['date']?.toString()),
+              emoji: '💊',
+              color: Colors.teal.shade700,
+              addedBy: sale['addedByName']?.toString() ?? '',
+            ),
+          );
+
           if (due <= 0.01) continue;
 
           dues.add(
@@ -337,7 +401,7 @@ class _AccountsScreenState extends State<AccountsScreen>
               category: 'Medicine',
               buyerName: sale['buyerName']?.toString() ?? '-',
               mobile: sale['mobile']?.toString() ?? '',
-              totalAmount: (sale['totalSaleAmount'] as num?)?.toDouble() ?? 0.0,
+              totalAmount: totalSaleAmount,
               paid: (sale['paidAmount'] as num?)?.toDouble() ?? 0.0,
               due: due,
               date: _parseDate(sale['date']?.toString()),
@@ -447,12 +511,16 @@ class _AccountsScreenState extends State<AccountsScreen>
     purchases.sort(
       (a, b) => (b.date ?? DateTime(2000)).compareTo(a.date ?? DateTime(2000)),
     );
+    sales.sort(
+      (a, b) => (b.date ?? DateTime(2000)).compareTo(a.date ?? DateTime(2000)),
+    );
 
     if (mounted) {
       setState(() {
         _dues = dues;
         _expenses = expenses;
         _purchases = purchases;
+        _sales = sales;
         _isLoading = false;
       });
     }
@@ -462,15 +530,12 @@ class _AccountsScreenState extends State<AccountsScreen>
   // 🌟 NEW DYNAMIC FILTER SYSTEM: Sirf wahi dikhega jiska data exist karta hai
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /// Ye function app ka poora data scan karke sirf un mahino ki list nikalta
-  /// hai jinka record tumne app me add kiya hai.
   List<DateTime> _getAvailableMonthsWithData() {
     Set<String> uniqueMonths = {};
     List<DateTime> result = [];
 
     void addDate(DateTime? d) {
       if (d != null) {
-        // Year-Month ke format me unique key banate hain taaki ek mahina do baar na aaye
         String key = '${d.year}-${d.month.toString().padLeft(2, '0')}';
         if (!uniqueMonths.contains(key)) {
           uniqueMonths.add(key);
@@ -479,15 +544,13 @@ class _AccountsScreenState extends State<AccountsScreen>
       }
     }
 
-    // Saare data se dates nikalna
     for (final d in _dues) addDate(d.date);
     for (final e in _expenses) addDate(e.date);
     for (final p in _purchases) addDate(p.date);
+    for (final s in _sales) addDate(s.date);
 
-    // ✅ Current Month HAMESHA list me rahega (chahe entry zero hi kyun na ho)
     addDate(DateTime.now());
 
-    // Naye mahine sabse upar dikhane ke liye sort (Descending)
     result.sort((a, b) => b.compareTo(a));
     return result;
   }
@@ -600,7 +663,6 @@ class _AccountsScreenState extends State<AccountsScreen>
   }
 
   void _showSingleMonthPicker() {
-    // 🛠️ Yahan ab Hardcoded "24 Months" ki jagah hamara Naya Dynamic List aayega
     final List<DateTime> months = _getAvailableMonthsWithData();
     final List<String> monthNames = [
       '',
@@ -689,16 +751,14 @@ class _AccountsScreenState extends State<AccountsScreen>
       }
     }
 
-    // Check oldest date in all records
     for (final d in _dues) checkMin(d.date);
     for (final e in _expenses) checkMin(e.date);
     for (final p in _purchases) checkMin(p.date);
+    for (final s in _sales) checkMin(s.date);
 
-    // Agar app me bilkul data hi nahi hai, to default is mahine se shuru karo
     DateTime firstAllowedDate =
         minDate ?? DateTime(DateTime.now().year, DateTime.now().month, 1);
 
-    // UI clean dikhane ke liye oldest record wale mahine ki 1 tareekh par lock kar do
     firstAllowedDate = DateTime(
       firstAllowedDate.year,
       firstAllowedDate.month,
@@ -707,9 +767,8 @@ class _AccountsScreenState extends State<AccountsScreen>
 
     final DateTimeRange? picked = await showDateRangePicker(
       context: context,
-      firstDate:
-          firstAllowedDate, // ✅ FIX: Ab calendar galti se bhi isse pichhe nahi jayega
-      lastDate: DateTime.now(), // Aaj tak ki date allow karo
+      firstDate: firstAllowedDate,
+      lastDate: DateTime.now(),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -775,7 +834,6 @@ class _AccountsScreenState extends State<AccountsScreen>
           ],
         ),
         actions: [
-          // Filter Button in AppBar
           InkWell(
             onTap: _showFilterBottomSheet,
             borderRadius: BorderRadius.circular(8),
@@ -825,6 +883,7 @@ class _AccountsScreenState extends State<AccountsScreen>
             Tab(text: '⏳ Udhaar'),
             Tab(text: '💸 Kharcha'),
             Tab(text: '🛒 Kharida'),
+            Tab(text: '🛍️ Sales'),
           ],
         ),
       ),
@@ -843,6 +902,13 @@ class _AccountsScreenState extends State<AccountsScreen>
                   medicineStock: _rawMedicineStock,
                   onRefresh: _loadAll,
                 ),
+                _PrivateSalesTabView(
+                  selectedFilter: _selectedFilter,
+                  chicksPurchases: _rawChicksPurchases,
+                  feedSales: _rawFeedSales,
+                  medicineSales: _rawMedicineSales,
+                  onRefresh: _loadAll,
+                ),
               ],
             ),
     );
@@ -852,8 +918,6 @@ class _AccountsScreenState extends State<AccountsScreen>
   // 📊 OVERVIEW TAB
   // ═══════════════════════════════════════════════════════════════════════
   Widget _buildOverviewTab() {
-    final double net = _totalDue - _totalExpense;
-
     Map<String, double> byCategory(List<_LedgerItem> items) {
       final Map<String, double> map = {};
       for (final i in items) {
@@ -864,6 +928,7 @@ class _AccountsScreenState extends State<AccountsScreen>
 
     final expByCat = byCategory(_filteredExpenses);
     final purByCat = byCategory(_filteredPurchases);
+    final salesByCat = byCategory(_filteredSales);
 
     Map<String, double> dueByCat = {};
     for (final d in _filteredDues) {
@@ -921,30 +986,45 @@ class _AccountsScreenState extends State<AccountsScreen>
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    _ovKpi('⏳ Udhaar Aana', _totalDue, Colors.orange.shade200),
+                    _ovKpi(
+                      '🛍️ Sales (Bikri)',
+                      _totalSales,
+                      Colors.greenAccent.shade100,
+                    ),
                     const SizedBox(width: 8),
-                    _ovKpi('💸 Kharcha', _totalExpense, Colors.red.shade200),
+                    _ovKpi('🛒 Kharida', _totalPurchase, Colors.blue.shade100),
                   ],
                 ),
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    _ovKpi('🛒 Kharida', _totalPurchase, Colors.blue.shade100),
+                    _ovKpi('⏳ Udhaar Aana', _totalDue, Colors.orange.shade200),
                     const SizedBox(width: 8),
-                    _ovKpi(
-                      net >= 0
-                          ? '📈 Net (Udhaar−Kharcha)'
-                          : '📉 Net (Udhaar−Kharcha)',
-                      net,
-                      net >= 0
-                          ? Colors.greenAccent.shade100
-                          : Colors.red.shade200,
-                    ),
+                    _ovKpi('💸 Kharcha', _totalExpense, Colors.red.shade200),
                   ],
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 20),
+
+          const Text(
+            '🛍️ Sales (Bikri) — Category Wise',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          if (salesByCat.isEmpty)
+            _emptyCatCard('Koi sale record nahi.')
+          else
+            ...salesByCat.entries.map(
+              (e) => _catRow(
+                _emojiFor(e.key),
+                e.key,
+                e.value,
+                Colors.green.shade700,
+              ),
+            ),
+
           const SizedBox(height: 20),
 
           const Text(
@@ -1613,6 +1693,264 @@ class _KharidaTabView extends StatelessWidget {
   }
 
   Widget _kharidaSectionCard({
+    required String emoji,
+    required String title,
+    required String subtitle,
+    required double amount,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.25)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Center(
+                child: Text(emoji, style: const TextStyle(fontSize: 24)),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '₹${amount.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.grey.shade400,
+                  size: 20,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🛍️ PRIVATE SALES TAB (NEW)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _PrivateSalesTabView extends StatelessWidget {
+  final AppDateFilter selectedFilter;
+  final List<Map<String, dynamic>> chicksPurchases;
+  final List<Map<String, dynamic>> feedSales;
+  final List<Map<String, dynamic>> medicineSales;
+  final Future<void> Function() onRefresh;
+
+  const _PrivateSalesTabView({
+    required this.selectedFilter,
+    required this.chicksPurchases,
+    required this.feedSales,
+    required this.medicineSales,
+    required this.onRefresh,
+  });
+
+  List<Map<String, dynamic>> get _chicksPrivateInPeriod {
+    List<Map<String, dynamic>> list = [];
+    for (var p in chicksPurchases) {
+      final String lotName = p['company']?.toString() ?? 'Lot';
+      final double effRate =
+          (p['effectiveRate'] as num?)?.toDouble() ??
+          (p['rate'] as num?)?.toDouble() ??
+          0.0;
+      final allocs = (p['allocations'] as List<dynamic>?) ?? [];
+      for (var rawAlloc in allocs) {
+        final Map<String, dynamic> a = Map<String, dynamic>.from(rawAlloc);
+        if (a['type'] == 'Private' &&
+            isDateInFilter(a['allocatedOn']?.toString(), selectedFilter)) {
+          a['lotName'] = lotName;
+          a['purchaseEffectiveRate'] = effRate;
+          list.add(a);
+        }
+      }
+    }
+    return list;
+  }
+
+  List<Map<String, dynamic>> get _feedSalesInPeriod {
+    return feedSales
+        .where((s) => isDateInFilter(s['date']?.toString(), selectedFilter))
+        .toList();
+  }
+
+  List<Map<String, dynamic>> get _medicineSalesInPeriod {
+    return medicineSales
+        .where((s) => isDateInFilter(s['date']?.toString(), selectedFilter))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chicksList = _chicksPrivateInPeriod;
+    final double chicksQty = chicksList.fold(
+      0.0,
+      (s, p) => s + ((p['qty'] as num?)?.toDouble() ?? 0.0),
+    );
+    final double chicksAmt = chicksList.fold(
+      0.0,
+      (s, p) =>
+          s +
+          (((p['qty'] as num?)?.toDouble() ?? 0.0) *
+              ((p['rate'] as num?)?.toDouble() ?? 0.0)),
+    );
+
+    final feedList = _feedSalesInPeriod;
+    final double feedAmt = feedList.fold(
+      0.0,
+      (s, p) => s + ((p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0),
+    );
+
+    final medList = _medicineSalesInPeriod;
+    final double medAmt = medList.fold(
+      0.0,
+      (s, p) => s + ((p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0),
+    );
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      color: const Color(0xFF1B5E20),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1B5E20).withOpacity(0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(0xFF1B5E20).withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.filter_alt_rounded, color: Color(0xFF1B5E20)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Filter: ${selectedFilter.label}',
+                    style: const TextStyle(
+                      color: Color(0xFF1B5E20),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          _salesSectionCard(
+            emoji: '🐣',
+            title: 'Chicks (Private)',
+            subtitle:
+                '${chicksList.length} sale${chicksList.length == 1 ? '' : 's'} • ${chicksQty.toStringAsFixed(0)} pcs',
+            amount: chicksAmt,
+            color: Colors.orange.shade800,
+            onTap: () {
+              Get.to(
+                () => ChicksPrivateSalesMonthlyListScreen(
+                  selectedFilter: selectedFilter,
+                  sales: chicksList,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+
+          _salesSectionCard(
+            emoji: '🌾',
+            title: 'Feed (Private)',
+            subtitle:
+                '${feedList.length} sale${feedList.length == 1 ? '' : 's'}',
+            amount: feedAmt,
+            color: Colors.blue.shade700,
+            onTap: () {
+              Get.to(
+                () => FeedPrivateSalesMonthlyListScreen(
+                  selectedFilter: selectedFilter,
+                  sales: feedList,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+
+          _salesSectionCard(
+            emoji: '💊',
+            title: 'Medicine (Private)',
+            subtitle: '${medList.length} sale${medList.length == 1 ? '' : 's'}',
+            amount: medAmt,
+            color: Colors.teal.shade700,
+            onTap: () {
+              Get.to(
+                () => MedicinePrivateSalesMonthlyListScreen(
+                  selectedFilter: selectedFilter,
+                  sales: medList,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _salesSectionCard({
     required String emoji,
     required String title,
     required String subtitle,
@@ -3247,6 +3585,496 @@ class _MedicineMonthlyDetailScreenState
         style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
         textAlign: TextAlign.center,
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🐣 CHICKS PRIVATE SALES LIST
+// ═══════════════════════════════════════════════════════════════════════════
+class ChicksPrivateSalesMonthlyListScreen extends StatelessWidget {
+  final AppDateFilter selectedFilter;
+  final List<Map<String, dynamic>> sales;
+
+  const ChicksPrivateSalesMonthlyListScreen({
+    super.key,
+    required this.selectedFilter,
+    required this.sales,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final double totalQty = sales.fold(
+      0.0,
+      (s, p) => s + ((p['qty'] as num?)?.toDouble() ?? 0.0),
+    );
+    final double totalAmt = sales.fold(
+      0.0,
+      (s, p) =>
+          s +
+          (((p['qty'] as num?)?.toDouble() ?? 0.0) *
+              ((p['rate'] as num?)?.toDouble() ?? 0.0)),
+    );
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.orange.shade800,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () => Get.back(),
+        ),
+        title: Text(
+          '🐣 Chicks Sales — ${selectedFilter.label}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      body: sales.isEmpty
+          ? Center(
+              child: Text(
+                'Is period mein koi sale nahi hui.',
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: sales.length + 1,
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '${sales.length} Sales • ${totalQty.toStringAsFixed(0)} pcs',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12.5,
+                            color: Colors.orange.shade900,
+                          ),
+                        ),
+                        Text(
+                          '₹${totalAmt.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.orange.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                final p = sales[index - 1];
+                final double qty = (p['qty'] as num?)?.toDouble() ?? 0.0;
+                final double rate = (p['rate'] as num?)?.toDouble() ?? 0.0;
+                final double amt = qty * rate;
+                return GestureDetector(
+                  onTap: () {
+                    Get.to(
+                      () => ChicksPrivateSaleDetailScreen(
+                        alloc: p,
+                        lotName: p['lotName']?.toString() ?? 'Lot',
+                        purchaseEffectiveRate:
+                            (p['purchaseEffectiveRate'] as num?)?.toDouble() ??
+                            0.0,
+                      ),
+                    );
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p['name']?.toString() ?? '-',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${qty.toStringAsFixed(0)} pcs @ ₹${rate.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                              Text(
+                                formatHistoryDateTime(
+                                  p['allocatedOn']?.toString(),
+                                ),
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: Colors.black45,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '₹${amt.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.orange.shade900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 18,
+                              color: Colors.grey.shade400,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🌾 FEED PRIVATE SALES LIST
+// ═══════════════════════════════════════════════════════════════════════════
+class FeedPrivateSalesMonthlyListScreen extends StatelessWidget {
+  final AppDateFilter selectedFilter;
+  final List<Map<String, dynamic>> sales;
+
+  const FeedPrivateSalesMonthlyListScreen({
+    super.key,
+    required this.selectedFilter,
+    required this.sales,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final double totalAmt = sales.fold(
+      0.0,
+      (s, p) => s + ((p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0),
+    );
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.blue.shade700,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () => Get.back(),
+        ),
+        title: Text(
+          '🌾 Feed Sales — ${selectedFilter.label}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      body: sales.isEmpty
+          ? Center(
+              child: Text(
+                'Is period mein koi sale nahi hui.',
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: sales.length + 1,
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '${sales.length} Sales',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12.5,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                        Text(
+                          '₹${totalAmt.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                final p = sales[index - 1];
+                final double amt =
+                    (p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0;
+                return GestureDetector(
+                  onTap: () {
+                    Get.to(() => FeedSaleDetailScreen(sale: p));
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p['buyerName']?.toString() ?? '-',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                formatHistoryDateTime(p['date']?.toString()),
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: Colors.black45,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '₹${amt.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.blue.shade900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 18,
+                              color: Colors.grey.shade400,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 💊 MEDICINE PRIVATE SALES LIST
+// ═══════════════════════════════════════════════════════════════════════════
+class MedicinePrivateSalesMonthlyListScreen extends StatelessWidget {
+  final AppDateFilter selectedFilter;
+  final List<Map<String, dynamic>> sales;
+
+  const MedicinePrivateSalesMonthlyListScreen({
+    super.key,
+    required this.selectedFilter,
+    required this.sales,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final double totalAmt = sales.fold(
+      0.0,
+      (s, p) => s + ((p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0),
+    );
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.teal.shade700,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Colors.white,
+          ),
+          onPressed: () => Get.back(),
+        ),
+        title: Text(
+          '💊 Medicine Sales — ${selectedFilter.label}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      body: sales.isEmpty
+          ? Center(
+              child: Text(
+                'Is period mein koi sale nahi hui.',
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: sales.length + 1,
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.shade50,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.teal.shade200),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '${sales.length} Sales',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12.5,
+                            color: Colors.teal.shade900,
+                          ),
+                        ),
+                        Text(
+                          '₹${totalAmt.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.teal.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                final p = sales[index - 1];
+                final double amt =
+                    (p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0;
+                return GestureDetector(
+                  onTap: () {
+                    Get.to(() => MedicineSaleDetailScreen(sale: p));
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.teal.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p['buyerName']?.toString() ?? '-',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                formatHistoryDateTime(p['date']?.toString()),
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: Colors.black45,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '₹${amt.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.teal.shade900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 18,
+                              color: Colors.grey.shade400,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
