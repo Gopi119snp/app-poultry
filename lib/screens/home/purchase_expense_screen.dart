@@ -5,9 +5,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:poultrypro/services/company_store.dart';
 import 'package:poultrypro/services/session_service.dart';
-import 'dart:io';
-import 'package:image_picker/image_picker.dart';
-import 'package:google_ml_kit/google_ml_kit.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔗 SHARED HELPERS — Farmer ka batch dhoondhna / naya batch ID banana
@@ -111,24 +108,38 @@ class ChicksPurchase {
     return totalQty - allocated;
   }
 
-  // SharedPreferences se load karne ke liye
+  // SharedPreferences se load karne ke liye (SAFE VERSION)
   factory ChicksPurchase.fromMap(Map<String, dynamic> map) {
+    // Ye helper function numbers aur strings dono ko safely double mein convert karega
+    double parseDouble(dynamic val) {
+      if (val == null) return 0.0;
+      if (val is num) return val.toDouble();
+      if (val is String) return double.tryParse(val) ?? 0.0;
+      return 0.0;
+    }
+
+    // Ye helper function allocations ko safely parse karega
+    List<Map<String, dynamic>> parseAllocations(dynamic allocData) {
+      if (allocData is List) {
+        return allocData.map((e) {
+          if (e is Map) return Map<String, dynamic>.from(e);
+          return <String, dynamic>{};
+        }).toList();
+      }
+      return [];
+    }
+
     return ChicksPurchase(
       company: map['company']?.toString() ?? '',
       breed: map['breed']?.toString() ?? '',
-      totalQty: (map['quantity'] as num?)?.toDouble() ?? 0.0,
-      rate: (map['rate'] as num?)?.toDouble() ?? 0.0,
-      effectiveRate: (map['effectiveRate'] as num?)?.toDouble() ?? 0.0,
-      totalAmount: (map['totalAmount'] as num?)?.toDouble() ?? 0.0,
+      totalQty: parseDouble(map['quantity']),
+      rate: parseDouble(map['rate']),
+      effectiveRate: parseDouble(map['effectiveRate']),
+      totalAmount: parseDouble(map['totalAmount']),
       date: map['date']?.toString() ?? '',
       addedByName: map['addedByName']?.toString() ?? '',
       addedByRole: map['addedByRole']?.toString() ?? '',
-      allocations: List<Map<String, dynamic>>.from(
-        (map['allocations'] as List<dynamic>?)?.map(
-              (e) => Map<String, dynamic>.from(e as Map),
-            ) ??
-            [],
-      ),
+      allocations: parseAllocations(map['allocations']),
     );
   }
 
@@ -2317,6 +2328,7 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
     _loadHistory();
   }
 
+  // SAFE LOAD — ek corrupt entry se puri list crash nahi hogi
   Future<void> _loadHistory() async {
     setState(() => _isLoading = true);
     final String? jsonStr = await CompanyStore.instance.getString(
@@ -2325,9 +2337,22 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
     if (jsonStr != null) {
       try {
         final List<dynamic> raw = json.decode(jsonStr);
-        _entries = raw
-            .map((e) => ChicksPurchase.fromMap(Map<String, dynamic>.from(e)))
-            .toList();
+        List<ChicksPurchase> loadedEntries = [];
+
+        for (var e in raw) {
+          if (e is Map) {
+            try {
+              loadedEntries.add(
+                ChicksPurchase.fromMap(Map<String, dynamic>.from(e)),
+              );
+            } catch (err) {
+              debugPrint(
+                'Chicks parse error: $err',
+              ); // Kisi ek error pe puri list crash nahi hogi
+            }
+          }
+        }
+        _entries = loadedEntries;
       } catch (_) {}
     }
     if (mounted) setState(() => _isLoading = false);
@@ -3953,6 +3978,7 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
   );
 }
 
+// ✅ SAFE VERSION — Error-Free _feedAllocInput
 Widget _feedAllocInput(
   String title,
   TextEditingController qtyCtrl,
@@ -3964,8 +3990,6 @@ Widget _feedAllocInput(
   double qty = double.tryParse(qtyCtrl.text) ?? 0.0;
   double billingRate = double.tryParse(rateCtrl.text) ?? 0.0;
   bool isOver = qty > avail;
-
-  // Profit / Loss calculation (per bag aur total)
   double totalCost = qty * purchaseRatePerBag;
   double totalBilling = qty * billingRate;
   double profit = totalBilling - totalCost;
@@ -4049,7 +4073,7 @@ Widget _feedAllocInput(
             ),
           ],
         ),
-        // Profit / Loss mini widget
+        // Profit / Loss mini widget (only if hasCalc)
         if (hasCalc) ...[
           const SizedBox(height: 10),
           Container(

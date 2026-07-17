@@ -2,14 +2,18 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 import '../../services/company_store.dart';
+import '../home/purchase_expense_screen.dart' show ensureFeedStockMigrated;
 
 // =============================================================================
-// FARMER REPORT SCREEN — ✅ RESTRUCTURED:
-// Main screen ab sirf "abhi jo batch khatam hua" (sabse recent COMPLETED
-// batch) ka poora income breakdown dikhata hai, + ek button "Sabhi Reports
-// Dekho" jo alag screen (AllBatchesReportScreen) kholta hai jisme abhi tak
-// ke SAARE batches ki list + total summary hoti hai (jo pehle isi screen
-// mein sab ek saath dikhta tha).
+// FARMER REPORT SCREEN — Main screen ab sirf "abhi jo batch khatam hua" (sabse
+// recent COMPLETED batch) ka poora income breakdown dikhata hai, + ek button
+// "Sabhi Reports Dekho" jo alag screen (AllBatchesReportScreen) kholta hai
+// jisme abhi tak ke SAARE batches ki list + total summary hoti hai.
+//
+// ✅ NEW: Har lot card ke neeche ek "Detail Information Dekho" button hai —
+// isse BatchDetailInformationScreen khulti hai jisme Chicks/Feed/Medicine
+// har ek ka alag line/area chart (Company Rate vs Farmer Rate, cumulative
+// quantity ke against) aur profit/loss dikhta hai.
 // =============================================================================
 
 const Color primaryGreen = Color(0xFF1B5E20);
@@ -973,6 +977,48 @@ Widget buildLotCard(_LotEarning e) {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
             child: buildBreakdownTable(e),
           ),
+
+          // ✅ NEW: Detail Information button — Chicks/Feed/Medicine ka
+          // alag-alag line/area chart (Company Rate vs Farmer Rate)
+          // dikhane wali screen kholta hai.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Builder(
+              builder: (context) => SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            BatchDetailInformationScreen(batchId: e.batchId),
+                      ),
+                    );
+                  },
+                  icon: const Icon(
+                    Icons.query_stats_rounded,
+                    size: 18,
+                    color: primaryGreen,
+                  ),
+                  label: const Text(
+                    'Detail Information Dekho',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: primaryGreen,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: primaryGreen),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ],
     ),
@@ -1390,7 +1436,7 @@ Widget buildTotalSummaryCard({
           ),
         ),
 
-        // ✅ NEW: Batch-wise pie chart — kis batch se kitna income aaya,
+        // ✅ Batch-wise pie chart — kis batch se kitna income aaya,
         // tap karke dekho
         _BatchIncomePieChart(earnings: earnings),
 
@@ -1807,6 +1853,698 @@ class _PieChartPainter extends CustomPainter {
     return oldDelegate.selectedIndex != selectedIndex ||
         oldDelegate.values != values ||
         oldDelegate.colors != colors;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NEW: BATCH DETAIL INFORMATION SCREEN — "Detail Information Dekho" button
+// se yahan aate hain. Isme Chicks/Feed/Medicine har ek ka alag line/area
+// chart hota hai: X-axis = cumulative quantity (0 se total tak), Y-axis =
+// rate (₹). Blue line = Company Purchase/Cost Rate, Orange line = Farmer
+// Rate. Jahan farmer line company line se upar hoti hai wahan hara (profit)
+// shading, jahan neeche hoti hai wahan laal (loss) shading. Har category ke
+// neeche uska profit/loss aur sabse neeche total profit/loss.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Ek allocation "segment" — kisi batch ko di gayi ek chicks/feed/medicine
+/// allocation ka qty, company rate (cost) aur farmer rate (billed).
+class _AllocSegment {
+  final double qty;
+  final double companyRate;
+  final double farmerRate;
+  const _AllocSegment(this.qty, this.companyRate, this.farmerRate);
+  double get profit => (farmerRate - companyRate) * qty;
+}
+
+class BatchDetailInformationScreen extends StatefulWidget {
+  final String batchId;
+  const BatchDetailInformationScreen({super.key, required this.batchId});
+
+  @override
+  State<BatchDetailInformationScreen> createState() =>
+      _BatchDetailInformationScreenState();
+}
+
+class _BatchDetailInformationScreenState
+    extends State<BatchDetailInformationScreen> {
+  bool _isLoading = true;
+  List<_AllocSegment> _chicksSegs = [];
+  Map<String, List<_AllocSegment>> _feedSegsByType = {};
+  Map<String, List<_AllocSegment>> _medSegsByName = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+
+    // ── Chicks ────────────────────────────────────────────────────────────
+    List<_AllocSegment> chicksSegs = [];
+    final String? chicksJson = await CompanyStore.instance.getString(
+      'chicksPurchaseHistory',
+    );
+    if (chicksJson != null) {
+      try {
+        final List<dynamic> raw = json.decode(chicksJson);
+        List<Map<String, dynamic>> matches = [];
+        for (final purchase in raw) {
+          final double purchaseRate =
+              (purchase['effectiveRate'] as num?)?.toDouble() ??
+              (purchase['rate'] as num?)?.toDouble() ??
+              0;
+          final List<dynamic> allocs = (purchase['allocations'] as List?) ?? [];
+          for (final a in allocs) {
+            if (a['type'] == 'Company' &&
+                a['batchId']?.toString() == widget.batchId) {
+              matches.add({
+                'qty': (a['qty'] as num?)?.toDouble() ?? 0.0,
+                'rate': (a['rate'] as num?)?.toDouble() ?? 0.0,
+                'purchaseRate': purchaseRate,
+                'allocatedOn': a['allocatedOn']?.toString() ?? '',
+              });
+            }
+          }
+        }
+        matches.sort(
+          (a, b) => (a['allocatedOn'] as String).compareTo(
+            b['allocatedOn'] as String,
+          ),
+        );
+        for (final m in matches) {
+          if ((m['qty'] as double) <= 0) continue;
+          chicksSegs.add(
+            _AllocSegment(
+              m['qty'] as double,
+              m['purchaseRate'] as double,
+              m['rate'] as double,
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+
+    // ── Feed (per type) ──────────────────────────────────────────────────
+    Map<String, List<_AllocSegment>> feedSegs = {};
+    try {
+      final feedStock = await ensureFeedStockMigrated();
+      for (final feedType in feedStock) {
+        final String name =
+            feedType['name']?.toString() ?? feedType['id']?.toString() ?? '';
+        final double currentAvgCost =
+            (feedType['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+        final List<dynamic> allocs = (feedType['allocations'] as List?) ?? [];
+        List<Map<String, dynamic>> matches = [];
+        for (final a in allocs) {
+          if (a['batchId']?.toString() == widget.batchId) {
+            matches.add({
+              'qty': (a['qty'] as num?)?.toDouble() ?? 0.0,
+              'rate': (a['rate'] as num?)?.toDouble() ?? 0.0,
+              'costAtAllocation':
+                  (a['costAtAllocation'] as num?)?.toDouble() ?? currentAvgCost,
+              'allocatedOn': a['allocatedOn']?.toString() ?? '',
+            });
+          }
+        }
+        if (matches.isEmpty) continue;
+        matches.sort(
+          (a, b) => (a['allocatedOn'] as String).compareTo(
+            b['allocatedOn'] as String,
+          ),
+        );
+        feedSegs[name] = matches
+            .where((m) => (m['qty'] as double) > 0)
+            .map(
+              (m) => _AllocSegment(
+                m['qty'] as double,
+                m['costAtAllocation'] as double,
+                m['rate'] as double,
+              ),
+            )
+            .toList();
+        if (feedSegs[name]!.isEmpty) feedSegs.remove(name);
+      }
+    } catch (_) {}
+
+    // ── Medicine (per medicine) ──────────────────────────────────────────
+    Map<String, List<_AllocSegment>> medSegs = {};
+    final String? medJson = await CompanyStore.instance.getString(
+      'medicineStockList',
+    );
+    if (medJson != null) {
+      try {
+        final List<dynamic> rawMeds = json.decode(medJson);
+        for (final med in rawMeds) {
+          final String name = med['name']?.toString() ?? '-';
+          final double currentAvgCostPerBase =
+              (med['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
+          final List<dynamic> allocs = (med['allocations'] as List?) ?? [];
+          List<Map<String, dynamic>> matches = [];
+          for (final a in allocs) {
+            if (a['batchId']?.toString() == widget.batchId) {
+              final double qty = (a['qty'] as num?)?.toDouble() ?? 0.0;
+              final double rate = (a['rate'] as num?)?.toDouble() ?? 0.0;
+              final double qtyBase =
+                  (a['qtyInBaseUnit'] as num?)?.toDouble() ?? qty;
+              final double costPerBase =
+                  (a['costAtAllocation'] as num?)?.toDouble() ??
+                  currentAvgCostPerBase;
+              // Cost ko "per sale unit" mein convert karo taaki farmer rate
+              // (jo sale unit mein hai) ke saath seedha compare ho sake.
+              final double costPerSaleUnit = qty > 0
+                  ? (qtyBase * costPerBase) / qty
+                  : costPerBase;
+              matches.add({
+                'qty': qty,
+                'rate': rate,
+                'costPerUnit': costPerSaleUnit,
+                'allocatedOn': a['allocatedOn']?.toString() ?? '',
+              });
+            }
+          }
+          if (matches.isEmpty) continue;
+          matches.sort(
+            (a, b) => (a['allocatedOn'] as String).compareTo(
+              b['allocatedOn'] as String,
+            ),
+          );
+          final segs = matches
+              .where((m) => (m['qty'] as double) > 0)
+              .map(
+                (m) => _AllocSegment(
+                  m['qty'] as double,
+                  m['costPerUnit'] as double,
+                  m['rate'] as double,
+                ),
+              )
+              .toList();
+          if (segs.isNotEmpty) medSegs[name] = segs;
+        }
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      setState(() {
+        _chicksSegs = chicksSegs;
+        _feedSegsByType = feedSegs;
+        _medSegsByName = medSegs;
+        _isLoading = false;
+      });
+    }
+  }
+
+  double get _totalProfit {
+    double t = 0;
+    for (final s in _chicksSegs) {
+      t += s.profit;
+    }
+    for (final list in _feedSegsByType.values) {
+      for (final s in list) {
+        t += s.profit;
+      }
+    }
+    for (final list in _medSegsByName.values) {
+      for (final s in list) {
+        t += s.profit;
+      }
+    }
+    return t;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasAnyData =
+        _chicksSegs.isNotEmpty ||
+        _feedSegsByType.isNotEmpty ||
+        _medSegsByName.isNotEmpty;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: primaryGreen,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          '${widget.batchId} — Detail Info',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+        ),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: primaryGreen))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!hasAnyData)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(30),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.hourglass_empty_rounded,
+                            color: Colors.orange.shade300,
+                            size: 32,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Is batch ke liye koi allocation data nahi mila.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  if (_chicksSegs.isNotEmpty) ...[
+                    _sectionTitle('🐥 Chicks'),
+                    const SizedBox(height: 10),
+                    _categoryCard('Chicks', _chicksSegs, unit: 'pcs'),
+                    const SizedBox(height: 20),
+                  ],
+
+                  if (_feedSegsByType.isNotEmpty) ...[
+                    _sectionTitle('🌾 Feed'),
+                    const SizedBox(height: 10),
+                    ..._feedSegsByType.entries.map(
+                      (entry) => Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _categoryCard(
+                          entry.key,
+                          entry.value,
+                          unit: 'bag',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+
+                  if (_medSegsByName.isNotEmpty) ...[
+                    _sectionTitle('💊 Medicine'),
+                    const SizedBox(height: 10),
+                    ..._medSegsByName.entries.map(
+                      (entry) => Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _categoryCard(
+                          entry.key,
+                          entry.value,
+                          unit: 'unit',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+
+                  if (hasAnyData) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _totalProfit >= 0
+                            ? primaryGreen.withOpacity(0.08)
+                            : Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: _totalProfit >= 0
+                              ? primaryGreen.withOpacity(0.3)
+                              : Colors.red.shade200,
+                          width: 1.2,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _totalProfit >= 0
+                                ? '📈 Total Profit'
+                                : '📉 Total Loss',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: _totalProfit >= 0
+                                  ? primaryGreen
+                                  : Colors.red.shade700,
+                            ),
+                          ),
+                          Text(
+                            '${_totalProfit >= 0 ? "+" : "-"}₹${fmt(_totalProfit.abs())}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20,
+                              color: _totalProfit >= 0
+                                  ? primaryGreen
+                                  : Colors.red.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _sectionTitle(String t) => Text(
+    t,
+    style: const TextStyle(
+      fontSize: 15,
+      fontWeight: FontWeight.bold,
+      color: Colors.black87,
+    ),
+  );
+
+  Widget _categoryCard(
+    String title,
+    List<_AllocSegment> segs, {
+    required String unit,
+  }) {
+    final double totalQty = segs.fold(0.0, (s, e) => s + e.qty);
+    final double totalProfit = segs.fold(0.0, (s, e) => s + e.profit);
+    final double avgCompanyRate = totalQty > 0
+        ? segs.fold(0.0, (s, e) => s + e.qty * e.companyRate) / totalQty
+        : 0;
+    final double avgFarmerRate = totalQty > 0
+        ? segs.fold(0.0, (s, e) => s + e.qty * e.farmerRate) / totalQty
+        : 0;
+    final double maxRate = math.max(avgCompanyRate, avgFarmerRate) <= 0
+        ? 1
+        : math.max(avgCompanyRate, avgFarmerRate);
+    final bool isProfit = totalProfit >= 0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ──
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Colors.black87,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${totalQty == totalQty.roundToDouble() ? totalQty.toStringAsFixed(0) : totalQty.toStringAsFixed(2)} $unit',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ── Rate Stat Boxes ──
+          Row(
+            children: [
+              Expanded(
+                child: _rateStatBox(
+                  'Company Rate',
+                  avgCompanyRate,
+                  unit,
+                  Colors.blue.shade600,
+                  Colors.blue.shade50,
+                  Icons.storefront_rounded,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _rateStatBox(
+                  'Farmer Rate',
+                  avgFarmerRate,
+                  unit,
+                  Colors.orange.shade700,
+                  Colors.orange.shade50,
+                  Icons.person_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+
+          // ── Comparison Bars ──
+          _rateBarRow('Company', avgCompanyRate, Colors.blue.shade600, maxRate),
+          const SizedBox(height: 10),
+          _rateBarRow('Farmer', avgFarmerRate, Colors.orange.shade600, maxRate),
+          const SizedBox(height: 18),
+
+          // ── Profit / Loss Hero Box ──
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: isProfit
+                  ? primaryGreen.withOpacity(0.08)
+                  : Colors.red.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isProfit
+                    ? primaryGreen.withOpacity(0.3)
+                    : Colors.red.shade200,
+                width: 1.2,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      isProfit ? '📈' : '📉',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      isProfit ? 'Profit' : 'Loss',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: isProfit ? primaryGreen : Colors.red.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  '${isProfit ? "+" : "-"}₹${fmt(totalProfit.abs())}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    color: isProfit ? primaryGreen : Colors.red.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Multiple allocations breakdown (only if >1) ──
+          if (segs.length > 1) ...[
+            const SizedBox(height: 14),
+            Text(
+              '${segs.length} ALLOCATIONS',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade500,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...segs.asMap().entries.map((entry) {
+              final int i = entry.key;
+              final _AllocSegment s = entry.value;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      '#${i + 1}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '${s.qty == s.qty.roundToDouble() ? s.qty.toStringAsFixed(0) : s.qty.toStringAsFixed(2)} $unit @ ₹${s.companyRate.toStringAsFixed(0)} → ₹${s.farmerRate.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${s.profit >= 0 ? "+" : "-"}₹${fmt(s.profit.abs())}',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: s.profit >= 0
+                            ? Colors.teal.shade700
+                            : Colors.red.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _rateStatBox(
+    String label,
+    double rate,
+    String unit,
+    Color color,
+    Color bgColor,
+    IconData icon,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '₹${rate.toStringAsFixed(rate == rate.roundToDouble() ? 0 : 2)}',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(
+            '/ $unit',
+            style: TextStyle(fontSize: 10, color: color.withOpacity(0.7)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _rateBarRow(String label, double rate, Color color, double maxRate) {
+    final double frac = maxRate > 0 ? (rate / maxRate).clamp(0.0, 1.0) : 0.0;
+    return Row(
+      children: [
+        SizedBox(
+          width: 58,
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+        ),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Stack(
+              children: [
+                Container(height: 14, color: Colors.grey.shade100),
+                FractionallySizedBox(
+                  widthFactor: frac,
+                  child: Container(height: 14, color: color),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 62,
+          child: Text(
+            '₹${rate.toStringAsFixed(rate == rate.roundToDouble() ? 0 : 1)}',
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
