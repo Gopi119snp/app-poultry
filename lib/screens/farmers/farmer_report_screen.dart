@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'dart:convert';
 import 'dart:math' as math;
 import '../../services/company_store.dart';
@@ -14,7 +15,48 @@ import '../home/purchase_expense_screen.dart' show ensureFeedStockMigrated;
 // isse BatchDetailInformationScreen khulti hai jisme Chicks/Feed/Medicine
 // har ek ka alag line/area chart (Company Rate vs Farmer Rate, cumulative
 // quantity ke against) aur profit/loss dikhta hai.
-// =============================================================================
+//
+// ────────────────────────────────────────────────────────────────────────────
+// 🔧 BUG-FIX PASS NOTES (isi file ke andar):
+// Fixed (safe, unambiguous):
+//   - "Last N" filter tha reversed (oldest N utha raha tha, ab latest N).
+//   - Chicks allocation 'type' match ab case-insensitive hai.
+//   - Sale-date parser ab strict hai (invalid dates jaise 32/01 reject karta
+//     hai, silently normalize nahi hone deta).
+//   - Daily entries ab date ke hisaab se sort karke process hote hain (isse
+//     "latest weight" wala bug + entry-order-dependent classification bug
+//     dono fix hote hain).
+//   - "latestAvgWeight" ab sach mein sabse latest weight leta hai (pehle
+//     accidentally sabse PEHLI valid weight le raha tha).
+//   - Missing/estimated cost data (chicks/feed/medicine) ab silently 0/wrong
+//     nahi maana jaata — flag hoke UI mein "estimated" ke roop mein dikhta
+//     hai (jaisa pehle se Operational Expense missing case mein hota tha).
+//   - Silent `catch (_) {}` blocks ab kam se kam debugPrint karte hain aur
+//     user-facing warning banner mein bhi surface hote hain.
+//   - Duplicate allocation records (agar unka apna unique id ho) ab dedupe
+//     ho jaate hain.
+//   - feedStockList ab migration-safe loader (ensureFeedStockMigrated) se
+//     load hota hai, jaisa detail screen already karti thi.
+//   - _allEarnings ab per-load ek hi baar calculate hokar cache hota hai.
+//   - Unused TickerProviderStateMixin hata diya.
+//   - Pie chart ab loss-wale batches ko red border se visually alag dikhata
+//     hai (magnitude hamesha positive slice ke roop mein dikhegi, lekin ab
+//     sign clearly dikhta hai).
+//
+// Business-rule-dependent (JAAN-BOOJH KAR unchanged chhoda hai — neeche
+// TODO(confirm) comments dekho, aur chat mein sawal poochha hai):
+//   - Operational expense lagged-allocation methodology
+//   - Big/Small boundary (> 1.2 vs >= 1.2)
+//   - No-weight-data => Small Size default
+//   - Negative farmer payout ko 0 clamp karna
+//   - Medicine deduction jab !medInProd
+//   - Admin income ko "income" treat karna
+//   - Active (incomplete) batches ko total summary mein include karna
+//   - "Abhi jo batch khatam hua" list-order se nikalna (completedDate field
+//     nahi mila, isliye abhi bhi `.last` use ho raha hai)
+//   - Settlement Rule config ka snapshot-at-close-time na hona (batch close
+//     hone ke baad bhi current rules se recalculate hota hai)
+// ────────────────────────────────────────────────────────────────────────────
 
 const Color primaryGreen = Color(0xFF1B5E20);
 
@@ -23,8 +65,31 @@ const Color primaryGreen = Color(0xFF1B5E20);
 class _CatAmount {
   final double billed;
   final double cost;
-  const _CatAmount(this.billed, this.cost);
+
+  /// true = cost ek real linked purchase/allocation record se nahi aayi,
+  /// balki fallback/estimate hai (purani/incomplete data ki wajah se).
+  /// Report mein ye number isliye "estimated" flag ke saath dikhta hai,
+  /// silently precise fact ki tarah nahi.
+  final bool costEstimated;
+  const _CatAmount(this.billed, this.cost, {this.costEstimated = false});
   double get income => billed - cost;
+}
+
+/// Allocation records mein agar apna unique id ho (allocationId/id), to
+/// accidental duplicate-saved allocations ko dedupe karta hai. Agar id field
+/// hi nahi hai, behavior bilkul pehle jaisa hi rehta hai (no-op).
+List<dynamic> _dedupeAllocs(List<dynamic> allocs) {
+  final seen = <String>{};
+  final result = <dynamic>[];
+  for (final a in allocs) {
+    final id = (a['allocationId'] ?? a['id'])?.toString();
+    if (id != null && id.isNotEmpty) {
+      if (seen.contains(id)) continue;
+      seen.add(id);
+    }
+    result.add(a);
+  }
+  return result;
 }
 
 // ── Shared Formatters ───────────────────────────────────────────────────────
@@ -37,6 +102,50 @@ String fmt(double v) {
 
 String fmtShort(double v) => fmt(v);
 
+// ── ✅ Operational Expense helpers ──────────────────────────────────────────
+
+/// Strict dd/MM/yyyy parser. Dart ka DateTime constructor kuch out-of-range
+/// values (jaise din=32) ko silently agle mahine mein "roll" kar deta hai —
+/// isliye reconstruct karke wapas compare karte hain; mismatch = invalid date.
+DateTime? _parseSaleDateDdMmYyyy(String? s) {
+  if (s == null || s.trim().isEmpty) return null;
+  final parts = s.trim().split('/');
+  if (parts.length != 3) return null;
+  try {
+    final int day = int.parse(parts[0]);
+    final int month = int.parse(parts[1]);
+    final int year = int.parse(parts[2]);
+    if (month < 1 || month > 12) return null;
+    if (day < 1 || day > 31) return null;
+    final DateTime dt = DateTime(year, month, day);
+    if (dt.year != year || dt.month != month || dt.day != day) {
+      return null; // Dart ne normalize kar diya — matlab original invalid tha
+    }
+    return dt;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Kisi bhi daily-entry map se date nikalne ki koshish karta hai — pehle
+/// dd/MM/yyyy (jaisa sale entries mein hota hai), phir ISO-style tryParse
+/// (jaisa cost/other entries mein ho sakta hai). Dono fail ho to null.
+DateTime? _parseAnyEntryDate(Map<String, dynamic> e) {
+  final String? raw = e['date']?.toString();
+  final DateTime? dmy = _parseSaleDateDdMmYyyy(raw);
+  if (dmy != null) return dmy;
+  if (raw == null || raw.trim().isEmpty) return null;
+  return DateTime.tryParse(raw.trim());
+}
+
+String _monthKey(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}';
+
+String _previousMonthKey(DateTime d) {
+  final prev = DateTime(d.year, d.month - 1, 1);
+  return _monthKey(prev);
+}
+
 class FarmerReportScreen extends StatefulWidget {
   final Map<String, dynamic> farmer;
   const FarmerReportScreen({super.key, required this.farmer});
@@ -45,8 +154,7 @@ class FarmerReportScreen extends StatefulWidget {
   State<FarmerReportScreen> createState() => _FarmerReportScreenState();
 }
 
-class _FarmerReportScreenState extends State<FarmerReportScreen>
-    with TickerProviderStateMixin {
+class _FarmerReportScreenState extends State<FarmerReportScreen> {
   List<Map<String, dynamic>> _batches = [];
   bool _isLoading = true;
 
@@ -55,6 +163,19 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
   List<Map<String, dynamic>> _feedStock = [];
   List<Map<String, dynamic>> _medicineStock = [];
   List<Map<String, dynamic>> _chicksPurchaseHistory = [];
+
+  // ✅ Company-wide monthly totals — Operational Expense rate ke liye
+  Map<String, double> _monthlyOpExpense = {};
+  Map<String, double> _monthlyKgSold = {};
+
+  // ✅ NEW: Data-quality warnings — silent catch se aane wali cheezein ab
+  // yahan surface hoti hain (poori tarah chhupti nahi).
+  List<String> _dataWarnings = [];
+
+  // ✅ NEW: _allEarnings ab har _loadData() ke baad ek hi baar calculate
+  // hokar cache ho jaata hai (pehle har getter-access par pura recalculation
+  // hota tha — batches/allocations bade hone par slow ho sakta tha).
+  List<_LotEarning>? _cachedEarnings;
 
   // Rule 1 — Big Size
   double _r1BigFeedRate = 42.0;
@@ -91,6 +212,8 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
+    final List<String> dataWarnings = [];
+
     final String? rule1Json = await CompanyStore.instance.getString(
       'rule1SettlementConfig',
     );
@@ -120,7 +243,14 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
         _r1SmRateBonusThresh = (r1['smRateBonusThresh'] ?? 120.0).toDouble();
         _r1SmRateBonusShare = (r1['smRateBonusShare'] ?? 10.0).toDouble();
         _r1SmMedicineInProd = r1['smMedicineInProd'] ?? true;
-      } catch (_) {}
+      } catch (e) {
+        debugPrint(
+          'FarmerReportScreen: rule1SettlementConfig parse failed: $e',
+        );
+        dataWarnings.add(
+          'Settlement rule config load nahi ho saka — default values use ho rahe hain.',
+        );
+      }
     }
 
     final farmersList = await CompanyStore.instance.getJsonList(
@@ -141,11 +271,21 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
       }
     }
 
-    // ✅ Feed stock (per-type allocations, batchId-linked) load karo
+    // ✅ Feed stock (per-type allocations, batchId-linked) — migration-safe
+    // loader use karo (pehle yahan raw getJsonList tha jo purani entries ke
+    // liye migration skip kar deta tha, jabki detail screen migration-safe
+    // loader use karti thi — dono jagah consistent hona chahiye).
     List<Map<String, dynamic>> feedStock = [];
     try {
-      feedStock = await CompanyStore.instance.getJsonList('feedStockList');
-    } catch (_) {}
+      feedStock = List<Map<String, dynamic>>.from(
+        await ensureFeedStockMigrated(),
+      );
+    } catch (e) {
+      debugPrint('FarmerReportScreen: feed stock load/migration failed: $e');
+      dataWarnings.add(
+        'Feed stock data load nahi ho saka — Feed income is report mein 0 dikhega.',
+      );
+    }
 
     // ✅ Medicine stock (per-medicine allocations, batchId-linked) load karo
     List<Map<String, dynamic>> medStock = [];
@@ -156,7 +296,12 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
       try {
         final List<dynamic> raw = json.decode(medJson);
         medStock = raw.map((e) => Map<String, dynamic>.from(e)).toList();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('FarmerReportScreen: medicineStockList parse failed: $e');
+        dataWarnings.add(
+          'Medicine stock data corrupt/load nahi ho saka — Medicine income is report mein 0 dikhega.',
+        );
+      }
     }
 
     // ✅ Chicks purchase history (batchId-linked allocations) load karo —
@@ -169,7 +314,93 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
       try {
         final List<dynamic> raw = json.decode(chicksJson);
         chicksHistory = raw.map((e) => Map<String, dynamic>.from(e)).toList();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint(
+          'FarmerReportScreen: chicksPurchaseHistory parse failed: $e',
+        );
+        dataWarnings.add(
+          'Chicks purchase history load nahi ho saka — Chicks income estimate ho sakta hai.',
+        );
+      }
+    }
+
+    // ✅ Company-wide monthly Operational Expense + KG Sold nikalo —
+    // taaki har mahine ka "per-KG operational cost" pata chal sake. Ye
+    // COMPANY-WIDE hai (sirf is farmer ka nahi), isliye poori farmersList
+    // use karte hain.
+    final Map<String, double> monthlyOpExpense = {};
+    final Map<String, double> monthlyKgSold = {};
+
+    // Other Expense — us mahine mein pura amount jud jaega
+    final String? otherJson = await CompanyStore.instance.getString(
+      'otherExpenseHistory',
+    );
+    if (otherJson != null) {
+      try {
+        final List<dynamic> raw = json.decode(otherJson);
+        for (final rawE in raw) {
+          final e = Map<String, dynamic>.from(rawE);
+          final d = DateTime.tryParse(e['date']?.toString() ?? '');
+          if (d == null) continue;
+          final amt = (e['amount'] as num?)?.toDouble() ?? 0.0;
+          final key = _monthKey(d);
+          monthlyOpExpense[key] = (monthlyOpExpense[key] ?? 0) + amt;
+        }
+      } catch (e) {
+        debugPrint('FarmerReportScreen: otherExpenseHistory parse failed: $e');
+        dataWarnings.add('Other Expense history load nahi ho saka.');
+      }
+    }
+
+    // Labour Expense — Din/Ghanta/Monthly sab us entry ke apne mahine mein
+    // pura amount jud jaega (monthly salary uske record hone wale mahine
+    // ki hi maani jaati hai).
+    final String? labourJson = await CompanyStore.instance.getString(
+      'labourExpenseHistory',
+    );
+    if (labourJson != null) {
+      try {
+        final List<dynamic> raw = json.decode(labourJson);
+        for (final rawE in raw) {
+          final e = Map<String, dynamic>.from(rawE);
+          final d = DateTime.tryParse(e['date']?.toString() ?? '');
+          if (d == null) continue;
+          final amt = (e['totalAmount'] as num?)?.toDouble() ?? 0.0;
+          final key = _monthKey(d);
+          monthlyOpExpense[key] = (monthlyOpExpense[key] ?? 0) + amt;
+        }
+      } catch (e) {
+        debugPrint('FarmerReportScreen: labourExpenseHistory parse failed: $e');
+        dataWarnings.add('Labour Expense history load nahi ho saka.');
+      }
+    }
+
+    // Company-wide Total KG Sold — SAARE farmers ke SAARE batches ki sale
+    // entries se, unke sale-date ke mahine ke hisaab se.
+    // TODO(confirm): Other/Labour expense dates DateTime.tryParse (ISO-style)
+    // se parse ho rahe hain jabki sale dates dd/MM/yyyy se — agar in dono
+    // history ke 'date' fields bhi asal mein dd/MM/yyyy string hain (na ki
+    // ISO), to ye silently records skip kar sakta hai. Confirm karo ki
+    // otherExpenseHistory/labourExpenseHistory mein date kis format mein
+    // save hoti hai.
+    for (final rawF in farmersList) {
+      final f = Map<String, dynamic>.from(rawF);
+      final batches = (f['batches'] as List?) ?? [];
+      for (final rawB in batches) {
+        final b = Map<String, dynamic>.from(rawB);
+        final entries = (b['dailyEntries'] as List?) ?? [];
+        for (final rawE in entries) {
+          final e = Map<String, dynamic>.from(rawE);
+          if ((e['type'] ?? '').toString().toLowerCase() != 'sale') continue;
+          final d = _parseSaleDateDdMmYyyy(e['date']?.toString());
+          if (d == null) continue;
+          final kg =
+              double.tryParse(e['totalWeightSold']?.toString() ?? '') ?? 0.0;
+          if (kg <= 0) continue;
+          final key = _monthKey(d);
+          monthlyKgSold[key] = (monthlyKgSold[key] ?? 0) + kg;
+        }
+      }
     }
 
     if (mounted) {
@@ -178,18 +409,36 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
         _feedStock = feedStock;
         _medicineStock = medStock;
         _chicksPurchaseHistory = chicksHistory;
+        _monthlyOpExpense = monthlyOpExpense;
+        _monthlyKgSold = monthlyKgSold;
+        _dataWarnings = dataWarnings;
+        _cachedEarnings = null; // ✅ naya data aaya, cache invalidate karo
         _isLoading = false;
       });
     }
   }
 
+  // ✅ Ek sale-date ke liye "pichle mahine ka per-KG operational rate"
+  // nikalta hai. Agar pichle mahine ka data hi nahi hai, null return hota
+  // hai (calculation se exclude hoga, silently 0 nahi maana jaata).
+  double? _prevMonthPerKgRate(DateTime saleDate) {
+    final prevKey = _previousMonthKey(saleDate);
+    final expense = _monthlyOpExpense[prevKey];
+    final kg = _monthlyKgSold[prevKey];
+    if (expense == null || kg == null || kg <= 0) return null;
+    return expense / kg;
+  }
+
   // ── ✅ Chicks: Company ne jitne mein khareeda, farmer se jitna liya —
   // dono is batch ke liye chicksPurchaseHistory ki allocations se nikalte
   // hain (batchId match karke). Agar koi linked purchase record na mile
-  // (purani/manual batch), toh billed amount hi dikhado (cost 0 maan lo,
-  // kyunki asal purchase rate pata nahi).
+  // (purani/manual batch), toh billed amount hi dikhado, aur cost-estimate
+  // flag laga do (cost=0 ko hidden fact ki tarah nahi, "estimated" ki
+  // tarah treat karo).
   _CatAmount _sumChicksForBatch(String batchId, double fallbackBilled) {
-    if (batchId.isEmpty) return _CatAmount(fallbackBilled, 0);
+    if (batchId.isEmpty) {
+      return _CatAmount(fallbackBilled, 0, costEstimated: true);
+    }
     double billed = 0, cost = 0;
     bool found = false;
     for (final purchase in _chicksPurchaseHistory) {
@@ -197,9 +446,12 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
           (purchase['effectiveRate'] as num?)?.toDouble() ??
           (purchase['rate'] as num?)?.toDouble() ??
           0;
-      final List<dynamic> allocs = (purchase['allocations'] as List?) ?? [];
+      final List<dynamic> allocs = _dedupeAllocs(
+        (purchase['allocations'] as List?) ?? [],
+      );
       for (final a in allocs) {
-        if (a['type'] == 'Company' && a['batchId']?.toString() == batchId) {
+        final String allocType = (a['type']?.toString() ?? '').toLowerCase();
+        if (allocType == 'company' && a['batchId']?.toString() == batchId) {
           final double qty = (a['qty'] as num?)?.toDouble() ?? 0;
           final double rate = (a['rate'] as num?)?.toDouble() ?? 0;
           billed += qty * rate;
@@ -208,90 +460,166 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
         }
       }
     }
-    if (!found) return _CatAmount(fallbackBilled, 0);
+    if (!found) return _CatAmount(fallbackBilled, 0, costEstimated: true);
     return _CatAmount(billed, cost);
   }
 
   // ── ✅ Feed: Company ne jis rate pe khareeda (allocation ke waqt ka
-  // snapshot 'costAtAllocation', ya purani entries ke liye current avg)
-  // us batch ki allocations ke against, farmer se jitna liya — dono
-  // nikalte hain batchId match karke.
+  // snapshot 'costAtAllocation', ya purani entries ke liye current avg —
+  // is case mein estimated flag lagta hai) us batch ki allocations ke
+  // against, farmer se jitna liya — dono nikalte hain batchId match karke.
   _CatAmount _sumFeedForBatch(String batchId) {
     if (batchId.isEmpty) return const _CatAmount(0, 0);
     double billed = 0, cost = 0;
+    bool estimated = false;
     for (final feedType in _feedStock) {
       final double currentAvgCost =
           (feedType['weightedAvgCost'] as num?)?.toDouble() ?? 0;
-      final List<dynamic> allocs = (feedType['allocations'] as List?) ?? [];
+      final List<dynamic> allocs = _dedupeAllocs(
+        (feedType['allocations'] as List?) ?? [],
+      );
       for (final a in allocs) {
         if (a['batchId']?.toString() == batchId) {
           final double qty = (a['qty'] as num?)?.toDouble() ?? 0;
           final double rate = (a['rate'] as num?)?.toDouble() ?? 0;
-          final double costPerUnit =
-              (a['costAtAllocation'] as num?)?.toDouble() ?? currentAvgCost;
+          final bool hasSnapshot = a['costAtAllocation'] != null;
+          final double costPerUnit = hasSnapshot
+              ? (a['costAtAllocation'] as num).toDouble()
+              : currentAvgCost;
+          if (!hasSnapshot) estimated = true;
           billed += qty * rate;
           cost += qty * costPerUnit;
         }
       }
     }
-    return _CatAmount(billed, cost);
+    return _CatAmount(billed, cost, costEstimated: estimated);
   }
 
   // ── ✅ Medicine: Company ne jis rate pe khareeda (allocation ke waqt
   // ka snapshot 'costAtAllocation', ya purani entries ke liye current
-  // avg, base unit mein), us batch ki allocations ke against, farmer se
-  // jitna liya — dono nikalte hain batchId match karke.
+  // avg, base unit mein — estimated flag lagta hai), us batch ki
+  // allocations ke against, farmer se jitna liya — dono nikalte hain
+  // batchId match karke. Agar qtyInBaseUnit missing hai (unit-conversion
+  // ambiguous), wo bhi estimated maana jaata hai.
   _CatAmount _sumMedicineForBatch(String batchId) {
     if (batchId.isEmpty) return const _CatAmount(0, 0);
     double billed = 0, cost = 0;
+    bool estimated = false;
     for (final med in _medicineStock) {
       final double currentAvgCostPerBase =
           (med['weightedAvgCost'] as num?)?.toDouble() ?? 0;
-      final List<dynamic> allocs = (med['allocations'] as List?) ?? [];
+      final List<dynamic> allocs = _dedupeAllocs(
+        (med['allocations'] as List?) ?? [],
+      );
       for (final a in allocs) {
         if (a['batchId']?.toString() == batchId) {
           final double qty = (a['qty'] as num?)?.toDouble() ?? 0; // sale unit
           final double rate =
               (a['rate'] as num?)?.toDouble() ?? 0; // per sale unit
-          final double qtyBase =
-              (a['qtyInBaseUnit'] as num?)?.toDouble() ?? qty;
-          final double costPerBase =
-              (a['costAtAllocation'] as num?)?.toDouble() ??
-              currentAvgCostPerBase;
+          final bool hasBaseQty = a['qtyInBaseUnit'] != null;
+          final double qtyBase = hasBaseQty
+              ? (a['qtyInBaseUnit'] as num).toDouble()
+              : qty;
+          final bool hasSnapshot = a['costAtAllocation'] != null;
+          final double costPerBase = hasSnapshot
+              ? (a['costAtAllocation'] as num).toDouble()
+              : currentAvgCostPerBase;
+          if (!hasBaseQty || !hasSnapshot) estimated = true;
           billed += qty * rate;
           cost += qtyBase * costPerBase;
         }
       }
     }
-    return _CatAmount(billed, cost);
+    return _CatAmount(billed, cost, costEstimated: estimated);
   }
 
   // ── Per-Lot Earning Calculate ─────────────────────────────────────────────
   _LotEarning _calculateLotEarning(Map<String, dynamic> batch) {
-    final List<dynamic> entries = batch['dailyEntries'] ?? [];
+    final List<dynamic> rawEntries = batch['dailyEntries'] ?? [];
     final int initialChicks = batch['chicksCount'] ?? 0;
     final String batchId = (batch['batchId'] ?? batch['id'] ?? '').toString();
+
+    // ✅ Entries ko date ke hisaab se sort karo (stable — original order
+    // tiebreaker ke roop mein rehta hai jab date na mile). Isse:
+    //   (a) "latest weight" sahi latest ban jaata hai
+    //   (b) Big/Small classification save-order par depend nahi karti
+    final List<MapEntry<int, Map<String, dynamic>>> indexed =
+        List<MapEntry<int, Map<String, dynamic>>>.generate(
+          rawEntries.length,
+          (i) => MapEntry(i, Map<String, dynamic>.from(rawEntries[i])),
+        );
+    indexed.sort((a, b) {
+      final DateTime? da = _parseAnyEntryDate(a.value);
+      final DateTime? db = _parseAnyEntryDate(b.value);
+      if (da != null && db != null) {
+        final int cmp = da.compareTo(db);
+        if (cmp != 0) return cmp;
+      } else if (da != null && db == null) {
+        return -1;
+      } else if (da == null && db != null) {
+        return 1;
+      }
+      return a.key.compareTo(b.key);
+    });
+    final List<Map<String, dynamic>> entries = indexed
+        .map((e) => e.value)
+        .toList();
 
     double totalWeightSoldKg = 0;
     double totalSaleMoney = 0;
     double latestAvgWeight = 0;
+    // ✅ Har sale-event ka apna operational expense share (pichle mahine ke
+    // per-KG rate se) accumulate karo
+    double operationalExpenseShare = 0;
+    bool opExpenseDataMissing = false;
 
     for (var e in entries) {
       final String type = e['type'].toString().toLowerCase();
       if (type == 'sale') {
-        totalWeightSoldKg +=
+        final double saleKg =
             double.tryParse(e['totalWeightSold'].toString()) ?? 0;
+        totalWeightSoldKg += saleKg;
         totalSaleMoney += double.tryParse(e['totalMoney'].toString()) ?? 0;
         final double saleWt =
             double.tryParse(e['avgWeightSold'].toString()) ?? 0;
-        if (saleWt > 0 && latestAvgWeight == 0) latestAvgWeight = saleWt;
+        // ✅ FIX: pehle sirf "agar abhi tak 0 hai" tab set hota tha (yaani
+        // effectively FIRST valid weight), ab entries chronological order
+        // mein hain isliye hamesha overwrite karke sach mein LATEST weight
+        // milta hai.
+        if (saleWt > 0) latestAvgWeight = saleWt;
+
+        // ✅ Is sale ki date se pichle mahine ka per-KG rate lagao
+        final DateTime? saleDate = _parseSaleDateDdMmYyyy(
+          e['date']?.toString(),
+        );
+        if (saleKg > 0) {
+          if (saleDate != null) {
+            final double? rate = _prevMonthPerKgRate(saleDate);
+            if (rate != null) {
+              operationalExpenseShare += saleKg * rate;
+            } else {
+              opExpenseDataMissing = true; // pichle mahine ka data nahi mila
+            }
+          } else {
+            opExpenseDataMissing = true;
+          }
+        }
       } else if (type == 'cost') {
         final double wt = double.tryParse(e['weight'].toString()) ?? 0;
         if (wt > 0) latestAvgWeight = wt;
       }
     }
 
+    // TODO(confirm): boundary case — exactly 1.20 kg abhi "Small" maana
+    // jaata hai (`> 1.2`). Agar business rule "Big Size >= 1.2 kg" hai, to
+    // ye `>=` hona chahiye. Confirm karke fix karunga.
     final bool isBigSize = latestAvgWeight > 1.2;
+    // ✅ NEW: koi bhi valid weight (sale ya cost) nahi mila — isliye upar
+    // wala isBigSize=false sirf DEFAULT hai, asal weight data nahi hai.
+    // TODO(confirm): abhi is case mein bhi Small Size settlement apply ho
+    // raha hai (jaisa pehle tha) — flag UI mein dikhta hai taaki chhupa na
+    // rahe, lekin calculation-behavior badla nahi hai jab tak confirm na ho.
+    final bool weightDataMissing = latestAvgWeight <= 0;
 
     // FALLBACK — sirf tab use hota hai jab batch mein chicksRate save
     // nahi hui purani entries ke liye.
@@ -368,10 +696,21 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
     if (finalComm < 0) finalComm = 0;
 
     double farmerPayout = totalWeightSoldKg * finalComm;
+    // TODO(confirm): !medInProd case mein medicine ka farmer-billed amount
+    // yahan deduct ho raha hai — verify karo ki ye settlement contract ke
+    // hisaab se sahi hai, ya isse double-deduction ho sakta hai agar
+    // medicine farmer se alag se bhi recover ho raha ho.
     if (!medInProd) farmerPayout -= medicineCostBilled;
+    // TODO(confirm): negative payout ko 0 clamp kiya ja raha hai — agar
+    // farmer ka theoretically company ko kuch "owe" karna intended hai
+    // (receivable), to ye information yahan discard ho rahi hai.
     if (farmerPayout < 0) farmerPayout = 0;
 
-    // ✅ Batch End hone ke baad Company ko kitna bacha = Sale − Farmer Payout
+    // Sale − Farmer Payout (reference figure only). Ye "profit" NAHI hai —
+    // asal chicks/feed/medicine kharch/operational expense ismein subtract
+    // nahi hua. TRUE profit ke liye `trueTotalProfit` getter dekho (jo real
+    // cash flows se banta hai), `dekhaKeProfit` aur `silentIncomeTotal` ke
+    // saath.
     final double companyEarning = totalSaleMoney - farmerPayout;
 
     return _LotEarning(
@@ -390,18 +729,31 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
       companyEarning: companyEarning,
       isBigSize: isBigSize,
       avgWeight: latestAvgWeight,
+      operationalExpenseShare: operationalExpenseShare,
+      opExpenseDataMissing: opExpenseDataMissing,
+      chicksCostEstimated: chicksAmt.costEstimated,
+      feedCostEstimated: feedAmt.costEstimated,
+      medicineCostEstimated: medAmt.costEstimated,
+      weightDataMissing: weightDataMissing,
+      chicksCompanyCost: chicksAmt.cost,
+      feedCompanyCost: feedAmt.cost,
+      medicineCompanyCost: medAmt.cost,
     );
   }
 
-  /// ✅ Sabhi batches ke earnings, batches list ke order mein (lotNumber
-  /// ascending — jaisa batch create hote waqt append hota hai).
-  List<_LotEarning> get _allEarnings =>
-      _batches.map(_calculateLotEarning).toList();
+  /// ✅ Sabhi batches ke earnings, batches list ke order mein, ab cached
+  /// (ek hi baar calculate hota hai jab tak naya data load na ho).
+  List<_LotEarning> get _allEarnings {
+    _cachedEarnings ??= _batches.map(_calculateLotEarning).toList();
+    return _cachedEarnings!;
+  }
 
-  /// ✅ NEW: "Abhi jo batch khatam hua" — sabse RECENT COMPLETED batch.
-  /// Batches list mein append-order hi chronological order hai (naya
-  /// batch hamesha list ke end mein judta hai), isliye COMPLETED batches
-  /// mein se LAST wala hi sabse recent completed batch hai.
+  /// "Abhi jo batch khatam hua" — sabse RECENT COMPLETED batch.
+  /// TODO(confirm): Batches list mein append-order ko hi chronological order
+  /// maana ja raha hai. Agar kabhi sync/import/manual-edit se order badal
+  /// sakta hai, to iske bajaay batch ki asal completedDate/closedDate field
+  /// se sort karna zyada reliable hoga — batao agar aisi koi field data mein
+  /// available hai.
   _LotEarning? get _mostRecentCompleted {
     final completed = _allEarnings
         .where((e) => e.status == 'COMPLETED' || e.status == 'CLOSED')
@@ -452,6 +804,10 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ✅ NEW: Data-quality warning banner — silent catches ab yahan
+          // dikhte hain, poori tarah chhupte nahi.
+          if (_dataWarnings.isNotEmpty) _buildDataWarningBanner(),
+
           if (recent != null) ...[
             Row(
               children: const [
@@ -512,7 +868,7 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
 
           const SizedBox(height: 20),
 
-          // ✅ NEW: Sabhi Reports dekhne ka button — alag screen khulti hai
+          // ✅ Sabhi Reports dekhne ka button — alag screen khulti hai
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -542,6 +898,52 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDataWarningBanner() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orange.shade800,
+                size: 16,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Data Load Warning',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange.shade800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ..._dataWarnings.map(
+            (w) => Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                '• $w',
+                style: TextStyle(fontSize: 11, color: Colors.orange.shade900),
               ),
             ),
           ),
@@ -585,10 +987,14 @@ class _FarmerReportScreenState extends State<FarmerReportScreen>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NEW: ALL BATCHES REPORT SCREEN — "Sabhi Reports Dekho" button se yahan
+// ALL BATCHES REPORT SCREEN — "Sabhi Reports Dekho" button se yahan
 // aate hain. Yahan abhi tak ke SAARE batches (active + completed) ki list,
-// N-lot filter, aur total summary card hoti hai — jo pehle main Report tab
-// mein sab ek saath dikhta tha, wo ab yahan hai.
+// N-lot filter, aur total summary card hoti hai.
+//
+// TODO(confirm): Active/incomplete batches abhi bhi total summary mein
+// include ho rahe hain (settlement/final-payout incomplete ho sakta hai
+// unke liye). Agar "Total Net Profit" ko sirf REALIZED/COMPLETED batches
+// tak限 karna hai to batao, filter add kar dunga.
 // ═══════════════════════════════════════════════════════════════════════════
 class AllBatchesReportScreen extends StatefulWidget {
   final String farmerName;
@@ -607,11 +1013,16 @@ class AllBatchesReportScreen extends StatefulWidget {
 class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
   int _lastNBatches = 0; // 0 = Sabhi
 
+  // ✅ FIX: pehle `.take(n)` use ho raha tha jo list ke SHURU ke n (yaani
+  // sabse PURANE n batches) utha raha tha. "Last N" ka matlab hona chahiye
+  // list ke ANT ke n batches (sabse RECENT n) — ab sublist se end se utha
+  // rahe hain.
   List<_LotEarning> get _filtered {
-    if (_lastNBatches == 0 || _lastNBatches >= widget.earnings.length) {
-      return widget.earnings;
+    final all = widget.earnings;
+    if (_lastNBatches == 0 || _lastNBatches >= all.length) {
+      return all;
     }
-    return widget.earnings.take(_lastNBatches).toList();
+    return all.sublist(all.length - _lastNBatches);
   }
 
   @override
@@ -623,9 +1034,9 @@ class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
       0,
       (s, e) => s + e.farmerPayout,
     );
-    final double totalCompanyEarning = earnings.fold(
+    final double totalBatchProfit = earnings.fold(
       0,
-      (s, e) => s + e.companyEarning,
+      (s, e) => s + e.trueTotalProfit,
     );
     final double totalAdmin = earnings.fold(0, (s, e) => s + e.adminIncome);
 
@@ -649,7 +1060,7 @@ class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
       ),
       body: Column(
         children: [
-          _buildTopHeader(totalSale, totalCompanyEarning),
+          _buildTopHeader(totalSale, totalBatchProfit),
           Expanded(
             child: widget.earnings.isEmpty
                 ? Center(
@@ -670,7 +1081,7 @@ class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
                           earnings: earnings,
                           totalSale: totalSale,
                           totalFarmerPayout: totalFarmerPayout,
-                          totalCompanyEarning: totalCompanyEarning,
+                          totalBatchProfit: totalBatchProfit,
                           totalAdmin: totalAdmin,
                           lastNBatches: _lastNBatches,
                         );
@@ -684,7 +1095,7 @@ class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
     );
   }
 
-  Widget _buildTopHeader(double totalSale, double totalCompanyEarning) {
+  Widget _buildTopHeader(double totalSale, double totalBatchProfit) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
@@ -715,8 +1126,8 @@ class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
               const SizedBox(width: 8),
               kpiChip(
                 'Batch End Bacha',
-                '${totalCompanyEarning >= 0 ? "+" : ""}₹${fmt(totalCompanyEarning)}',
-                totalCompanyEarning >= 0
+                '${totalBatchProfit >= 0 ? "+" : ""}₹${fmt(totalBatchProfit)}',
+                totalBatchProfit >= 0
                     ? Colors.green.shade700.withOpacity(0.6)
                     : Colors.red.shade700.withOpacity(0.6),
                 emoji: '📈',
@@ -788,7 +1199,7 @@ class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ SHARED WIDGETS — Dono screens (highlight card + all-reports list) yahi
+// SHARED WIDGETS — Dono screens (highlight card + all-reports list) yahi
 // functions use karte hain, taaki look-and-feel same rahe.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -910,7 +1321,7 @@ Widget buildLotCard(_LotEarning e) {
                     ),
                     Text(
                       '${e.initialChicks} birds • ${e.startDate}'
-                      '${e.avgWeight > 0 ? " • Avg ${e.avgWeight.toStringAsFixed(2)} kg" : ""}',
+                      '${e.avgWeight > 0 ? " • Avg ${e.avgWeight.toStringAsFixed(2)} kg" : " • ⚠️ Weight data missing"}',
                       style: const TextStyle(
                         fontSize: 11,
                         color: Colors.black54,
@@ -978,9 +1389,9 @@ Widget buildLotCard(_LotEarning e) {
             child: buildBreakdownTable(e),
           ),
 
-          // ✅ NEW: Detail Information button — Chicks/Feed/Medicine ka
-          // alag-alag line/area chart (Company Rate vs Farmer Rate)
-          // dikhane wali screen kholta hai.
+          // Detail Information button — Chicks/Feed/Medicine ka alag-alag
+          // line/area chart (Company Rate vs Farmer Rate) dikhane wali
+          // screen kholta hai.
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Builder(
@@ -1028,14 +1439,22 @@ Widget buildLotCard(_LotEarning e) {
 // ── Bar Graph ─────────────────────────────────────────────────────────────
 Widget buildBarGraph(_LotEarning e) {
   final bars = [
-    _BarData('Chicks\nIncome', e.chicksIncome, Colors.orange.shade600),
-    _BarData('Feed\nIncome', e.feedIncome, Colors.blue.shade600),
-    _BarData('Medicine\nIncome', e.medicineIncome, Colors.purple.shade600),
-    _BarData('Admin\nIncome', e.adminIncome, Colors.teal.shade600),
+    _BarData('Chicks\nIncome (Silent)', e.chicksIncome, Colors.orange.shade600),
+    _BarData('Feed\nIncome (Silent)', e.feedIncome, Colors.blue.shade600),
     _BarData(
-      'Batch End\nBacha',
-      e.companyEarning,
-      e.companyEarning >= 0 ? primaryGreen : Colors.red.shade600,
+      'Medicine\nIncome (Silent)',
+      e.medicineIncome,
+      Colors.purple.shade600,
+    ),
+    _BarData(
+      'Dekha Ke\nProfit/Loss',
+      e.dekhaKeProfit,
+      e.dekhaKeProfit >= 0 ? Colors.teal.shade600 : Colors.red.shade600,
+    ),
+    _BarData(
+      'Total Batch\nProfit/Loss',
+      e.trueTotalProfit,
+      e.trueTotalProfit >= 0 ? primaryGreen : Colors.red.shade600,
     ),
   ];
 
@@ -1140,62 +1559,161 @@ Widget buildBarGraph(_LotEarning e) {
 
 // ── Breakdown Table ───────────────────────────────────────────────────────
 Widget buildBreakdownTable(_LotEarning e) {
-  final double totalCompanyIncome =
-      e.chicksIncome + e.feedIncome + e.medicineIncome + e.adminIncome;
-
   return Column(
     children: [
+      // ── SILENT INCOME — Chicks/Feed/Medicine margin (Farmer se liya −
+      // Company ne khareeda). Ye hamesha milta hai, batch achha ho ya
+      // kharab.
+      Text(
+        'SILENT INCOME (Chicks/Feed/Medicine Margin)',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: Colors.black45,
+          letterSpacing: 0.3,
+        ),
+      ),
+      const SizedBox(height: 10),
       breakRow(
         '🐥',
         Colors.orange.shade600,
-        'Chicks Se Company Income',
+        e.chicksIncome >= 0
+            ? 'Chicks Se Company Income'
+            : 'Chicks Se Company Loss',
         e.chicksIncome,
-        hint: 'Farmer se liya − Company ne khareeda',
+        hint:
+            'Farmer se liya − Company ne khareeda'
+            '${e.chicksCostEstimated ? " ⚠️ estimated (purchase record incomplete)" : ""}',
         isIncome: true,
       ),
       const SizedBox(height: 8),
       breakRow(
         '🌾',
         Colors.blue.shade600,
-        'Feed Se Company Income',
+        e.feedIncome >= 0 ? 'Feed Se Company Income' : 'Feed Se Company Loss',
         e.feedIncome,
-        hint: 'Farmer se liya − Company ne khareeda',
+        hint:
+            'Farmer se liya − Company ne khareeda'
+            '${e.feedCostEstimated ? " ⚠️ estimated (historical cost snapshot missing)" : ""}',
         isIncome: true,
       ),
       const SizedBox(height: 8),
       breakRow(
         '💊',
         Colors.purple.shade600,
-        'Medicine Se Company Income',
+        e.medicineIncome >= 0
+            ? 'Medicine Se Company Income'
+            : 'Medicine Se Company Loss',
         e.medicineIncome,
-        hint: 'Farmer se liya − Company ne khareeda',
-        isIncome: true,
-      ),
-      const SizedBox(height: 8),
-      breakRow(
-        '🛡️',
-        Colors.teal.shade600,
-        'Admin Income',
-        e.adminIncome,
         hint:
-            '${e.totalWeightSoldKg.toStringAsFixed(1)} kg × company admin rate',
+            'Farmer se liya − Company ne khareeda'
+            '${e.medicineCostEstimated ? " ⚠️ estimated (historical cost/unit data incomplete)" : ""}',
         isIncome: true,
       ),
-      const SizedBox(height: 12),
-      Divider(color: Colors.grey.shade200, height: 1),
       const SizedBox(height: 10),
-
       simpleRow(
-        'Batch Ke Dauraan Total Income',
-        '₹${fmt(totalCompanyIncome)}',
+        'Silent Income Total',
+        '${e.silentIncomeTotal >= 0 ? "+" : "-"}₹${fmt(e.silentIncomeTotal.abs())}',
         Colors.black54,
-        primaryGreen,
+        e.silentIncomeTotal >= 0 ? Colors.teal.shade700 : Colors.red.shade600,
       ),
 
-      const SizedBox(height: 12),
+      const SizedBox(height: 14),
       Divider(color: Colors.grey.shade200, height: 1),
-      const SizedBox(height: 10),
+      const SizedBox(height: 12),
 
+      // ── DEKHA KE PROFIT/LOSS — production-cost-vs-target penalty/bonus,
+      // medicine deduction, admin-charge ka indirect asar, operational
+      // expense — ye sab is EK number mein reconcile ho jaate hain. Isko
+      // TRUE Total mein se Silent Income nikaal ke banaya gaya hai, isliye
+      // Silent + Dekha Ke kabhi bhi double-count nahi hoga.
+      Text(
+        'DEKHA KE (Production Cost, Payout, Op. Expense Ka Asar)',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: Colors.black45,
+          letterSpacing: 0.3,
+        ),
+      ),
+      const SizedBox(height: 10),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: e.dekhaKeProfit >= 0
+              ? Colors.teal.shade50
+              : Colors.red.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: e.dekhaKeProfit >= 0
+                ? Colors.teal.shade100
+                : Colors.red.shade200,
+            width: 1.2,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    e.dekhaKeProfit >= 0 ? 'Dekha Ke Profit' : 'Dekha Ke Loss',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: e.dekhaKeProfit >= 0
+                          ? Colors.teal.shade800
+                          : Colors.red.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Cost-Exceeded Penalty/Bonus + Medicine Deduction + Admin Charge ka asar + Operational Expense',
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              '${e.dekhaKeProfit >= 0 ? "+" : "-"}₹${fmt(e.dekhaKeProfit.abs())}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: e.dekhaKeProfit >= 0
+                    ? Colors.teal.shade700
+                    : Colors.red.shade600,
+              ),
+            ),
+          ],
+        ),
+      ),
+      if (e.opExpenseDataMissing)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            '⚠️ Kuch sale entries ke liye pichle mahine ka expense data nahi mila — un par Operational Expense minus nahi hua.',
+            style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
+          ),
+        ),
+      if (e.weightDataMissing)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            '⚠️ Is batch ke liye koi valid weight entry nahi mili — Big/Small classification default (Small) le liya gaya hai.',
+            style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
+          ),
+        ),
+
+      const SizedBox(height: 14),
+      Divider(color: Colors.grey.shade200, height: 1),
+      const SizedBox(height: 12),
+
+      // ── Reference numbers (informational only — inko dobara add nahi
+      // karna, ye sirf context ke liye hain, Total Batch Profit mein
+      // already reflect ho chuke hain).
       simpleRow(
         'Total Sale Proceeds',
         '₹${fmt(e.totalSaleMoney)}',
@@ -1203,25 +1721,44 @@ Widget buildBreakdownTable(_LotEarning e) {
         Colors.black87,
       ),
       const SizedBox(height: 6),
-
       simpleRow(
         'Farmer Ko Diya (Payout)',
         '- ₹${fmt(e.farmerPayout)}',
         Colors.black54,
         Colors.red.shade600,
       ),
+      const SizedBox(height: 6),
+      simpleRow(
+        'Admin Charge (reference — payout mein already asar dikha chuka)',
+        '₹${fmt(e.adminIncome)}',
+        Colors.black54,
+        Colors.black45,
+      ),
+      const SizedBox(height: 6),
+      simpleRow(
+        'Operational Expense (Labour+Other)',
+        '- ₹${fmt(e.operationalExpenseShare)}',
+        Colors.black54,
+        Colors.red.shade600,
+      ),
+
+      const SizedBox(height: 14),
+      Divider(color: Colors.grey.shade200, height: 1),
       const SizedBox(height: 12),
 
+      // ── TOTAL BATCH PROFIT/LOSS — hamesha Silent + Dekha Ke ke barabar
+      // hoga (guaranteed by construction), aur sirf REAL cash flows se
+      // bana hai — ye single "sach" number hai.
       Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: e.companyEarning >= 0
+          color: e.trueTotalProfit >= 0
               ? primaryGreen.withOpacity(0.07)
               : Colors.red.shade50,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: e.companyEarning >= 0
+            color: e.trueTotalProfit >= 0
                 ? primaryGreen.withOpacity(0.3)
                 : Colors.red.shade200,
             width: 1.2,
@@ -1230,34 +1767,37 @@ Widget buildBreakdownTable(_LotEarning e) {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  e.companyEarning >= 0
-                      ? '📈 Batch End — Company Ko Bacha'
-                      : '📉 Batch End — Company Ko Nuksaan',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: e.companyEarning >= 0
-                        ? primaryGreen
-                        : Colors.red.shade700,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    e.trueTotalProfit >= 0
+                        ? '📈 Total Batch Profit'
+                        : '📉 Total Batch Loss',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: e.trueTotalProfit >= 0
+                          ? primaryGreen
+                          : Colors.red.shade700,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Farmer Ko Payout Dene Ke Baad (Sale − Payout)',
-                  style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    'Silent Income + Dekha Ke (Sale se sabhi asal kharche minus)',
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 10),
             Text(
-              '${e.companyEarning >= 0 ? "+" : ""}₹${fmt(e.companyEarning)}',
+              '${e.trueTotalProfit >= 0 ? "+" : "-"}₹${fmt(e.trueTotalProfit.abs())}',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
-                color: e.companyEarning >= 0
+                color: e.trueTotalProfit >= 0
                     ? primaryGreen
                     : Colors.red.shade700,
               ),
@@ -1265,6 +1805,14 @@ Widget buildBreakdownTable(_LotEarning e) {
           ],
         ),
       ),
+      if (e.costDataEstimated)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            '⚠️ Isme Chicks/Feed/Medicine ka kuch cost estimated hai (upar dekho), isliye Total Batch Profit bhi estimate hai, exact nahi.',
+            style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
+          ),
+        ),
     ],
   );
 }
@@ -1320,9 +1868,13 @@ Widget breakRow(
 
 Widget simpleRow(String label, String value, Color labelColor, Color valColor) {
   return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
     mainAxisAlignment: MainAxisAlignment.spaceBetween,
     children: [
-      Text(label, style: TextStyle(fontSize: 12, color: labelColor)),
+      Expanded(
+        child: Text(label, style: TextStyle(fontSize: 12, color: labelColor)),
+      ),
+      const SizedBox(width: 8),
       Text(
         value,
         style: TextStyle(
@@ -1340,7 +1892,7 @@ Widget buildTotalSummaryCard({
   required List<_LotEarning> earnings,
   required double totalSale,
   required double totalFarmerPayout,
-  required double totalCompanyEarning,
+  required double totalBatchProfit,
   required double totalAdmin,
   required int lastNBatches,
 }) {
@@ -1355,8 +1907,21 @@ Widget buildTotalSummaryCard({
     0,
     (s, e) => s + e.medicineIncome,
   );
-  final double totalBatchIncome =
-      totalChicksIncome + totalFeedIncome + totalMedIncome + totalAdmin;
+  final double totalOpExpense = earnings.fold(
+    0.0,
+    (s, e) => s + e.operationalExpenseShare,
+  );
+  final bool anyOpExpenseMissing = earnings.any((e) => e.opExpenseDataMissing);
+  final bool anyCostDataEstimated = earnings.any((e) => e.costDataEstimated);
+
+  // ✅ Silent Income Total (Chicks+Feed+Medicine margin) — sabhi lots ka.
+  final double totalSilentIncome = earnings.fold(
+    0.0,
+    (s, e) => s + e.silentIncomeTotal,
+  );
+  // ✅ Dekha Ke aggregate — True Total − Silent Income (remainder, isliye
+  // kabhi double-count nahi hota).
+  final double totalDekhaKe = earnings.fold(0.0, (s, e) => s + e.dekhaKeProfit);
   final int n = earnings.length;
   final String nLabel = lastNBatches == 0 ? 'Sabhi $n' : 'Last $n';
 
@@ -1405,20 +1970,101 @@ Widget buildTotalSummaryCard({
         ),
         const SizedBox(height: 16),
 
-        totalRow('Chicks Se Income', totalChicksIncome, isGood: true),
-        totalRow('Feed Se Income', totalFeedIncome, isGood: true),
-        totalRow('Medicine Se Income', totalMedIncome, isGood: true),
-        totalRow('Admin Income', totalAdmin, isGood: true),
+        totalRow('Chicks Se Income (Silent)', totalChicksIncome, isGood: true),
+        totalRow('Feed Se Income (Silent)', totalFeedIncome, isGood: true),
+        totalRow('Medicine Se Income (Silent)', totalMedIncome, isGood: true),
+        // ✅ Reference-only row — Admin Charge ka asar already Farmer
+        // Payout (isliye Dekha Ke) ke andar hai, isliye ye row total mein
+        // dobara add NAHI hota, sirf context ke liye hai.
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  'Admin Charge (₹${fmt(totalAdmin)}) vs Op. Expense (₹${fmt(totalOpExpense)}) — reference',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 10.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (anyOpExpenseMissing)
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 4),
+            child: Text(
+              '⚠️ Kuch batches mein pichle mahine ka expense data missing tha.',
+              style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
+            ),
+          ),
+        if (anyCostDataEstimated)
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 4),
+            child: Text(
+              '⚠️ Kuch batches mein Chicks/Feed/Medicine ka company-cost estimated hai (exact nahi).',
+              style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
+            ),
+          ),
 
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Divider(color: Colors.grey.shade200, height: 1),
         ),
-        totalRow(
-          'Batch Ke Dauraan Total Income',
-          totalBatchIncome,
-          isGood: true,
-          isBold: true,
+
+        // ✅ Silent Income Total — sabhi lots ka
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Silent Income Total',
+              style: TextStyle(
+                color: Colors.black87,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '${totalSilentIncome >= 0 ? "+" : "-"}₹${fmt(totalSilentIncome.abs())}',
+              style: TextStyle(
+                color: totalSilentIncome >= 0
+                    ? Colors.teal.shade700
+                    : Colors.red.shade700,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+
+        // ✅ Dekha Ke aggregate — True Total mein se Silent Income nikaal
+        // ke (remainder), isliye Silent+Dekha Ke hamesha True Total ke
+        // barabar hoga.
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              totalDekhaKe >= 0
+                  ? 'Dekha Ke Profit (Total)'
+                  : 'Dekha Ke Loss (Total)',
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '${totalDekhaKe >= 0 ? "+" : "-"}₹${fmt(totalDekhaKe.abs())}',
+              style: TextStyle(
+                color: totalDekhaKe >= 0
+                    ? Colors.teal.shade700
+                    : Colors.red.shade700,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
 
         Padding(
@@ -1435,9 +2081,14 @@ Widget buildTotalSummaryCard({
             letterSpacing: 0.5,
           ),
         ),
+        const SizedBox(height: 2),
+        Text(
+          'Slice size = magnitude (chhota/bada). Loss wale batches ka border LAAL hota hai.',
+          style: TextStyle(fontSize: 9, color: Colors.grey.shade500),
+        ),
 
-        // ✅ Batch-wise pie chart — kis batch se kitna income aaya,
-        // tap karke dekho
+        // Batch-wise pie chart — kis batch se kitna income aaya, tap karke
+        // dekho
         _BatchIncomePieChart(earnings: earnings),
 
         Padding(
@@ -1453,17 +2104,18 @@ Widget buildTotalSummaryCard({
         ),
         const SizedBox(height: 12),
 
-        // Hero box — halka green-tinted box, per-lot card jaisa hi look
+        // Hero box — Total Batch Profit/Loss, sabhi lots ka combined,
+        // guaranteed = Silent Income Total + Dekha Ke (upar dikhaya gaya)
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: totalCompanyEarning >= 0
+            color: totalBatchProfit >= 0
                 ? primaryGreen.withOpacity(0.07)
                 : Colors.red.shade50,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: totalCompanyEarning >= 0
+              color: totalBatchProfit >= 0
                   ? primaryGreen.withOpacity(0.3)
                   : Colors.red.shade200,
               width: 1.2,
@@ -1477,11 +2129,11 @@ Widget buildTotalSummaryCard({
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      totalCompanyEarning >= 0
-                          ? '📈 Batch End — Company Ka Total Bacha'
-                          : '📉 Batch End — Company Ka Total Nuksaan',
+                      totalBatchProfit >= 0
+                          ? '📈 Total Batch Profit'
+                          : '📉 Total Batch Loss',
                       style: TextStyle(
-                        color: totalCompanyEarning >= 0
+                        color: totalBatchProfit >= 0
                             ? primaryGreen
                             : Colors.red.shade700,
                         fontWeight: FontWeight.bold,
@@ -1490,7 +2142,7 @@ Widget buildTotalSummaryCard({
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '$nLabel lots ka combined result (Sale − Payout)',
+                      '$nLabel lots ka combined result (Silent Income + Dekha Ke)',
                       style: TextStyle(
                         color: Colors.grey.shade500,
                         fontSize: 10,
@@ -1501,9 +2153,9 @@ Widget buildTotalSummaryCard({
               ),
               const SizedBox(width: 10),
               Text(
-                '${totalCompanyEarning >= 0 ? "+" : ""}₹${fmt(totalCompanyEarning)}',
+                '${totalBatchProfit >= 0 ? "+" : "-"}₹${fmt(totalBatchProfit.abs())}',
                 style: TextStyle(
-                  color: totalCompanyEarning >= 0
+                  color: totalBatchProfit >= 0
                       ? primaryGreen
                       : Colors.red.shade700,
                   fontWeight: FontWeight.bold,
@@ -1513,6 +2165,14 @@ Widget buildTotalSummaryCard({
             ],
           ),
         ),
+        if (anyCostDataEstimated)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              '⚠️ Kuch batches ka company-cost estimated hai, isliye Total Batch Profit bhi estimate hai.',
+              style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
+            ),
+          ),
 
         if (n > 0) ...[
           const SizedBox(height: 12),
@@ -1526,7 +2186,7 @@ Widget buildTotalSummaryCard({
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                miniStat('Per Lot Avg', '₹${fmt(totalCompanyEarning / n)}'),
+                miniStat('Per Lot Avg', '₹${fmt(totalBatchProfit / n)}'),
                 Container(width: 1, height: 28, color: Colors.grey.shade300),
                 miniStat('Total Lots', '$n lots'),
                 Container(width: 1, height: 28, color: Colors.grey.shade300),
@@ -1556,21 +2216,27 @@ Widget totalRow(
     valColor = Colors.red.shade600;
     prefix = '- ';
   }
+  // ✅ FIX: value.abs() use karo taaki agar kabhi already-negative value pass
+  // ho jaaye to "- ₹-5K" jaisa double-sign na bane.
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 4),
     child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: isBold ? Colors.black87 : Colors.black54,
-            fontSize: 12,
-            fontWeight: isBold ? FontWeight.w600 : FontWeight.normal,
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isBold ? Colors.black87 : Colors.black54,
+              fontSize: 12,
+              fontWeight: isBold ? FontWeight.w600 : FontWeight.normal,
+            ),
           ),
         ),
+        const SizedBox(width: 8),
         Text(
-          '$prefix₹${fmt(value)}',
+          '$prefix₹${fmt(value.abs())}',
           style: TextStyle(
             color: valColor,
             fontSize: isBold ? 13 : 12,
@@ -1603,6 +2269,10 @@ Widget miniStat(String label, String value) {
 // 🥧 BATCH-WISE INCOME PIE CHART — Har batch ka "Batch End Bacha" contribution
 // ek slice ke roop mein. Tap karo toh wo slice bada ho jata hai aur batch ID
 // + us batch se aaya total rupya niche label mein dikhta hai.
+// ✅ NEW: Loss-wale batches (companyEarning < 0) ka slice border ab RED hota
+// hai (pehle sabka white border tha aur sirf center-label mein sign dikhta
+// tha jab tap karo — is se pie ek nazar mein "sab profit jaisa" lag sakta
+// tha).
 // ═══════════════════════════════════════════════════════════════════════════
 class _BatchIncomePieChart extends StatefulWidget {
   final List<_LotEarning> earnings;
@@ -1629,7 +2299,7 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
   static const double _chartSize = 200;
 
   List<_LotEarning> get _valid =>
-      widget.earnings.where((e) => e.companyEarning != 0).toList();
+      widget.earnings.where((e) => e.trueTotalProfit != 0).toList();
 
   void _handleTap(Offset localPosition) {
     final valid = _valid;
@@ -1654,13 +2324,13 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
     if (adjusted < 0) adjusted += 2 * math.pi;
     if (adjusted >= 2 * math.pi) adjusted -= 2 * math.pi;
 
-    final double total = valid.fold(0.0, (s, e) => s + e.companyEarning.abs());
+    final double total = valid.fold(0.0, (s, e) => s + e.trueTotalProfit.abs());
     if (total <= 0) return;
 
     double cumulative = 0;
     for (int i = 0; i < valid.length; i++) {
       final double sweep =
-          (valid[i].companyEarning.abs() / total) * 2 * math.pi;
+          (valid[i].trueTotalProfit.abs() / total) * 2 * math.pi;
       if (adjusted >= cumulative && adjusted < cumulative + sweep) {
         setState(() {
           _selectedIndex = _selectedIndex == i ? null : i;
@@ -1680,6 +2350,9 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
       valid.length,
       (i) => _sliceColors[i % _sliceColors.length],
     );
+    final List<bool> isNegative = valid
+        .map((e) => e.trueTotalProfit < 0)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1697,8 +2370,11 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
                   CustomPaint(
                     size: const Size(_chartSize, _chartSize),
                     painter: _PieChartPainter(
-                      values: valid.map((e) => e.companyEarning.abs()).toList(),
+                      values: valid
+                          .map((e) => e.trueTotalProfit.abs())
+                          .toList(),
                       colors: colors,
+                      isNegative: isNegative,
                       selectedIndex: _selectedIndex,
                     ),
                   ),
@@ -1723,10 +2399,10 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '${valid[_selectedIndex!].companyEarning >= 0 ? "+" : ""}₹${fmt(valid[_selectedIndex!].companyEarning)}',
+                            '${valid[_selectedIndex!].trueTotalProfit >= 0 ? "+" : ""}₹${fmt(valid[_selectedIndex!].trueTotalProfit)}',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: valid[_selectedIndex!].companyEarning >= 0
+                              color: valid[_selectedIndex!].trueTotalProfit >= 0
                                   ? primaryGreen
                                   : Colors.red.shade600,
                               fontWeight: FontWeight.bold,
@@ -1748,6 +2424,7 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
           runSpacing: 8,
           children: List.generate(valid.length, (i) {
             final bool isSelected = _selectedIndex == i;
+            final bool neg = isNegative[i];
             return InkWell(
               borderRadius: BorderRadius.circular(8),
               onTap: () => setState(() {
@@ -1760,9 +2437,11 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
                       ? Colors.green.shade50
                       : Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(8),
-                  border: isSelected
-                      ? Border.all(color: Colors.green.shade300)
-                      : Border.all(color: Colors.grey.shade200),
+                  border: neg
+                      ? Border.all(color: Colors.red.shade300, width: 1.2)
+                      : (isSelected
+                            ? Border.all(color: Colors.green.shade300)
+                            : Border.all(color: Colors.grey.shade200)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1777,9 +2456,9 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      valid[i].batchId,
-                      style: const TextStyle(
-                        color: Colors.black87,
+                      '${neg ? "− " : ""}${valid[i].batchId}',
+                      style: TextStyle(
+                        color: neg ? Colors.red.shade700 : Colors.black87,
                         fontSize: 10.5,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1798,11 +2477,13 @@ class _BatchIncomePieChartState extends State<_BatchIncomePieChart> {
 class _PieChartPainter extends CustomPainter {
   final List<double> values;
   final List<Color> colors;
+  final List<bool> isNegative;
   final int? selectedIndex;
 
   _PieChartPainter({
     required this.values,
     required this.colors,
+    required this.isNegative,
     required this.selectedIndex,
   });
 
@@ -1834,10 +2515,13 @@ class _PieChartPainter extends CustomPainter {
       final Rect rect = Rect.fromCircle(center: sliceCenter, radius: radius);
       canvas.drawArc(rect, startAngle, sweep, true, fillPaint);
 
+      // ✅ Loss-wale slices ka border red hota hai — profit/loss ek nazar
+      // mein pehchana ja sake, sirf color-magnitude se confuse na ho.
+      final bool neg = i < isNegative.length && isNegative[i];
       final Paint borderPaint = Paint()
-        ..color = Colors.white
+        ..color = neg ? Colors.red.shade400 : Colors.white
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5;
+        ..strokeWidth = neg ? 3.2 : 2.5;
       canvas.drawArc(rect, startAngle, sweep, true, borderPaint);
 
       startAngle += sweep;
@@ -1852,18 +2536,19 @@ class _PieChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _PieChartPainter oldDelegate) {
     return oldDelegate.selectedIndex != selectedIndex ||
         oldDelegate.values != values ||
-        oldDelegate.colors != colors;
+        oldDelegate.colors != colors ||
+        oldDelegate.isNegative != isNegative;
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NEW: BATCH DETAIL INFORMATION SCREEN — "Detail Information Dekho" button
-// se yahan aate hain. Isme Chicks/Feed/Medicine har ek ka alag line/area
-// chart hota hai: X-axis = cumulative quantity (0 se total tak), Y-axis =
-// rate (₹). Blue line = Company Purchase/Cost Rate, Orange line = Farmer
-// Rate. Jahan farmer line company line se upar hoti hai wahan hara (profit)
-// shading, jahan neeche hoti hai wahan laal (loss) shading. Har category ke
-// neeche uska profit/loss aur sabse neeche total profit/loss.
+// BATCH DETAIL INFORMATION SCREEN — "Detail Information Dekho" button se
+// yahan aate hain. Isme Chicks/Feed/Medicine har ek ka alag line/area chart
+// hota hai: X-axis = cumulative quantity (0 se total tak), Y-axis = rate (₹).
+// Blue line = Company Purchase/Cost Rate, Orange line = Farmer Rate. Jahan
+// farmer line company line se upar hoti hai wahan hara (profit) shading,
+// jahan neeche hoti hai wahan laal (loss) shading. Har category ke neeche
+// uska profit/loss aur sabse neeche total profit/loss.
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Ek allocation "segment" — kisi batch ko di gayi ek chicks/feed/medicine
@@ -1915,9 +2600,13 @@ class _BatchDetailInformationScreenState
               (purchase['effectiveRate'] as num?)?.toDouble() ??
               (purchase['rate'] as num?)?.toDouble() ??
               0;
-          final List<dynamic> allocs = (purchase['allocations'] as List?) ?? [];
+          final List<dynamic> allocs = _dedupeAllocs(
+            (purchase['allocations'] as List?) ?? [],
+          );
           for (final a in allocs) {
-            if (a['type'] == 'Company' &&
+            final String allocType = (a['type']?.toString() ?? '')
+                .toLowerCase();
+            if (allocType == 'company' &&
                 a['batchId']?.toString() == widget.batchId) {
               matches.add({
                 'qty': (a['qty'] as num?)?.toDouble() ?? 0.0,
@@ -1943,7 +2632,11 @@ class _BatchDetailInformationScreenState
             ),
           );
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint(
+          'BatchDetailInformationScreen: chicks history parse failed: $e',
+        );
+      }
     }
 
     // ── Feed (per type) ──────────────────────────────────────────────────
@@ -1955,7 +2648,9 @@ class _BatchDetailInformationScreenState
             feedType['name']?.toString() ?? feedType['id']?.toString() ?? '';
         final double currentAvgCost =
             (feedType['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
-        final List<dynamic> allocs = (feedType['allocations'] as List?) ?? [];
+        final List<dynamic> allocs = _dedupeAllocs(
+          (feedType['allocations'] as List?) ?? [],
+        );
         List<Map<String, dynamic>> matches = [];
         for (final a in allocs) {
           if (a['batchId']?.toString() == widget.batchId) {
@@ -1986,7 +2681,9 @@ class _BatchDetailInformationScreenState
             .toList();
         if (feedSegs[name]!.isEmpty) feedSegs.remove(name);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('BatchDetailInformationScreen: feed stock load failed: $e');
+    }
 
     // ── Medicine (per medicine) ──────────────────────────────────────────
     Map<String, List<_AllocSegment>> medSegs = {};
@@ -2000,7 +2697,9 @@ class _BatchDetailInformationScreenState
           final String name = med['name']?.toString() ?? '-';
           final double currentAvgCostPerBase =
               (med['weightedAvgCost'] as num?)?.toDouble() ?? 0.0;
-          final List<dynamic> allocs = (med['allocations'] as List?) ?? [];
+          final List<dynamic> allocs = _dedupeAllocs(
+            (med['allocations'] as List?) ?? [],
+          );
           List<Map<String, dynamic>> matches = [];
           for (final a in allocs) {
             if (a['batchId']?.toString() == widget.batchId) {
@@ -2042,7 +2741,11 @@ class _BatchDetailInformationScreenState
               .toList();
           if (segs.isNotEmpty) medSegs[name] = segs;
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint(
+          'BatchDetailInformationScreen: medicine stock parse failed: $e',
+        );
+      }
     }
 
     if (mounted) {
@@ -2565,6 +3268,24 @@ class _LotEarning {
   final double companyEarning;
   final bool isBigSize;
   final double avgWeight;
+  // Operational Expense (Labour+Other, pichle mahine ke per-KG rate se)
+  final double operationalExpenseShare;
+  final bool
+  opExpenseDataMissing; // true = kisi sale ke pichle mahine ka data nahi mila
+
+  // ✅ NEW: Data-quality flags — jab company-cost ek real linked purchase
+  // record se nahi, balki fallback/estimate se aayi hai.
+  final bool chicksCostEstimated;
+  final bool feedCostEstimated;
+  final bool medicineCostEstimated;
+  // ✅ NEW: true = koi bhi valid weight entry nahi mili is batch mein.
+  final bool weightDataMissing;
+
+  // ✅ NEW: Company ne ASAL MEIN kitna kharch kiya (billed nahi, cost) —
+  // isi se "Total Cash Profit" (neeche) calculate hota hai.
+  final double chicksCompanyCost;
+  final double feedCompanyCost;
+  final double medicineCompanyCost;
 
   const _LotEarning({
     required this.batchId,
@@ -2582,7 +3303,62 @@ class _LotEarning {
     required this.companyEarning,
     required this.isBigSize,
     required this.avgWeight,
+    required this.operationalExpenseShare,
+    required this.opExpenseDataMissing,
+    this.chicksCostEstimated = false,
+    this.feedCostEstimated = false,
+    this.medicineCostEstimated = false,
+    this.weightDataMissing = false,
+    this.chicksCompanyCost = 0,
+    this.feedCompanyCost = 0,
+    this.medicineCompanyCost = 0,
   });
+
+  bool get costDataEstimated =>
+      chicksCostEstimated || feedCostEstimated || medicineCostEstimated;
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ FINAL PROFIT MODEL — "Silent" + "Dekha Ke" ko is tarah banaya gaya
+  // hai ki inka jodna KABHI double-count nahi hota, chahe payout 0 pe
+  // clamp ho jaaye, medicine production-cost mein ho ya na ho, kuch bhi ho.
+  //
+  // Tarika: pehle TRUE total profit sirf REAL cash flows se nikala jaata
+  // hai (sale − asal purchase costs − real operational expense − farmer ko
+  // asal mein diya gaya payout). Phir "Dekha Ke" ko is TRUE total mein se
+  // "Silent Income" ghata ke (remainder ki tarah) nikala jaata hai — is
+  // liye Silent + Dekha Ke hamesha True Total ke barabar hi hoga, kyunki
+  // Dekha Ke ki definition hi "jo bacha" hai, alag se independently
+  // calculate karke jodा nahi gaya.
+  // ══════════════════════════════════════════════════════════════════════
+
+  /// Silent Income — Chicks/Feed/Medicine ka margin (Farmer se liya −
+  /// Company ne khareeda). Har category alag bhi dikhti hai (chicksIncome
+  /// waghera), ye unka jod hai.
+  double get silentIncomeTotal => chicksIncome + feedIncome + medicineIncome;
+
+  /// TRUE Total Profit — sirf REAL cash flows se, koi "billed" figure
+  /// isme nahi hai:
+  ///   Total Sale − (Chicks+Feed+Medicine ka ASAL company kharcha)
+  ///              − Operational Expense (Labour+Other, real kharcha)
+  ///              − Farmer Ko Asal Mein Diya Gaya Payout
+  ///
+  /// Admin Charge yahan JAAN-BOOJH KAR nahi hai — uska poora asar already
+  /// `farmerPayout` ke andar hai (Admin Charge → Production Cost badhata
+  /// hai → cost-exceeded penalty lagti hai → commission/payout kam ho
+  /// jaata hai). Dobara jodne se double-count ho jaayega.
+  double get trueTotalProfit =>
+      totalSaleMoney -
+      chicksCompanyCost -
+      feedCompanyCost -
+      medicineCompanyCost -
+      operationalExpenseShare -
+      farmerPayout;
+
+  /// Dekha Ke Profit/Loss — True Total mein se Silent Income nikaal ke jo
+  /// bacha (production-cost-penalty effect, medicine-deduction effect,
+  /// admin-charge ka indirect asar — sab isi ek number mein capture ho
+  /// jaate hain, bina dobara gine).
+  double get dekhaKeProfit => trueTotalProfit - silentIncomeTotal;
 }
 
 class _BarData {

@@ -23,6 +23,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
+import 'reports_screen.dart'; // Agar reports_screen usi folder mein hai jahan home_screen hai
 
 // ── ✅ Imports for stock history screens
 import 'feed_stock_history_screen.dart';
@@ -5683,7 +5684,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       },
                     ),
                     const SizedBox(width: 10),
-                    _quickAction(Icons.bar_chart, 'Reports', Colors.blue),
+                    _quickAction(
+                      Icons.bar_chart,
+                      'Reports',
+                      Colors.blue,
+                      onTap: () {
+                        Get.to(() => const ReportsScreen());
+                      },
+                    ),
                     const SizedBox(width: 10),
                     _quickAction(
                       Icons.account_balance_wallet,

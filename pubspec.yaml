@@ -10,6 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # UI & Charts
+  fl_chart: ^0.68.0  # ✅ YE NAYA ADD KIYA HAI
+
   # Sharing & File Access
   share_plus: ^7.2.1
   path_provider: ^2.1.2
@@ -37,7 +40,7 @@ dependencies:
   # Multimedia
   image_picker: ^1.0.7
 
-  # Notifications & File Opening (Download complete notification)
+  # Notifications & File Opening
   flutter_local_notifications: ^17.2.3
   open_file: ^3.5.1
 

@@ -4904,6 +4904,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     );
   }
 
+  // ===========================================================================
+  // ✅ FIX 1 – RATE SNAPSHOT (UPDATED FUNCTION)
+  // ===========================================================================
   Future<void> _saveSalesEntryToStorage(
     BuildContext dialogContext,
     double calculatedAvgWeight,
@@ -4971,6 +4974,20 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
     setState(() => _isLoading = true);
     try {
+      // ✅ NEW: Rate/rule snapshot — is waqt ka appliedRule aur admin rate
+      // permanently save karo, taaki baad mein rule/rate badalne par
+      // Reports screen purani sale ko galat rate se recalculate na kare.
+      final bool hasValidWeight = calculatedAvgWeight > 0;
+      final bool isBigSizeAtSale = calculatedAvgWeight > 1.2;
+      double adminRateAtSale = 0.0;
+      String sizeCategoryAtSale = 'unknown';
+      if (hasValidWeight) {
+        sizeCategoryAtSale = isBigSizeAtSale ? 'big' : 'small';
+        if (_appliedRuleId == 1) {
+          adminRateAtSale = isBigSizeAtSale ? _r1BigAdminCost : _r1SmAdminCost;
+        }
+      }
+
       final prefs = await SharedPreferences.getInstance();
       final String? farmersJson = prefs.getString('companyFarmers');
       if (farmersJson != null) {
@@ -4986,6 +5003,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           'totalMoney': calculatedTotalMoney.toStringAsFixed(2),
           'enteredBy': widget.userRole,
           'timestamp': DateTime.now().toIso8601String(),
+          // ✅ NEW: snapshot fields
+          'appliedRuleIdAtSale': _appliedRuleId,
+          'sizeCategoryAtSale': sizeCategoryAtSale,
+          'adminRateAtSale': adminRateAtSale,
         };
         for (var farmerItem in farmersList) {
           if (farmerItem['id'] == widget.farmerId) {
