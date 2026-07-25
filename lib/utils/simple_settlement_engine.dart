@@ -91,6 +91,8 @@ class SimpleBatchSettlementEngine {
     double totalSaleMoney = 0.0;
     double calculatedMedicineCostSum = 0.0;
     int totalFeedBagsCount = 0;
+    double totalFeedKgSum = 0.0; // ✅ FIX #4/#5 — real KG accumulator
+    double totalReturnFeedKg = 0.0; // ✅ FIX #6
 
     double totalChickCostAllotted =
         totalChicksHoused * config.chickPricePerPiece;
@@ -103,17 +105,39 @@ class SimpleBatchSettlementEngine {
         totalSaleMoney +=
             double.tryParse(entry['totalMoney'].toString()) ?? 0.0;
       } else if (type == 'feed_dispatch' || type == 'cost') {
-        int bagsCount = int.tryParse(entry['feedBags'].toString()) ?? 0;
+        // ✅ FIX #5 — dailyEntries mein actual field ka naam 'feed' hai,
+        // 'feedBags' schema mein kabhi exist hi nahi karta tha isliye ye
+        // hamesha 0 read hota tha.
+        int bagsCount = int.tryParse(entry['feed']?.toString() ?? '') ?? 0;
         if (bagsCount > 0) totalFeedBagsCount += bagsCount;
+
+        // ✅ FIX #4 — actual entered KG (Starter/Grower/Finisher real
+        // per-bag weights, 'feedTotalKg' field) use karo, na ki
+        // totalFeedBags * ek flat config.kgPerBag se recompute karo.
+        final double? realKg = double.tryParse(
+          entry['feedTotalKg']?.toString() ?? '',
+        );
+        if (realKg != null && realKg > 0) {
+          totalFeedKgSum += realKg;
+        } else if (bagsCount > 0) {
+          // Legacy entry jisme feedTotalKg save hi nahi hua — fallback
+          totalFeedKgSum += bagsCount * config.kgPerBag;
+        }
       } else if (type == 'medicine') {
         double medPrice = double.tryParse(entry['price'].toString()) ?? 0.0;
         calculatedMedicineCostSum += medPrice;
+      } else if (type == 'returnfeed') {
+        // ✅ FIX #6 — return feed ko net consumption se minus karo
+        final double? retKg = double.tryParse(
+          entry['returnFeedKg']?.toString() ?? '',
+        );
+        if (retKg != null && retKg > 0) totalReturnFeedKg += retKg;
       }
     }
 
-    // ✅ Bags -> KG -> cost, seedhe formula se (perBag "fix" allocation mode
-    // hata diya gaya, ab hamesha bag ka actual kg-weight use hoga).
-    double totalKgConsumed = totalFeedBagsCount * config.kgPerBag;
+    // ✅ Net feed KG (delivered − returned) use karo cost calculate karne ke liye
+    double totalKgConsumed = totalFeedKgSum - totalReturnFeedKg;
+    if (totalKgConsumed < 0) totalKgConsumed = 0.0;
     double totalFeedCostAllotted = totalKgConsumed * config.feedRate;
 
     double totalAdminCostSum = totalWeightSoldKg * config.adminCostPerKg;
@@ -335,6 +359,8 @@ class BigSizeSettlementEngine {
     double totalWeightSoldKg = 0.0;
     double totalSaleMoney = 0.0;
     int totalFeedBags = 0;
+    double totalFeedKgSum = 0.0; // ✅ FIX #4 — real KG accumulator
+    double totalReturnFeedKg = 0.0; // ✅ FIX #6
     double totalMedicineCost = 0.0;
 
     for (var entry in dailyEntries) {
@@ -347,14 +373,32 @@ class BigSizeSettlementEngine {
       } else if (type == 'cost') {
         int bags = int.tryParse(entry['feed'].toString()) ?? 0;
         if (bags > 0) totalFeedBags += bags;
+
+        // ✅ FIX #4 — real per-type KG use karo, flat kgPerBag se recompute
+        // mat karo (mixed Starter/Grower/Finisher bag-weights galat hoti thi)
+        final double? realKg = double.tryParse(
+          entry['feedTotalKg']?.toString() ?? '',
+        );
+        if (realKg != null && realKg > 0) {
+          totalFeedKgSum += realKg;
+        } else if (bags > 0) {
+          totalFeedKgSum += bags * config.kgPerBag; // legacy fallback
+        }
       } else if (type == 'medicine') {
         totalMedicineCost += double.tryParse(entry['price'].toString()) ?? 0.0;
+      } else if (type == 'returnfeed') {
+        // ✅ FIX #6
+        final double? retKg = double.tryParse(
+          entry['returnFeedKg']?.toString() ?? '',
+        );
+        if (retKg != null && retKg > 0) totalReturnFeedKg += retKg;
       }
     }
 
     // --- COST CALCULATION ---
     double totalChickCost = totalChicksHoused * config.chickPricePerPiece;
-    double totalFeedKg = totalFeedBags * config.kgPerBag;
+    double totalFeedKg = totalFeedKgSum - totalReturnFeedKg;
+    if (totalFeedKg < 0) totalFeedKg = 0.0;
     double totalFeedCost = totalFeedKg * config.feedRatePerKg;
     double totalAdminCost = totalWeightSoldKg * config.adminChargePerKg;
 
@@ -447,6 +491,8 @@ class SmallSizeSettlementEngine {
     double totalWeightSoldKg = 0.0;
     double totalSaleMoney = 0.0;
     int totalFeedBags = 0;
+    double totalFeedKgSum = 0.0; // ✅ FIX #4 — real KG accumulator
+    double totalReturnFeedKg = 0.0; // ✅ FIX #6
     double totalMedicineCost = 0.0;
 
     for (var entry in dailyEntries) {
@@ -459,14 +505,32 @@ class SmallSizeSettlementEngine {
       } else if (type == 'cost') {
         int bags = int.tryParse(entry['feed'].toString()) ?? 0;
         if (bags > 0) totalFeedBags += bags;
+
+        // ✅ FIX #4 — real per-type KG use karo, flat kgPerBag se recompute
+        // mat karo (mixed Starter/Grower/Finisher bag-weights galat hoti thi)
+        final double? realKg = double.tryParse(
+          entry['feedTotalKg']?.toString() ?? '',
+        );
+        if (realKg != null && realKg > 0) {
+          totalFeedKgSum += realKg;
+        } else if (bags > 0) {
+          totalFeedKgSum += bags * config.kgPerBag; // legacy fallback
+        }
       } else if (type == 'medicine') {
         totalMedicineCost += double.tryParse(entry['price'].toString()) ?? 0.0;
+      } else if (type == 'returnfeed') {
+        // ✅ FIX #6
+        final double? retKg = double.tryParse(
+          entry['returnFeedKg']?.toString() ?? '',
+        );
+        if (retKg != null && retKg > 0) totalReturnFeedKg += retKg;
       }
     }
 
     // --- COST CALCULATION ---
     double totalChickCost = totalChicksHoused * config.chickPricePerPiece;
-    double totalFeedKg = totalFeedBags * config.kgPerBag;
+    double totalFeedKg = totalFeedKgSum - totalReturnFeedKg;
+    if (totalFeedKg < 0) totalFeedKg = 0.0;
     double totalFeedCost = totalFeedKg * config.feedRatePerKg;
     double totalAdminCost = totalWeightSoldKg * config.adminChargePerKg;
 

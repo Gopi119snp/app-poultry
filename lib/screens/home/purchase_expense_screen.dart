@@ -302,6 +302,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
                       ),
                   ],
                 ),
+
                 body: Column(
                   children: [
                     // ── TOP: Available Stock Box ──
@@ -3457,11 +3458,13 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
   final double availG = availFor('grower');
   final double availF = availFor('finisher');
 
+  // ✅ FIX #11 — CompanyStore se Rule-1 config padho
   double defaultBillingPerBag = 42.0 * 50.0;
   double feedKgPerBagCfg = 50.0;
   try {
-    final prefs = await SharedPreferences.getInstance();
-    final String? r1Json = prefs.getString('rule1SettlementConfig');
+    final String? r1Json = await CompanyStore.instance.getString(
+      'rule1SettlementConfig',
+    );
     if (r1Json != null) {
       final Map<String, dynamic> r1 = json.decode(r1Json);
       final double bigFeedRate = (r1['bigFeedRate'] ?? 42.0).toDouble();

@@ -40,6 +40,9 @@ class CompanyStore {
     'personalFarmers',
     'password', // legacy owner password — Firebase Auth primary hai
     'ownerSignature', // Owner ka signature — base64 encoded image string
+    'customRoles', // Owner ke banaye custom role names (Office/Field Manager se alag)
+    'rolePermissions', // Har role ke module-wise View/Add/Edit/Delete permissions
+    'personPermissions', // Har individual staff member (name+phone) ka custom permission override
   };
 
   static const intKeys = {
@@ -281,9 +284,7 @@ class CompanyStore {
     }
     try {
       final decoded = Map<String, dynamic>.from(json.decode(raw));
-      return decoded.map(
-        (k, v) => MapEntry(k, (v as num).toDouble()),
-      );
+      return decoded.map((k, v) => MapEntry(k, (v as num).toDouble()));
     } catch (_) {
       return {'Starter': 0.0, 'Grower': 0.0, 'Finisher': 0.0};
     }
@@ -306,22 +307,22 @@ class CompanyStore {
   }
 
   Map<String, dynamic> _defaultData() => {
-        'companyFarmers': '[]',
-        'officeManagers': '[]',
-        'fieldManagers': '[]',
-        'feedStockMap': json.encode({
-          'Starter': 0.0,
-          'Grower': 0.0,
-          'Finisher': 0.0,
-        }),
-        'medicineStockList': '[]',
-        'feedPurchaseHistory': '[]',
-        'labourExpenseHistory': '[]',
-        'otherExpenseHistory': '[]',
-        'minLiftingDays': 23,
-        'maxLiftingDays': 60,
-        'appliedCompanyRuleId': 1,
-      };
+    'companyFarmers': '[]',
+    'officeManagers': '[]',
+    'fieldManagers': '[]',
+    'feedStockMap': json.encode({
+      'Starter': 0.0,
+      'Grower': 0.0,
+      'Finisher': 0.0,
+    }),
+    'medicineStockList': '[]',
+    'feedPurchaseHistory': '[]',
+    'labourExpenseHistory': '[]',
+    'otherExpenseHistory': '[]',
+    'minLiftingDays': 23,
+    'maxLiftingDays': 60,
+    'appliedCompanyRuleId': 1,
+  };
 
   Future<void> _writeProfileToPrefs(
     SharedPreferences prefs,

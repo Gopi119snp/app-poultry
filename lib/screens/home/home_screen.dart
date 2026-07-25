@@ -5159,12 +5159,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 12),
               _premiumSheetTile(
-                icon: Icons.tune_rounded,
+                icon: Icons.admin_panel_settings_rounded,
                 iconBg: const Color(0xFFE8F5E9),
                 iconColor: primaryGreen,
-                title: 'App Settings',
-                subtitle: 'Lifting ke liye min-max din ki range configure karo',
-                badgeText: '$_minLiftingDays-$_maxLiftingDays Din',
+                title: 'Settings & Permissions',
+                subtitle:
+                    'Office/Field Manager ko kya dikhna, add ya edit karne ka access do',
+                badgeText: 'Configure',
                 badgeColor: Colors.green.shade50,
                 badgeTextColor: primaryGreen,
                 onTap: () {
