@@ -67,18 +67,42 @@ class _CatAmount {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 📦 PER-FARMER AGGREGATE
+// 📦 PER-BATCH RECORD — ab har batch ka apna record store hota hai (status
+// ke saath), taaki totals ko "include active?" toggle ke hisaab se
+// dynamically recompute kiya ja sake, bina wapas se load kiye.
 // ═══════════════════════════════════════════════════════════════════════════
+class _BatchProfitRecord {
+  final String farmerId;
+  final String farmerName;
+  final String batchId;
+  final bool isCompleted; // COMPLETED/CLOSED = true, warna active/other
+  final double trueTotalProfit;
+  final double silentIncome;
+  final bool opExpenseDataMissing;
+  final bool allocationDataMissing; // ✅ FIX #9 — naya
+  final DateTime
+  trendDate; // last sale date, ya batch start date agar sale hi nahi hui
+
+  const _BatchProfitRecord({
+    required this.farmerId,
+    required this.farmerName,
+    required this.batchId,
+    required this.isCompleted,
+    required this.trueTotalProfit,
+    required this.silentIncome,
+    required this.opExpenseDataMissing,
+    required this.allocationDataMissing, // ✅ FIX #9 — naya
+    required this.trendDate,
+  });
+}
+
 class _FarmerAgg {
   final String farmerId;
   final String farmerName;
   double trueTotalProfit = 0.0;
-  double silentIncome = 0.0; // chicks+feed+med margin (info only)
   int batchCount = 0;
   bool opExpenseDataMissing = false;
-  bool costDataEstimated = false;
-  // trend ke liye — har batch ka net profit uski last sale date ke saath
-  final List<MapEntry<DateTime, double>> batchDatedProfits = [];
+  bool allocationDataMissing = false; // ✅ FIX #9 — naya
 
   _FarmerAgg({required this.farmerId, required this.farmerName});
 }
@@ -97,7 +121,14 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
   bool _isLoading = true;
   String _granularity = 'Weekly';
 
-  List<_FarmerAgg> _farmerAggs = [];
+  // ✅ NEW: true = Active (abhi sale na hui) batches ka invest bhi minus
+  // karke total profit dikhega. false = sirf COMPLETED batches ka clean
+  // profit dikhega.
+  bool _includeActiveBatches = true;
+
+  // ✅ NEW: raw per-batch records — toggle change hone par yahi se
+  // dynamically re-aggregate hota hai, wapas load nahi karna padta.
+  List<_BatchProfitRecord> _allRecords = [];
 
   // Rule 1 config
   double _r1BigFeedRate = 42.0, _r1BigChicksRate = 40.0, _r1BigAdminCost = 1.50;
@@ -131,6 +162,31 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
     final kg = _monthlyKgSold[key];
     if (exp == null || kg == null || kg <= 0) return null;
     return exp / kg;
+  }
+
+  // ✅ FIX #7 — weighted sale-average weight (batch_detail_screen.dart ke
+  // _computeWeightedSaleAvgWeight jaisa hi), taaki Big/Small classification
+  // kisi ek leftover cost-entry weight se skew na ho.
+  double _computeWeightedSaleAvgWeight(
+    List<dynamic> entries, {
+    required double fallback,
+  }) {
+    double totalWeightedSum = 0.0;
+    double totalChicks = 0.0;
+    for (final entry in entries) {
+      if (entry is! Map) continue;
+      if (entry['type'].toString().toLowerCase() != 'sale') continue;
+      final chicks =
+          double.tryParse(entry['chicksSold']?.toString() ?? '') ?? 0.0;
+      final avgWt =
+          double.tryParse(entry['avgWeightSold']?.toString() ?? '') ?? 0.0;
+      if (chicks > 0 && avgWt > 0) {
+        totalWeightedSum += chicks * avgWt;
+        totalChicks += chicks;
+      }
+    }
+    if (totalChicks > 0) return totalWeightedSum / totalChicks;
+    return fallback;
   }
 
   _CatAmount _sumChicksForBatch(String batchId, double fallbackBilled) {
@@ -329,8 +385,9 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
     _monthlyOpExpense = monthlyOpExpense;
     _monthlyKgSold = monthlyKgSold;
 
-    // ── Har farmer ke har batch ke liye trueTotalProfit calculate karo ──
-    final List<_FarmerAgg> aggs = [];
+    // ── Har farmer ke har batch ke liye trueTotalProfit calculate karo,
+    // status ke saath store karo (filtering baad mein UI mein hogi) ──
+    final List<_BatchProfitRecord> records = [];
 
     for (final rawF in farmers) {
       final f = Map<String, dynamic>.from(rawF);
@@ -339,13 +396,14 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
       final batches = (f['batches'] as List?) ?? [];
       if (batches.isEmpty) continue;
 
-      final agg = _FarmerAgg(farmerId: farmerId, farmerName: farmerName);
-
       for (final rawB in batches) {
         final b = Map<String, dynamic>.from(rawB);
         final batchId = (b['batchId'] ?? b['id'] ?? '').toString();
         final initialChicks = (b['chicksCount'] as num?)?.toInt() ?? 0;
         final entriesRaw = (b['dailyEntries'] as List?) ?? [];
+        final String status = (b['status']?.toString() ?? 'ACTIVE')
+            .toUpperCase();
+        final bool isCompleted = status == 'COMPLETED' || status == 'CLOSED';
 
         // Sort by date (jaisa farmer_report_screen.dart karta hai)
         final indexed = List<MapEntry<int, Map<String, dynamic>>>.generate(
@@ -393,30 +451,16 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
           }
         }
 
-        if (totalSaleMoney <= 0 && totalWeightSoldKg <= 0)
-          continue; // koi sale hi nahi hui
-
-        final isBigSize = latestAvgWeight > 1.2;
+        // ✅ FIX #7 — weighted sale-average weight, last-entry weight nahi
+        final double sizeClassificationWeight = _computeWeightedSaleAvgWeight(
+          entries,
+          fallback: latestAvgWeight,
+        );
+        final isBigSize = sizeClassificationWeight > 1.2;
 
         final chicksRateFallback = isBigSize
             ? _r1BigChicksRate
             : _r1SmChicksRate;
-        final adminCost = isBigSize ? _r1BigAdminCost : _r1SmAdminCost;
-        final medInProd = isBigSize
-            ? _r1BigMedicineInProd
-            : _r1SmMedicineInProd;
-        final targetCost = isBigSize ? _r1BigTargetCost : _r1SmTargetCost;
-        final baseComm = isBigSize ? _r1BigBaseComm : _r1SmBaseComm;
-        final savingsShare = isBigSize ? _r1BigSavingsShare : _r1SmSavingsShare;
-        final exceededShare = isBigSize
-            ? _r1BigExceededShare
-            : _r1SmExceededShare;
-        final rateBonThresh = isBigSize
-            ? _r1BigRateBonusThresh
-            : _r1SmRateBonusThresh;
-        final rateBonShare = isBigSize
-            ? _r1BigRateBonusShare
-            : _r1SmRateBonusShare;
 
         final chickBilledFallback =
             double.tryParse(b['totalChicksCost']?.toString() ?? '') ??
@@ -427,38 +471,104 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
         final feedAmt = _sumFeedForBatch(batchId);
         final medAmt = _sumMedicineForBatch(batchId);
 
-        final adminIncome = totalWeightSoldKg * adminCost;
+        final bool hasAnyInvestment =
+            chicksAmt.cost > 0 ||
+            feedAmt.cost > 0 ||
+            medAmt.cost > 0 ||
+            totalSaleMoney > 0;
+        if (!hasAnyInvestment) continue;
 
-        double totalProdCost = chicksAmt.billed + feedAmt.billed + adminIncome;
-        if (medInProd) totalProdCost += medAmt.billed;
+        // ✅ FIX #9 — flag karo jab sale hui ho lekin feed allocation-cost
+        // record hi nahi hai (matlab ye batch sirf Flock se track hui,
+        // Purchase→Allocate kabhi use hi nahi hua) — warna feed cost
+        // silently ₹0 dikhta hai aur profit overstate ho jata hai.
+        final bool allocationDataMissing =
+            totalWeightSoldKg > 0 && feedAmt.cost <= 0;
 
-        final actualCostPerKg = totalWeightSoldKg > 0
-            ? totalProdCost / totalWeightSoldKg
-            : 0.0;
-        final costDiff = targetCost - actualCostPerKg;
+        double farmerPayout;
 
-        double costAdj = 0;
-        if (costDiff > 0) {
-          costAdj = costDiff * (savingsShare / 100);
-        } else if (costDiff < 0) {
-          costAdj = costDiff * (exceededShare / 100);
+        // ✅ FIX #8 — COMPLETED batches ke liye ACTUAL frozen settlement
+        // snapshot (jo farmer ko diya gaya) use karo, live Rule-1 config se
+        // dobara recalculate mat karo. Warna company baad mein rates
+        // change kare to purani settled batches ka "profit" bhi silently
+        // badal jayega — jo actual paid amount se mismatch karega.
+        final Map<String, dynamic>? finalSnapshot =
+            b['finalSettlementSnapshot'] is Map
+            ? Map<String, dynamic>.from(b['finalSettlementSnapshot'])
+            : null;
+
+        if (isCompleted && finalSnapshot != null) {
+          final ruleSnap = finalSnapshot['ruleSnapshot'] is Map
+              ? Map<String, dynamic>.from(finalSnapshot['ruleSnapshot'])
+              : null;
+          final int? snapshotRuleId = ruleSnap != null
+              ? (ruleSnap['ruleId'] as num?)?.toInt()
+              : null;
+
+          if (snapshotRuleId == 2) {
+            // Rule 2 (FCR Matrix) — payout manual approval se aata hai
+            farmerPayout =
+                (finalSnapshot['approvedPayout'] as num?)?.toDouble() ?? 0.0;
+          } else {
+            farmerPayout =
+                (finalSnapshot['netPayout'] as num?)?.toDouble() ?? 0.0;
+          }
+        } else {
+          // ACTIVE batch ya settlement abhi tak nahi bana — sirf is case
+          // mein live/current Rule-1 config se ESTIMATE karo (kyunki koi
+          // frozen number exist hi nahi karta).
+          final adminCost = isBigSize ? _r1BigAdminCost : _r1SmAdminCost;
+          final medInProd = isBigSize
+              ? _r1BigMedicineInProd
+              : _r1SmMedicineInProd;
+          final targetCost = isBigSize ? _r1BigTargetCost : _r1SmTargetCost;
+          final baseComm = isBigSize ? _r1BigBaseComm : _r1SmBaseComm;
+          final savingsShare = isBigSize
+              ? _r1BigSavingsShare
+              : _r1SmSavingsShare;
+          final exceededShare = isBigSize
+              ? _r1BigExceededShare
+              : _r1SmExceededShare;
+          final rateBonThresh = isBigSize
+              ? _r1BigRateBonusThresh
+              : _r1SmRateBonusThresh;
+          final rateBonShare = isBigSize
+              ? _r1BigRateBonusShare
+              : _r1SmRateBonusShare;
+
+          final adminIncome = totalWeightSoldKg * adminCost;
+          double totalProdCost =
+              chicksAmt.billed + feedAmt.billed + adminIncome;
+          if (medInProd) totalProdCost += medAmt.billed;
+
+          final actualCostPerKg = totalWeightSoldKg > 0
+              ? totalProdCost / totalWeightSoldKg
+              : 0.0;
+          final costDiff = targetCost - actualCostPerKg;
+
+          double costAdj = 0;
+          if (costDiff > 0) {
+            costAdj = costDiff * (savingsShare / 100);
+          } else if (costDiff < 0) {
+            costAdj = costDiff * (exceededShare / 100);
+          }
+
+          final avgSaleRate = totalWeightSoldKg > 0
+              ? totalSaleMoney / totalWeightSoldKg
+              : 0.0;
+          final rateBonApplied =
+              (actualCostPerKg <= targetCost) && (avgSaleRate >= rateBonThresh);
+          final rateBonus = rateBonApplied
+              ? (avgSaleRate - rateBonThresh) * (rateBonShare / 100)
+              : 0.0;
+
+          double finalComm = baseComm + costAdj + rateBonus;
+          if (finalComm < 0) finalComm = 0;
+
+          farmerPayout = totalWeightSoldKg * finalComm;
+          if (!medInProd) farmerPayout -= medAmt.billed;
+          if (farmerPayout < 0) farmerPayout = 0;
         }
-
-        final avgSaleRate = totalWeightSoldKg > 0
-            ? totalSaleMoney / totalWeightSoldKg
-            : 0.0;
-        final rateBonApplied =
-            (actualCostPerKg <= targetCost) && (avgSaleRate >= rateBonThresh);
-        final rateBonus = rateBonApplied
-            ? (avgSaleRate - rateBonThresh) * (rateBonShare / 100)
-            : 0.0;
-
-        double finalComm = baseComm + costAdj + rateBonus;
-        if (finalComm < 0) finalComm = 0;
-
-        double farmerPayout = totalWeightSoldKg * finalComm;
-        if (!medInProd) farmerPayout -= medAmt.billed;
-        if (farmerPayout < 0) farmerPayout = 0;
 
         // ✅ Same trueTotalProfit formula jaisa farmer_report_screen.dart mein hai
         final double trueTotalProfit =
@@ -472,32 +582,61 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
         final double silentIncome =
             chicksAmt.income + feedAmt.income + medAmt.income;
 
-        agg.trueTotalProfit += trueTotalProfit;
-        agg.silentIncome += silentIncome;
-        agg.batchCount += 1;
-        if (opExpenseDataMissing) agg.opExpenseDataMissing = true;
+        final DateTime trendDate =
+            lastSaleDate ??
+            _parseDdMmYyyy(b['startDate']?.toString()) ??
+            DateTime.now();
 
-        final dateForTrend = lastSaleDate ?? DateTime.now();
-        agg.batchDatedProfits.add(MapEntry(dateForTrend, trueTotalProfit));
+        records.add(
+          _BatchProfitRecord(
+            farmerId: farmerId,
+            farmerName: farmerName,
+            batchId: batchId,
+            isCompleted: isCompleted,
+            trueTotalProfit: trueTotalProfit,
+            silentIncome: silentIncome,
+            opExpenseDataMissing: opExpenseDataMissing,
+            allocationDataMissing: allocationDataMissing, // ✅ FIX #9 — naya
+            trendDate: trendDate,
+          ),
+        );
       }
-
-      if (agg.batchCount > 0) aggs.add(agg);
     }
 
     if (!mounted) return;
     setState(() {
-      _farmerAggs = aggs;
+      _allRecords = records;
       _isLoading = false;
     });
   }
 
-  // ── Trend: sabhi farmers ke batchDatedProfits ko Daily/Weekly/Monthly bucket mein group karo ──
-  List<MapEntry<DateTime, double>> _bucketedTrend() {
-    final List<MapEntry<DateTime, double>> all = [];
-    for (final agg in _farmerAggs) {
-      all.addAll(agg.batchDatedProfits);
+  // ✅ NEW: toggle ke hisaab se filtered records
+  List<_BatchProfitRecord> get _filteredRecords {
+    if (_includeActiveBatches) return _allRecords;
+    return _allRecords.where((r) => r.isCompleted).toList();
+  }
+
+  // ✅ NEW: filtered records se farmer-wise aggregate banao
+  List<_FarmerAgg> get _farmerAggs {
+    final Map<String, _FarmerAgg> map = {};
+    for (final r in _filteredRecords) {
+      final agg = map.putIfAbsent(
+        r.farmerId,
+        () => _FarmerAgg(farmerId: r.farmerId, farmerName: r.farmerName),
+      );
+      agg.trueTotalProfit += r.trueTotalProfit;
+      agg.batchCount += 1;
+      if (r.opExpenseDataMissing) agg.opExpenseDataMissing = true;
+      if (r.allocationDataMissing)
+        agg.allocationDataMissing = true; // ✅ FIX #9 — naya
     }
-    if (all.isEmpty) return [];
+    return map.values.toList();
+  }
+
+  // ── Trend: filtered records ko Daily/Weekly/Monthly bucket mein group karo ──
+  List<MapEntry<DateTime, double>> _bucketedTrend() {
+    final records = _filteredRecords;
+    if (records.isEmpty) return [];
 
     DateTime bucketKey(DateTime d) {
       if (_granularity == 'Daily') return DateTime(d.year, d.month, d.day);
@@ -509,9 +648,9 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
     }
 
     final Map<DateTime, double> buckets = {};
-    for (final e in all) {
-      final key = bucketKey(e.key);
-      buckets[key] = (buckets[key] ?? 0) + e.value;
+    for (final r in records) {
+      final key = bucketKey(r.trendDate);
+      buckets[key] = (buckets[key] ?? 0) + r.trueTotalProfit;
     }
     final keys = buckets.keys.toList()..sort();
     return keys.map((k) => MapEntry(k, buckets[k]!)).toList();
@@ -520,16 +659,25 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
   @override
   Widget build(BuildContext context) {
     final trend = _bucketedTrend();
-    final double totalNet = _farmerAggs.fold(
+    final farmerAggs = _farmerAggs;
+    final double totalNet = farmerAggs.fold(
       0.0,
       (s, f) => s + f.trueTotalProfit,
     );
-    final bool anyMissing = _farmerAggs.any((f) => f.opExpenseDataMissing);
+    final bool anyMissing = farmerAggs.any((f) => f.opExpenseDataMissing);
+    final bool anyAllocMissing = // ✅ FIX #9 — naya
+    farmerAggs.any(
+      (f) => f.allocationDataMissing,
+    );
 
-    final top5 = List<_FarmerAgg>.from(_farmerAggs)
+    final top5 = List<_FarmerAgg>.from(farmerAggs)
       ..sort((a, b) => b.trueTotalProfit.compareTo(a.trueTotalProfit));
-    final bottom5 = List<_FarmerAgg>.from(_farmerAggs)
+    final bottom5 = List<_FarmerAgg>.from(farmerAggs)
       ..sort((a, b) => a.trueTotalProfit.compareTo(b.trueTotalProfit));
+
+    final int activeBatchCount = _allRecords
+        .where((r) => !r.isCompleted)
+        .length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -560,22 +708,104 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  if (_farmerAggs.isEmpty)
+                  if (_allRecords.isEmpty)
                     Container(
                       padding: const EdgeInsets.all(30),
                       alignment: Alignment.center,
                       child: Text(
-                        'Koi batch ka sale data nahi mila.',
+                        'Koi batch ka data nahi mila.',
                         style: TextStyle(color: Colors.grey.shade500),
                       ),
                     )
                   else ...[
+                    // ✅ NEW: Active/Completed toggle
+                    if (activeBatchCount > 0)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 14),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.tune_rounded,
+                                  size: 16,
+                                  color: Colors.grey.shade700,
+                                ),
+                                const SizedBox(width: 6),
+                                const Expanded(
+                                  child: Text(
+                                    'Active batches ka invest bhi minus karke dekhna hai?',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$activeBatchCount active batch${activeBatchCount == 1 ? '' : 'es'} mein abhi paisa laga hai lekin sale nahi hui — unka investment abhi "loss" jaisa dikhega jab tak sale na ho.',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: Colors.grey.shade500,
+                                height: 1.3,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _toggleChip(
+                                    label: 'Haan, Minus Karo',
+                                    selected: _includeActiveBatches,
+                                    onTap: () => setState(
+                                      () => _includeActiveBatches = true,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _toggleChip(
+                                    label: 'Nahi, Sirf Completed',
+                                    selected: !_includeActiveBatches,
+                                    onTap: () => setState(
+                                      () => _includeActiveBatches = false,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
                     if (anyMissing)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 14),
                         child: _warningBanner(
                           '⚠️ Kuch Data Missing Hai',
                           'Kuch batches ke liye pichle mahine ka Operational Expense data nahi mila — un par expense minus nahi hua.',
+                        ),
+                      ),
+
+                    if (anyAllocMissing) // ✅ FIX #9 — naya
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: _warningBanner(
+                          '⚠️ Feed/Medicine Allocation Data Missing',
+                          'Kuch batches mein sale hui hai lekin unka Feed '
+                              'Purchase → Allocate se track nahi hua tha '
+                              '(sirf Flock se record hua hoga) — un batches '
+                              'ka Feed cost is report mein ₹0 dikh sakta hai, '
+                              'jo profit ko galat tarike se badha hua dikhata hai.',
                         ),
                       ),
 
@@ -617,7 +847,8 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '${_farmerAggs.length} farmers ka combined result',
+                            '${farmerAggs.length} farmers ka combined result'
+                            '${_includeActiveBatches ? "" : " (sirf completed batches)"}',
                             style: const TextStyle(
                               color: Colors.white60,
                               fontSize: 11,
@@ -700,6 +931,35 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _toggleChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? _fplGreen : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? _fplGreen : Colors.grey.shade300,
+          ),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.bold,
+            color: selected ? Colors.white : Colors.grey.shade700,
+          ),
+        ),
+      ),
     );
   }
 

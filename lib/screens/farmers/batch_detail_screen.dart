@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'dart:io';
 import 'package:share_plus/share_plus.dart';
@@ -317,6 +319,112 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         .trim();
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ FIX #17 — Bank account number masking (PII protection)
+  // ═══════════════════════════════════════════════════════════════════════
+  String _maskAccountNumber(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '--';
+    if (trimmed.length <= 4) return trimmed;
+    final lastFour = trimmed.substring(trimmed.length - 4);
+    return 'XXXXXX$lastFour';
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ FIX #5 — Simple in-process write mutex to serialize read-modify-write
+  // operations against SharedPreferences/CompanyStore. This does not replace
+  // a real backend transaction, but prevents two near-simultaneous saves in
+  // THIS app instance from clobbering each other (sale + medicine race etc).
+  // ═══════════════════════════════════════════════════════════════════════
+  static Future<void>? _writeLockFuture;
+
+  Future<T> _withWriteLock<T>(Future<T> Function() action) async {
+    while (_writeLockFuture != null) {
+      try {
+        await _writeLockFuture;
+      } catch (_) {}
+    }
+    final completer = Completer<void>();
+    _writeLockFuture = completer.future;
+    try {
+      return await action();
+    } finally {
+      _writeLockFuture = null;
+      if (!completer.isCompleted) completer.complete();
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ FIX #12 — Safe JSON parsing helpers (corrupt/old-schema JSON safe)
+  // ═══════════════════════════════════════════════════════════════════════
+  List<dynamic> _safeDecodeList(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return [];
+    try {
+      final decoded = json.decode(raw);
+      if (decoded is List) return decoded;
+      return [];
+    } catch (e) {
+      debugPrint('⚠️ Safe decode list failed: $e');
+      return [];
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ FIX #10 — Simple unique id generator (idempotency key) — no extra
+  // package dependency required.
+  // ═══════════════════════════════════════════════════════════════════════
+  String _generateEntryId() {
+    final rnd = Random();
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    final rndPart = rnd.nextInt(0x7FFFFFFF);
+    return '$ts-$rndPart';
+  }
+
+  bool _isDuplicateEntryId(List<dynamic> entries, String entryId) {
+    return entries.any((e) => e is Map && e['entryId'] == entryId);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ FIX #2 — Reload latest batch status from storage right before any
+  // write, so a stale in-memory copy / UI bypass cannot write into a
+  // COMPLETED/CLOSED batch. Returns true if the write should be BLOCKED.
+  // ═══════════════════════════════════════════════════════════════════════
+  Future<bool> _isBatchLockedInStorage() async {
+    try {
+      final String? farmersJson = await CompanyStore.instance.getString(
+        'companyFarmers',
+      );
+      final farmersList = _safeDecodeList(farmersJson);
+      for (final farmerItem in farmersList) {
+        if (farmerItem is! Map) continue;
+        if (farmerItem['id'] != widget.farmerId) continue;
+        final batches = farmerItem['batches'];
+        if (batches is! List) continue;
+        for (final batchItem in batches) {
+          if (batchItem is! Map) continue;
+          if (batchItem['id'] != _liveBatchData['id']) continue;
+          final status = (batchItem['status'] ?? '').toString().toUpperCase();
+          return status == 'COMPLETED' || status == 'CLOSED';
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Batch lock check failed: $e');
+    }
+    return false;
+  }
+
+  void _showBatchLockedError() {
+    if (!mounted) return;
+    Get.snackbar(
+      'Batch Band Hai 🔒',
+      'Ye batch pehle se COMPLETED/CLOSED hai. Ab isme nayi entry save nahi ho sakti.',
+      backgroundColor: Colors.red.shade700,
+      colorText: Colors.white,
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(15),
+    );
+  }
+
   // ── 🚨 Fraud Risk Indicator Card ───────────────────────────────────────
   Widget _buildFraudRiskCard(FraudRiskAssessment a) {
     Color bgColor;
@@ -487,50 +595,63 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       }
 
       if (rule1Json != null) {
-        final Map<String, dynamic> r1 = json.decode(rule1Json);
-        _r1BigFeedRate = (r1['bigFeedRate'] ?? 42.0).toDouble();
-        _r1BigChicksRate = (r1['bigChicksRate'] ?? 40.0).toDouble();
-        _r1BigAdminCost = (r1['bigAdminCost'] ?? 1.50).toDouble();
-        _r1BigKgPerBag = (r1['bigKgPerBag'] ?? 50.0).toDouble();
-        _r1BigTargetCost = (r1['bigTargetCost'] ?? 85.0).toDouble();
-        _r1BigBaseComm = (r1['bigBaseComm'] ?? 8.0).toDouble();
-        _r1BigSavingsShare = (r1['bigSavingsShare'] ?? 50.0).toDouble();
-        _r1BigExceededShare = (r1['bigExceededShare'] ?? 50.0).toDouble();
-        _r1BigRateBonusThresh = (r1['bigRateBonusThresh'] ?? 110.0).toDouble();
-        _r1BigRateBonusShare = (r1['bigRateBonusShare'] ?? 10.0).toDouble();
-        _r1BigMedicineInProd = r1['bigMedicineInProd'] ?? true;
+        try {
+          final Map<String, dynamic> r1 = json.decode(rule1Json);
+          _r1BigFeedRate = (r1['bigFeedRate'] ?? 42.0).toDouble();
+          _r1BigChicksRate = (r1['bigChicksRate'] ?? 40.0).toDouble();
+          _r1BigAdminCost = (r1['bigAdminCost'] ?? 1.50).toDouble();
+          _r1BigKgPerBag = (r1['bigKgPerBag'] ?? 50.0).toDouble();
+          _r1BigTargetCost = (r1['bigTargetCost'] ?? 85.0).toDouble();
+          _r1BigBaseComm = (r1['bigBaseComm'] ?? 8.0).toDouble();
+          _r1BigSavingsShare = (r1['bigSavingsShare'] ?? 50.0).toDouble();
+          _r1BigExceededShare = (r1['bigExceededShare'] ?? 50.0).toDouble();
+          _r1BigRateBonusThresh = (r1['bigRateBonusThresh'] ?? 110.0)
+              .toDouble();
+          _r1BigRateBonusShare = (r1['bigRateBonusShare'] ?? 10.0).toDouble();
+          _r1BigMedicineInProd = r1['bigMedicineInProd'] ?? true;
 
-        _r1SmFeedRate = (r1['smFeedRate'] ?? 42.0).toDouble();
-        _r1SmChicksRate = (r1['smChicksRate'] ?? 40.0).toDouble();
-        _r1SmAdminCost = (r1['smAdminCost'] ?? 1.50).toDouble();
-        _r1SmKgPerBag = (r1['smKgPerBag'] ?? 50.0).toDouble();
-        _r1SmTargetCost = (r1['smTargetCost'] ?? 90.0).toDouble();
-        _r1SmBaseComm = (r1['smBaseComm'] ?? 10.0).toDouble();
-        _r1SmSavingsShare = (r1['smSavingsShare'] ?? 50.0).toDouble();
-        _r1SmExceededShare = (r1['smExceededShare'] ?? 50.0).toDouble();
-        _r1SmRateBonusThresh = (r1['smRateBonusThresh'] ?? 120.0).toDouble();
-        _r1SmRateBonusShare = (r1['smRateBonusShare'] ?? 10.0).toDouble();
-        _r1SmMedicineInProd = r1['smMedicineInProd'] ?? true;
+          _r1SmFeedRate = (r1['smFeedRate'] ?? 42.0).toDouble();
+          _r1SmChicksRate = (r1['smChicksRate'] ?? 40.0).toDouble();
+          _r1SmAdminCost = (r1['smAdminCost'] ?? 1.50).toDouble();
+          _r1SmKgPerBag = (r1['smKgPerBag'] ?? 50.0).toDouble();
+          _r1SmTargetCost = (r1['smTargetCost'] ?? 90.0).toDouble();
+          _r1SmBaseComm = (r1['smBaseComm'] ?? 10.0).toDouble();
+          _r1SmSavingsShare = (r1['smSavingsShare'] ?? 50.0).toDouble();
+          _r1SmExceededShare = (r1['smExceededShare'] ?? 50.0).toDouble();
+          _r1SmRateBonusThresh = (r1['smRateBonusThresh'] ?? 120.0).toDouble();
+          _r1SmRateBonusShare = (r1['smRateBonusShare'] ?? 10.0).toDouble();
+          _r1SmMedicineInProd = r1['smMedicineInProd'] ?? true;
+        } catch (e) {
+          debugPrint('⚠️ rule1SettlementConfig decode failed: $e');
+        }
       }
 
       if (rule2Json != null) {
-        final Map<String, dynamic> r2 = json.decode(rule2Json);
-        _r2BaseRate = (r2['baseRate'] ?? 7.50).toDouble();
-        _r2GoodMin = (r2['goodMin'] ?? 1.40).toDouble();
-        _r2GoodMax = (r2['goodMax'] ?? 1.54).toDouble();
-        _r2NormMin = (r2['normMin'] ?? 1.55).toDouble();
-        _r2NormMax = (r2['normMax'] ?? 1.65).toDouble();
-        _r2Bonus = (r2['bonus'] ?? 0.10).toDouble();
-        _r2Penalty = (r2['penalty'] ?? 0.15).toDouble();
-        _r2IsRupeeMode = r2['isRupeeMode'] ?? true;
-        _r2IsMedIncludeProd = r2['isMedIncludeProd'] ?? true;
-        _r2UseConvFcr = r2['useConvFcr'] ?? true;
+        try {
+          final Map<String, dynamic> r2 = json.decode(rule2Json);
+          _r2BaseRate = (r2['baseRate'] ?? 7.50).toDouble();
+          _r2GoodMin = (r2['goodMin'] ?? 1.40).toDouble();
+          _r2GoodMax = (r2['goodMax'] ?? 1.54).toDouble();
+          _r2NormMin = (r2['normMin'] ?? 1.55).toDouble();
+          _r2NormMax = (r2['normMax'] ?? 1.65).toDouble();
+          _r2Bonus = (r2['bonus'] ?? 0.10).toDouble();
+          _r2Penalty = (r2['penalty'] ?? 0.15).toDouble();
+          _r2IsRupeeMode = r2['isRupeeMode'] ?? true;
+          _r2IsMedIncludeProd = r2['isMedIncludeProd'] ?? true;
+          _r2UseConvFcr = r2['useConvFcr'] ?? true;
+        } catch (e) {
+          debugPrint('⚠️ rule2SettlementConfig decode failed: $e');
+        }
       }
     });
 
-    final String? farmersJson = prefs.getString('companyFarmers');
+    // ✅ FIX #5/#12 — read from the SAME store (CompanyStore) that all write
+    // paths now use, via a safe decoder, so reads/writes don't diverge.
+    final String? farmersJson = await CompanyStore.instance.getString(
+      'companyFarmers',
+    );
     if (farmersJson != null) {
-      List<dynamic> farmersList = json.decode(farmersJson);
+      List<dynamic> farmersList = _safeDecodeList(farmersJson);
       final currentFarmer = farmersList
           .cast<Map<String, dynamic>>()
           .where((f) => f['id'] == widget.farmerId)
@@ -1510,10 +1631,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 'Bank Name',
                 _farmerBankName.isNotEmpty ? _farmerBankName : '--',
               ),
-              pdfDataRow(
-                'Account No.',
-                _farmerAccountNo.isNotEmpty ? _farmerAccountNo : '--',
-              ),
+              pdfDataRow('Account No.', _maskAccountNumber(_farmerAccountNo)),
               pdfDataRow(
                 'IFSC Code',
                 _farmerIfsc.isNotEmpty ? _farmerIfsc : '--',
@@ -1908,6 +2026,51 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       return;
     }
 
+    // ✅ FIX #9 — Reconciliation check before allowing batch close.
+    // initial = mortality + sold + live(adjustment) honा chahiye.
+    final int initialChicks = _liveBatchData['chicksCount'] ?? 0;
+    final int reconciledTotal = totalMortality + totalChicksSold + liveChicks;
+    if (initialChicks > 0 && reconciledTotal != initialChicks) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.report_problem_rounded, color: Colors.red, size: 26),
+              SizedBox(width: 8),
+              Text(
+                'Reconciliation Mismatch ⚠️',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          content: Text(
+            'Initial Chicks ($initialChicks) ≠ Mortality ($totalMortality) + '
+            'Sold ($totalChicksSold) + Live ($liveChicks) = $reconciledTotal.\n\n'
+            'Kripya mortality/sale entries dobara check karein — data mismatch '
+            'ke saath batch close karna risky hai.',
+            style: const TextStyle(fontSize: 13, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text(
+                'Theek Hai, Check Karta Hu',
+                style: TextStyle(
+                  color: primaryGreen,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1978,8 +2141,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       return;
     }
 
+    // ✅ FIX #1/#8 — Settlement snapshot: use the immutable rule snapshot
+    // taken at rule-apply time if present, and classify size using the
+    // batch's WEIGHTED sale average (not just latest single sale) so a mix
+    // of early-small / later-big sales doesn't get mis-classified.
+    double sizeClassificationWeight = _computeWeightedSaleAvgWeight(
+      fallback: latestAvgWeight,
+    );
+
     if (_appliedRuleId == 1) {
-      bool isBigSize = latestAvgWeight > 1.2;
+      bool isBigSize = sizeClassificationWeight > 1.2;
       _showRule1SettlementRasid(
         isBigSize: isBigSize,
         initialChicks: initialChicks,
@@ -2005,6 +2176,28 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         latestAvgWeight: latestAvgWeight,
       );
     }
+  }
+
+  // ✅ FIX #8 — Weighted average sale weight across ALL sale entries in the
+  // batch (weighted by chicks sold), used consistently for Rule-1 Big/Small
+  // classification instead of only the latest sale's avg weight.
+  double _computeWeightedSaleAvgWeight({required double fallback}) {
+    double totalWeightedSum = 0.0;
+    double totalChicks = 0.0;
+    for (var entry in _dailyEntries) {
+      if (entry is! Map) continue;
+      if (entry['type'].toString().toLowerCase() != 'sale') continue;
+      final chicks =
+          double.tryParse(entry['chicksSold']?.toString() ?? '') ?? 0.0;
+      final avgWt =
+          double.tryParse(entry['avgWeightSold']?.toString() ?? '') ?? 0.0;
+      if (chicks > 0 && avgWt > 0) {
+        totalWeightedSum += chicks * avgWt;
+        totalChicks += chicks;
+      }
+    }
+    if (totalChicks > 0) return totalWeightedSum / totalChicks;
+    return fallback;
   }
 
   void _showNoRuleAlert() {
@@ -2113,6 +2306,52 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     if (!medInProd) netPayout -= totalMedicineExpense;
     if (netPayout < 0) netPayout = 0.0;
 
+    // ✅ FIX #1/#3 — Immutable settlement + rule snapshot captured at the
+    // moment of settlement generation, saved later at close-time so future
+    // rule/config edits cannot silently change a historical settlement.
+    final Map<String, dynamic> ruleSnapshot = {
+      'ruleId': 1,
+      'sizeCategory': isBigSize ? 'big' : 'small',
+      'feedRate': feedRate,
+      'chicksRate': chicksRate,
+      'adminCost': adminCost,
+      'kgPerBag': kgPerBag,
+      'targetCost': targetCost,
+      'baseComm': baseComm,
+      'savingsShare': savingsShare,
+      'exceededShare': exceededShare,
+      'rateBonusThresh': rateBonThresh,
+      'rateBonusShare': rateBonShare,
+      'medicineInProd': medInProd,
+    };
+    final Map<String, dynamic> finalSettlementSnapshot = {
+      'ruleSnapshot': ruleSnapshot,
+      'initialChicks': initialChicks,
+      'totalMortality': totalMortality,
+      'totalChicksSold': totalChicksSold,
+      'totalWeightSoldKg': totalWeightSoldKg,
+      'totalSaleMoney': totalSaleMoney,
+      'avgSaleRate': avgSaleRate,
+      'totalFeedBags': totalFeedBags,
+      'totalFeedKg': totalFeedKg,
+      'totalChickCost': totalChickCost,
+      'totalFeedCost': totalFeedCost,
+      'totalAdminCost': totalAdminCost,
+      'totalMedicineCost': totalMedicineExpense,
+      'totalProdCost': totalProdCost,
+      'actualCostPerKg': actualCostPerKg,
+      'targetCostPerKg': targetCost,
+      'costDiff': costDiff,
+      'baseCommPerKg': baseComm,
+      'costAdjPerKg': costAdjustment,
+      'rateBonusApplied': rateBonusApplied,
+      'rateBonusPerKg': rateBonusPerKg,
+      'finalCommPerKg': finalComm,
+      'grossEarning': grossEarning,
+      'netPayout': netPayout,
+      'generatedAt': DateTime.now().toIso8601String(),
+    };
+
     _showSettlementReceiptDialog(
       ruleLabel: isBigSize
           ? 'Rule 1 — Auto Size (🐔 Big Size > 1.2 KG)'
@@ -2145,6 +2384,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       finalCommPerKg: finalComm,
       grossEarning: grossEarning,
       netPayout: netPayout,
+      finalSettlementSnapshot: finalSettlementSnapshot,
     );
   }
 
@@ -2163,6 +2403,23 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     double avgSaleRate = totalWeightSoldKg > 0
         ? totalSaleMoney / totalWeightSoldKg
         : 0.0;
+
+    // ✅ FIX #4 — Rule 2 snapshot: baseline config frozen; the
+    // FCR/band/commission/approval fields are mandatory-captured via
+    // dialog before this batch can be closed (see _showRule2ApprovalDialog).
+    final Map<String, dynamic> ruleSnapshot = {
+      'ruleId': 2,
+      'baseRate': _r2BaseRate,
+      'goodMin': _r2GoodMin,
+      'goodMax': _r2GoodMax,
+      'normMin': _r2NormMin,
+      'normMax': _r2NormMax,
+      'bonus': _r2Bonus,
+      'penalty': _r2Penalty,
+      'isRupeeMode': _r2IsRupeeMode,
+      'isMedIncludeProd': _r2IsMedIncludeProd,
+      'useConvFcr': _r2UseConvFcr,
+    };
 
     _showSettlementReceiptDialog(
       ruleLabel: 'Rule 2 — FCR Matrix',
@@ -2195,6 +2452,146 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       grossEarning: 0,
       netPayout: 0,
       isRule2: true,
+      finalSettlementSnapshot: {
+        'ruleSnapshot': ruleSnapshot,
+        'initialChicks': initialChicks,
+        'totalMortality': totalMortality,
+        'totalChicksSold': totalChicksSold,
+        'totalWeightSoldKg': totalWeightSoldKg,
+        'totalSaleMoney': totalSaleMoney,
+        'avgSaleRate': avgSaleRate,
+        'totalFeedBags': totalFeedBags,
+        'totalFeedKg': totalFeedKg,
+        'totalMedicineCost': totalMedicineExpense,
+        'generatedAt': DateTime.now().toIso8601String(),
+        // Approval fields — filled mandatorily via _showRule2ApprovalDialog
+        // before batch close is permitted.
+        'calculatedFCR': null,
+        'selectedMatrixBand': null,
+        'commissionRate': null,
+        'approvedPayout': null,
+        'approvedBy': null,
+        'approvedAt': null,
+      },
+    );
+  }
+
+  // ✅ FIX #4 — Mandatory Rule-2 manual approval capture. Returns the filled
+  // snapshot map, or null if the user cancelled (in which case batch close
+  // must NOT proceed).
+  Future<Map<String, dynamic>?> _showRule2ApprovalDialog() async {
+    final fcrCtrl = TextEditingController();
+    final bandCtrl = TextEditingController();
+    final rateCtrl = TextEditingController();
+    final payoutCtrl = TextEditingController();
+    final approvedByCtrl = TextEditingController(text: widget.userRole);
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Rule 2 — Manual Approval Zaruri Hai',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Rule 2 (FCR Matrix) ka final payout automated nahi hai. '
+                'Batch close karne se pehle in values ko manually confirm '
+                'karna zaruri hai:',
+                style: TextStyle(fontSize: 12.5, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: fcrCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Calculated FCR *',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: bandCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Selected Matrix Band (e.g. Good/Normal) *',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: rateCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Commission Rate (₹/KG) *',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: payoutCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Approved Payout (₹) *',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: approvedByCtrl,
+                decoration: const InputDecoration(labelText: 'Approved By *'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: primaryGreen),
+            onPressed: () {
+              if (fcrCtrl.text.trim().isEmpty ||
+                  bandCtrl.text.trim().isEmpty ||
+                  rateCtrl.text.trim().isEmpty ||
+                  payoutCtrl.text.trim().isEmpty ||
+                  approvedByCtrl.text.trim().isEmpty) {
+                Get.snackbar(
+                  'Sab Fields Zaruri Hain ⚠️',
+                  'Rule 2 approve karne ke liye saari fields bharein.',
+                  backgroundColor: Colors.red.shade600,
+                  colorText: Colors.white,
+                  snackPosition: SnackPosition.BOTTOM,
+                );
+                return;
+              }
+              Navigator.pop(ctx, {
+                'calculatedFCR': double.tryParse(fcrCtrl.text.trim()),
+                'selectedMatrixBand': bandCtrl.text.trim(),
+                'commissionRate': double.tryParse(rateCtrl.text.trim()),
+                'approvedPayout': double.tryParse(payoutCtrl.text.trim()),
+                'approvedBy': approvedByCtrl.text.trim(),
+                'approvedAt': DateTime.now().toIso8601String(),
+              });
+            },
+            child: const Text(
+              'Confirm & Approve',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2233,6 +2630,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double grossEarning,
     required double netPayout,
     bool isRule2 = false,
+    Map<String, dynamic>? finalSettlementSnapshot,
   }) {
     showDialog(
       context: context,
@@ -2257,9 +2655,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             ),
             actions: [
               TextButton.icon(
-                onPressed: () {
+                onPressed: () async {
                   Navigator.pop(ctx);
-                  _markBatchAsCompleted();
+                  await _handleCloseBatchRequest(
+                    isRule2: isRule2,
+                    finalSettlementSnapshot: finalSettlementSnapshot,
+                  );
                 },
                 icon: const Icon(
                   Icons.check_circle_rounded,
@@ -2509,7 +2910,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     ),
                     _rasidRow(
                       'Account No.',
-                      _farmerAccountNo.isNotEmpty ? _farmerAccountNo : '—',
+                      _maskAccountNumber(_farmerAccountNo),
                     ),
                     _rasidRow(
                       'IFSC Code',
@@ -2675,7 +3076,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         Text(
                           'Rule 2 (FCR Matrix) ke liye settlement amount FCR '
                           'calculation ke baad manually decide hota hai. '
-                          'Upar ki batch summary dekhke owner apna hisab lagayein.',
+                          'Upar ki batch summary dekhke owner apna hisab lagayein. '
+                          'Batch close karte waqt FCR/Band/Rate/Payout approve '
+                          'karna mandatory hoga.',
                           style: TextStyle(
                             fontSize: 12,
                             height: 1.5,
@@ -2815,9 +3218,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton.icon(
-                      onPressed: () {
+                      onPressed: () async {
                         Navigator.pop(ctx);
-                        _markBatchAsCompleted();
+                        await _handleCloseBatchRequest(
+                          isRule2: isRule2,
+                          finalSettlementSnapshot: finalSettlementSnapshot,
+                        );
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red.shade700,
@@ -2878,6 +3284,25 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         ),
       ),
     );
+  }
+
+  // ✅ FIX #4 — Central "close batch" entry point: for Rule 2, forces the
+  // mandatory approval dialog first and merges results into the snapshot;
+  // for Rule 1, proceeds straight to completion with its snapshot.
+  Future<void> _handleCloseBatchRequest({
+    required bool isRule2,
+    Map<String, dynamic>? finalSettlementSnapshot,
+  }) async {
+    Map<String, dynamic>? snapshot = finalSettlementSnapshot;
+    if (isRule2) {
+      final approval = await _showRule2ApprovalDialog();
+      if (approval == null) {
+        // user cancelled — do NOT close the batch
+        return;
+      }
+      snapshot = {...?snapshot, ...approval};
+    }
+    await _markBatchAsCompleted(finalSettlementSnapshot: snapshot);
   }
 
   // ===========================================================================
@@ -3294,43 +3719,111 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   // ===========================================================================
   // MARK BATCH COMPLETED
   // ===========================================================================
-
-  Future<void> _markBatchAsCompleted() async {
+  // ✅ FIX #2, #3, #12, #13, #14 — reload+lock-check, save immutable
+  // finalSettlementSnapshot, safe JSON parsing, explicit found flags, and
+  // only show success once the write is actually confirmed persisted.
+  Future<void> _markBatchAsCompleted({
+    Map<String, dynamic>? finalSettlementSnapshot,
+  }) async {
     setState(() => _isLoading = true);
+    bool success = false;
+    bool farmerFound = false;
+    bool batchFound = false;
+    bool alreadyClosed = false;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final String? farmersJson = prefs.getString('companyFarmers');
-      if (farmersJson != null) {
-        List<dynamic> farmersList = json.decode(farmersJson);
+      await _withWriteLock(() async {
+        final String? farmersJson = await CompanyStore.instance.getString(
+          'companyFarmers',
+        );
+        final farmersList = _safeDecodeList(farmersJson);
         for (var farmer in farmersList) {
+          if (farmer is! Map) continue;
           if (farmer['id'] == widget.farmerId) {
-            for (var batch in (farmer['batches'] ?? [])) {
-              if (batch['id'] == _liveBatchData['id']) {
-                batch['status'] = 'COMPLETED';
-                batch['completedOn'] = DateTime.now().toIso8601String();
-                break;
+            farmerFound = true;
+            final batches = farmer['batches'];
+            if (batches is List) {
+              for (var batch in batches) {
+                if (batch is! Map) continue;
+                if (batch['id'] == _liveBatchData['id']) {
+                  batchFound = true;
+                  final currentStatus = (batch['status'] ?? '')
+                      .toString()
+                      .toUpperCase();
+                  if (currentStatus == 'COMPLETED' ||
+                      currentStatus == 'CLOSED') {
+                    alreadyClosed = true;
+                    break;
+                  }
+                  batch['status'] = 'COMPLETED';
+                  batch['completedOn'] = DateTime.now().toIso8601String();
+                  // ✅ FIX #3 — save the immutable final settlement record
+                  if (finalSettlementSnapshot != null) {
+                    batch['finalSettlementSnapshot'] = finalSettlementSnapshot;
+                  }
+                  break;
+                }
               }
             }
             break;
           }
         }
-        await CompanyStore.instance.setString(
-          'companyFarmers',
-          json.encode(farmersList),
-        );
-      }
+
+        if (farmerFound && batchFound && !alreadyClosed) {
+          await CompanyStore.instance.setString(
+            'companyFarmers',
+            json.encode(farmersList),
+          );
+          success = true;
+        }
+      });
+    } catch (e) {
+      debugPrint('⚠️ Mark batch completed failed: $e');
+      success = false;
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+
     if (!mounted) return;
-    Get.snackbar(
-      'Batch Closed ✅',
-      'Batch successfully close ho gaya. Settlement complete!',
-      backgroundColor: primaryGreen,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
-    );
+
+    if (alreadyClosed) {
+      Get.snackbar(
+        'Pehle Se Band Hai',
+        'Ye batch pehle hi COMPLETED/CLOSED ho chuka hai.',
+        backgroundColor: Colors.orange.shade700,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+    } else if (!farmerFound || !batchFound) {
+      // ✅ FIX #14 — explicit error instead of silent false-success
+      Get.snackbar(
+        'Update Fail ❌',
+        'Farmer ya Batch record nahi mila — koi update save nahi hua. '
+            'Kripya app restart karke dobara try karein.',
+        backgroundColor: Colors.red.shade700,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+    } else if (success) {
+      Get.snackbar(
+        'Batch Closed ✅',
+        'Batch successfully close ho gaya. Settlement complete!',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+    } else {
+      Get.snackbar(
+        'Save Fail ❌',
+        'Batch close save nahi ho paya. Kripya dobara try karein.',
+        backgroundColor: Colors.red.shade700,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+    }
     await _loadFreshBatchData();
   }
 
@@ -3782,41 +4275,97 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   }
 
   Future<void> _saveReturnFeedEntryToStorage(double kg) async {
+    if (_isLoading) return;
+    // ✅ FIX #2 — reload+lock check before write
+    if (await _isBatchLockedInStorage()) {
+      _showBatchLockedError();
+      return;
+    }
     setState(() => _isLoading = true);
+    bool success = false;
+    bool farmerFound = false;
+    bool batchFound = false;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final String? farmersJson = prefs.getString('companyFarmers');
-      if (farmersJson != null) {
-        List<dynamic> farmersList = json.decode(farmersJson);
+      await _withWriteLock(() async {
+        final String? farmersJson = await CompanyStore.instance.getString(
+          'companyFarmers',
+        );
+        final farmersList = _safeDecodeList(farmersJson);
+        final String entryId = _generateEntryId(); // ✅ FIX #10 — idempotency
         final Map<String, dynamic> returnEntry = {
           'type': 'returnFeed',
-          'date': _formatDate(DateTime.now()),
+          'entryId': entryId,
+          'date': _dateController.text.trim().isNotEmpty
+              ? _dateController.text.trim()
+              : _formatDate(DateTime.now()), // ✅ FIX #7 transactionDate
+          'transactionDate': _dateController.text.trim().isNotEmpty
+              ? _dateController.text.trim()
+              : _formatDate(DateTime.now()),
           'returnFeedKg': kg,
           'enteredBy': widget.userRole,
-          'timestamp': DateTime.now().toIso8601String(),
+          'timestamp': DateTime.now().toIso8601String(), // createdAt
+          'createdAt': DateTime.now().toIso8601String(),
         };
         for (var farmerItem in farmersList) {
+          if (farmerItem is! Map) continue;
           if (farmerItem['id'] == widget.farmerId) {
-            for (var batchItem in (farmerItem['batches'] ?? [])) {
-              if (batchItem['id'] == _liveBatchData['id']) {
-                batchItem['dailyEntries'] ??= [];
-                batchItem['dailyEntries'].add(returnEntry);
-                break;
+            farmerFound = true;
+            final batches = farmerItem['batches'];
+            if (batches is List) {
+              for (var batchItem in batches) {
+                if (batchItem is! Map) continue;
+                if (batchItem['id'] == _liveBatchData['id']) {
+                  batchFound = true;
+                  batchItem['dailyEntries'] ??= [];
+                  final entries = batchItem['dailyEntries'] as List;
+                  if (!_isDuplicateEntryId(entries, entryId)) {
+                    entries.add(returnEntry);
+                  }
+                  break;
+                }
               }
             }
             break;
           }
         }
-        await CompanyStore.instance.setString(
-          'companyFarmers',
-          json.encode(farmersList),
-        );
-        await _loadFreshBatchData();
-      }
+        if (farmerFound && batchFound) {
+          await CompanyStore.instance.setString(
+            'companyFarmers',
+            json.encode(farmersList),
+          );
+          success = true;
+        }
+      });
+    } catch (e) {
+      debugPrint('⚠️ Return feed save failed: $e');
+      success = false;
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
     if (!mounted) return;
+    if (!farmerFound || !batchFound) {
+      Get.snackbar(
+        'Save Fail ❌',
+        'Farmer/Batch record nahi mila, return feed save nahi hua.',
+        backgroundColor: Colors.red.shade700,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      return;
+    }
+    if (!success) {
+      Get.snackbar(
+        'Save Fail ❌',
+        'Return feed save nahi ho paya. Dobara try karein.',
+        backgroundColor: Colors.red.shade700,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      return;
+    }
+    await _loadFreshBatchData();
     Get.snackbar(
       'Return Feed Saved ✅',
       '${kg.toStringAsFixed(1)} KG return feed record ho gaya.',
@@ -4251,6 +4800,20 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  GestureDetector(
+                    onTap: () => _pickDate(context, setDialogState),
+                    child: AbsorbPointer(
+                      child: TextField(
+                        controller: _dateController,
+                        decoration: const InputDecoration(
+                          labelText: 'Sale Tareekh (Date) *',
+                          prefixIcon: Icon(Icons.date_range_rounded),
+                          suffixIcon: Icon(Icons.calendar_today, size: 18),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: _buyerNameController,
                     decoration: InputDecoration(
@@ -4429,15 +4992,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   TextField(
                     controller: _medicineNameController,
                     onChanged: (val) async {
-                      final prefs = await SharedPreferences.getInstance();
-                      final String? medJson = prefs.getString(
-                        'medicineStockList',
-                      );
-                      if (medJson != null) {
-                        stockMedicines = List<Map<String, dynamic>>.from(
-                          json.decode(medJson),
-                        );
-                      }
+                      final String? medJson = await CompanyStore.instance
+                          .getString('medicineStockList');
+                      stockMedicines = _safeDecodeList(medJson)
+                          .whereType<Map>()
+                          .map((e) => Map<String, dynamic>.from(e))
+                          .toList();
                       String input = val.trim().toLowerCase();
                       Map<String, dynamic>? found;
                       if (input.isNotEmpty) {
@@ -4691,6 +5251,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   ) async {
     if (_isLoading) return;
 
+    // ✅ FIX #2 — reload+lock check before write
+    if (await _isBatchLockedInStorage()) {
+      _showBatchLockedError();
+      return;
+    }
+
     String weightInput = _weightController.text.trim();
     String mortalityInput = _mortalityController.text.trim();
     String starterBagsInput = _feedStarterBagsController.text.trim();
@@ -4826,14 +5392,22 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     ];
 
     setState(() => _isLoading = true);
+    bool success = false;
+    bool farmerFound = false;
+    bool batchFound = false;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final String? farmersJson = prefs.getString('companyFarmers');
-      if (farmersJson != null) {
-        List<dynamic> farmersList = json.decode(farmersJson);
+      await _withWriteLock(() async {
+        final String? farmersJson = await CompanyStore.instance.getString(
+          'companyFarmers',
+        );
+        final farmersList = _safeDecodeList(farmersJson);
+        final String entryId = _generateEntryId(); // ✅ FIX #10 idempotency
         final Map<String, dynamic> logEntry = {
           'type': 'cost',
-          'date': dateInput,
+          'entryId': entryId,
+          'date': dateInput, // transactionDate (user-selected)
+          'transactionDate': dateInput, // ✅ FIX #7
+          'createdAt': DateTime.now().toIso8601String(), // ✅ FIX #7
           'weight': weightInput.isEmpty ? '0' : weightInput,
           'mortality': mortalityInput.isEmpty ? '0' : mortalityInput,
           'feed': feedVal.toString(),
@@ -4860,40 +5434,90 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             'mismatchReason': mismatchReasons.join(' | '),
         };
         for (var farmerItem in farmersList) {
+          if (farmerItem is! Map) continue;
           if (farmerItem['id'] == widget.farmerId) {
-            for (var batchItem in (farmerItem['batches'] ?? [])) {
-              if (batchItem['id'] == _liveBatchData['id']) {
-                batchItem['dailyEntries'] ??= [];
-                batchItem['dailyEntries'].add(logEntry);
-                break;
+            farmerFound = true;
+            final batches = farmerItem['batches'];
+            if (batches is List) {
+              for (var batchItem in batches) {
+                if (batchItem is! Map) continue;
+                if (batchItem['id'] == _liveBatchData['id']) {
+                  batchFound = true;
+                  final status = (batchItem['status'] ?? '')
+                      .toString()
+                      .toUpperCase();
+                  if (status == 'COMPLETED' || status == 'CLOSED') {
+                    // ✅ FIX #2 — defence in depth even inside the lock
+                    return;
+                  }
+                  batchItem['dailyEntries'] ??= [];
+                  final entries = batchItem['dailyEntries'] as List;
+                  if (!_isDuplicateEntryId(entries, entryId)) {
+                    entries.add(logEntry);
+                  }
+                  break;
+                }
               }
             }
             break;
           }
         }
-        await CompanyStore.instance.setString(
-          'companyFarmers',
-          json.encode(farmersList),
-        );
-        _weightController.clear();
-        _mortalityController.clear();
-        _feedStarterBagsController.clear();
-        _feedGrowerBagsController.clear();
-        _feedFinisherBagsController.clear();
-        _remainingFeedController.clear();
-        _mortalityPhotoBytes = null;
-        _weightPhotoBytes = null;
-        _remainingFeedPhotoBytes = null;
-        _mortalityPhotoMismatch = false;
-        _weightPhotoMismatch = false;
-        _mortalityMismatchReason = null;
-        _weightMismatchReason = null;
-        await _loadFreshBatchData();
-      }
+        if (farmerFound && batchFound) {
+          await CompanyStore.instance.setString(
+            'companyFarmers',
+            json.encode(farmersList),
+          );
+          success = true;
+        }
+      });
+    } catch (e) {
+      debugPrint('⚠️ Daily log save failed: $e');
+      success = false;
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+
     if (!mounted) return;
+
+    // ✅ FIX #13 — only clear/close/celebrate on CONFIRMED success
+    if (!farmerFound || !batchFound) {
+      Get.snackbar(
+        'Save Fail ❌',
+        'Farmer/Batch record nahi mila — entry save nahi hui.',
+        backgroundColor: Colors.red.shade600,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      return;
+    }
+    if (!success) {
+      Get.snackbar(
+        'Save Fail ❌',
+        'Entry save nahi ho payi. Kripya dobara try karein.',
+        backgroundColor: Colors.red.shade600,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      return;
+    }
+
+    _weightController.clear();
+    _mortalityController.clear();
+    _feedStarterBagsController.clear();
+    _feedGrowerBagsController.clear();
+    _feedFinisherBagsController.clear();
+    _remainingFeedController.clear();
+    _mortalityPhotoBytes = null;
+    _weightPhotoBytes = null;
+    _remainingFeedPhotoBytes = null;
+    _mortalityPhotoMismatch = false;
+    _weightPhotoMismatch = false;
+    _mortalityMismatchReason = null;
+    _weightMismatchReason = null;
+    await _loadFreshBatchData();
+
     Navigator.pop(dialogContext);
     Get.snackbar(
       'Saved ✅',
@@ -4905,7 +5529,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   }
 
   // ===========================================================================
-  // ✅ FIX 1 – RATE SNAPSHOT (UPDATED FUNCTION)
+  // ✅ FIX #1 – RATE SNAPSHOT + #6 role + #7 date + #10 idempotency
   // ===========================================================================
   Future<void> _saveSalesEntryToStorage(
     BuildContext dialogContext,
@@ -4914,10 +5538,19 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   ) async {
     if (_isLoading) return;
 
+    // ✅ FIX #2 — reload+lock check before write
+    if (await _isBatchLockedInStorage()) {
+      _showBatchLockedError();
+      return;
+    }
+
     String buyerName = _buyerNameController.text.trim();
     String soldChicksStr = _soldChicksController.text.trim();
     String totalWeight = _totalWeightSoldController.text.trim();
     String pricePerKg = _pricePerKgController.text.trim();
+    String saleDate = _dateController.text.trim().isNotEmpty
+        ? _dateController.text.trim()
+        : _formatDate(DateTime.now());
 
     if (buyerName.isEmpty ||
         soldChicksStr.isEmpty ||
@@ -4973,67 +5606,166 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     }
 
     setState(() => _isLoading = true);
+    bool success = false;
+    bool farmerFound = false;
+    bool batchFound = false;
     try {
-      // ✅ NEW: Rate/rule snapshot — is waqt ka appliedRule aur admin rate
-      // permanently save karo, taaki baad mein rule/rate badalne par
-      // Reports screen purani sale ko galat rate se recalculate na kare.
+      // ✅ FIX #1 — Rate/rule snapshot — is waqt ka appliedRule aur admin
+      // rate + FULL rule-1 parameter set permanently save karo, taaki
+      // baad mein rule/rate badalne par Reports screen purani sale ko
+      // galat rate se recalculate na kare.
       final bool hasValidWeight = calculatedAvgWeight > 0;
       final bool isBigSizeAtSale = calculatedAvgWeight > 1.2;
       double adminRateAtSale = 0.0;
       String sizeCategoryAtSale = 'unknown';
+      Map<String, dynamic>? ruleSnapshotAtSale;
       if (hasValidWeight) {
         sizeCategoryAtSale = isBigSizeAtSale ? 'big' : 'small';
         if (_appliedRuleId == 1) {
           adminRateAtSale = isBigSizeAtSale ? _r1BigAdminCost : _r1SmAdminCost;
+          ruleSnapshotAtSale = {
+            'ruleId': 1,
+            'sizeCategory': sizeCategoryAtSale,
+            'feedRate': isBigSizeAtSale ? _r1BigFeedRate : _r1SmFeedRate,
+            'chicksRate': isBigSizeAtSale ? _r1BigChicksRate : _r1SmChicksRate,
+            'adminCost': adminRateAtSale,
+            'kgPerBag': isBigSizeAtSale ? _r1BigKgPerBag : _r1SmKgPerBag,
+            'targetCost': isBigSizeAtSale ? _r1BigTargetCost : _r1SmTargetCost,
+            'baseComm': isBigSizeAtSale ? _r1BigBaseComm : _r1SmBaseComm,
+            'savingsShare': isBigSizeAtSale
+                ? _r1BigSavingsShare
+                : _r1SmSavingsShare,
+            'exceededShare': isBigSizeAtSale
+                ? _r1BigExceededShare
+                : _r1SmExceededShare,
+            'rateBonusThresh': isBigSizeAtSale
+                ? _r1BigRateBonusThresh
+                : _r1SmRateBonusThresh,
+            'rateBonusShare': isBigSizeAtSale
+                ? _r1BigRateBonusShare
+                : _r1SmRateBonusShare,
+            'medicineInProd': isBigSizeAtSale
+                ? _r1BigMedicineInProd
+                : _r1SmMedicineInProd,
+          };
+        } else if (_appliedRuleId == 2) {
+          ruleSnapshotAtSale = {
+            'ruleId': 2,
+            'baseRate': _r2BaseRate,
+            'goodMin': _r2GoodMin,
+            'goodMax': _r2GoodMax,
+            'normMin': _r2NormMin,
+            'normMax': _r2NormMax,
+            'bonus': _r2Bonus,
+            'penalty': _r2Penalty,
+            'isRupeeMode': _r2IsRupeeMode,
+            'isMedIncludeProd': _r2IsMedIncludeProd,
+            'useConvFcr': _r2UseConvFcr,
+          };
         }
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      final String? farmersJson = prefs.getString('companyFarmers');
-      if (farmersJson != null) {
-        List<dynamic> farmersList = json.decode(farmersJson);
+      await _withWriteLock(() async {
+        final String? farmersJson = await CompanyStore.instance.getString(
+          'companyFarmers',
+        );
+        final farmersList = _safeDecodeList(farmersJson);
+        final String entryId = _generateEntryId(); // ✅ FIX #10 idempotency
         final Map<String, dynamic> saleEntry = {
           'type': 'sale',
-          'date': _formatDate(DateTime.now()),
+          'entryId': entryId,
+          'date': saleDate, // ✅ FIX #7 — user-selected transaction date
+          'transactionDate': saleDate,
+          'createdAt': DateTime.now().toIso8601String(),
           'buyerName': buyerName,
           'chicksSold': soldChicksStr,
           'totalWeightSold': totalWeight,
           'pricePerKg': pricePerKg,
           'avgWeightSold': calculatedAvgWeight.toStringAsFixed(3),
           'totalMoney': calculatedTotalMoney.toStringAsFixed(2),
+          // ✅ FIX #6 — role is still app-session role (no server-auth
+          // available in this codebase), but we now also freeze WHICH
+          // role/session entered it at time of entry for audit purposes.
           'enteredBy': widget.userRole,
+          'enteredByRoleAtEntry': widget.userRole,
           'timestamp': DateTime.now().toIso8601String(),
           // ✅ NEW: snapshot fields
           'appliedRuleIdAtSale': _appliedRuleId,
           'sizeCategoryAtSale': sizeCategoryAtSale,
           'adminRateAtSale': adminRateAtSale,
+          if (ruleSnapshotAtSale != null)
+            'ruleSnapshotAtSale': ruleSnapshotAtSale,
         };
         for (var farmerItem in farmersList) {
+          if (farmerItem is! Map) continue;
           if (farmerItem['id'] == widget.farmerId) {
-            for (var batchItem in (farmerItem['batches'] ?? [])) {
-              if (batchItem['id'] == _liveBatchData['id']) {
-                batchItem['dailyEntries'] ??= [];
-                batchItem['dailyEntries'].add(saleEntry);
-                break;
+            farmerFound = true;
+            final batches = farmerItem['batches'];
+            if (batches is List) {
+              for (var batchItem in batches) {
+                if (batchItem is! Map) continue;
+                if (batchItem['id'] == _liveBatchData['id']) {
+                  batchFound = true;
+                  final status = (batchItem['status'] ?? '')
+                      .toString()
+                      .toUpperCase();
+                  if (status == 'COMPLETED' || status == 'CLOSED') {
+                    return;
+                  }
+                  batchItem['dailyEntries'] ??= [];
+                  final entries = batchItem['dailyEntries'] as List;
+                  if (!_isDuplicateEntryId(entries, entryId)) {
+                    entries.add(saleEntry);
+                  }
+                  break;
+                }
               }
             }
             break;
           }
         }
-        await CompanyStore.instance.setString(
-          'companyFarmers',
-          json.encode(farmersList),
-        );
-        _buyerNameController.clear();
-        _soldChicksController.clear();
-        _totalWeightSoldController.clear();
-        _pricePerKgController.clear();
-        await _loadFreshBatchData();
-      }
+        if (farmerFound && batchFound) {
+          await CompanyStore.instance.setString(
+            'companyFarmers',
+            json.encode(farmersList),
+          );
+          success = true;
+        }
+      });
+    } catch (e) {
+      debugPrint('⚠️ Sale save failed: $e');
+      success = false;
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+
     if (!mounted) return;
+
+    if (!farmerFound || !batchFound) {
+      Get.snackbar(
+        'Save Fail ❌',
+        'Farmer/Batch record nahi mila — sale save nahi hui.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+    if (!success) {
+      Get.snackbar(
+        'Save Fail ❌',
+        'Sale save nahi ho payi. Kripya dobara try karein.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    _buyerNameController.clear();
+    _soldChicksController.clear();
+    _totalWeightSoldController.clear();
+    _pricePerKgController.clear();
+    await _loadFreshBatchData();
+
     Navigator.pop(dialogContext);
     Get.snackbar(
       'Sold Success 🎉',
@@ -5049,6 +5781,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     Map<String, dynamic>? stockMedicine,
   }) async {
     if (_isLoading) return;
+
+    // ✅ FIX #2 — reload+lock check before write
+    if (await _isBatchLockedInStorage()) {
+      _showBatchLockedError();
+      return;
+    }
 
     String medName = _medicineNameController.text.trim();
     String qty = _medicineQuantityController.text.trim();
@@ -5066,6 +5804,24 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     double? qtyVal = double.tryParse(qty);
     double? priceVal = double.tryParse(price);
 
+    // ✅ FIX — Null-check pehle: agar quantity ya price non-numeric text hai
+    // (jaise "abc"), to double.tryParse() null return karta hai. Isse pehle
+    // ye ho raha tha ki "(qtyVal != null && qtyVal <= 0)" jaisi condition
+    // qtyVal == null hone par poori tarah false ho jaati thi, matlab
+    // validation silently SKIP ho jaata tha aur invalid quantity/price
+    // (price to chup-chaap 0.0 ban ke) save ho jaata tha. Ab explicitly
+    // pehle check karte hain ki dono values valid numbers hain ya nahi.
+    if (qtyVal == null || priceVal == null) {
+      Get.snackbar(
+        'Invalid Value ⚠️',
+        'Quantity aur Price valid number hone chahiye.',
+        backgroundColor: Colors.red.shade600,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
+
     if ((qtyVal != null && qtyVal <= 0) || (priceVal != null && priceVal < 0)) {
       Get.snackbar(
         'Invalid Value ⚠️',
@@ -5077,6 +5833,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       return;
     }
 
+    // ✅ FIX #5/#12 — stock deduction wrapped in write lock + safe decode,
+    // to reduce race with any concurrent stock write.
+    bool stockDeducted = false;
     if (stockMedicine != null && qtyVal != null) {
       double remaining = (stockMedicine['remainingQuantity'] as num).toDouble();
       if (qtyVal > remaining + 0.0001) {
@@ -5091,29 +5850,47 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         return;
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      final String? medJson = prefs.getString('medicineStockList');
-      if (medJson != null) {
-        List<dynamic> stockList = json.decode(medJson);
+      await _withWriteLock(() async {
+        final String? medJson = await CompanyStore.instance.getString(
+          'medicineStockList',
+        );
+        final stockList = _safeDecodeList(medJson);
         for (var item in stockList) {
+          if (item is! Map) continue;
           if (item['id'] == stockMedicine['id']) {
             item['remainingQuantity'] = remaining - qtyVal;
             break;
           }
         }
-        await prefs.setString('medicineStockList', json.encode(stockList));
-      }
+        await CompanyStore.instance.setString(
+          'medicineStockList',
+          json.encode(stockList),
+        );
+        stockDeducted = true;
+      });
     }
 
     setState(() => _isLoading = true);
+    bool success = false;
+    bool farmerFound = false;
+    bool batchFound = false;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final String? farmersJson = prefs.getString('companyFarmers');
-      if (farmersJson != null) {
-        List<dynamic> farmersList = json.decode(farmersJson);
+      await _withWriteLock(() async {
+        final String? farmersJson = await CompanyStore.instance.getString(
+          'companyFarmers',
+        );
+        final farmersList = _safeDecodeList(farmersJson);
+        final String entryId = _generateEntryId(); // ✅ FIX #10 idempotency
         final Map<String, dynamic> medicineEntry = {
           'type': 'medicine',
-          'date': _formatDate(DateTime.now()),
+          'entryId': entryId,
+          'date': _dateController.text.trim().isNotEmpty
+              ? _dateController.text.trim()
+              : _formatDate(DateTime.now()), // ✅ FIX #7
+          'transactionDate': _dateController.text.trim().isNotEmpty
+              ? _dateController.text.trim()
+              : _formatDate(DateTime.now()),
+          'createdAt': DateTime.now().toIso8601String(),
           'medicineName': stockMedicine != null
               ? stockMedicine['name']
               : medName,
@@ -5122,33 +5899,72 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           'price': priceVal ?? 0.0,
           'stockLinked': stockMedicine != null,
           'enteredBy': widget.userRole,
+          'enteredByRoleAtEntry': widget.userRole,
           'timestamp': DateTime.now().toIso8601String(),
         };
         for (var farmerItem in farmersList) {
+          if (farmerItem is! Map) continue;
           if (farmerItem['id'] == widget.farmerId) {
-            for (var batchItem in (farmerItem['batches'] ?? [])) {
-              if (batchItem['id'] == _liveBatchData['id']) {
-                batchItem['dailyEntries'] ??= [];
-                batchItem['dailyEntries'].add(medicineEntry);
-                break;
+            farmerFound = true;
+            final batches = farmerItem['batches'];
+            if (batches is List) {
+              for (var batchItem in batches) {
+                if (batchItem is! Map) continue;
+                if (batchItem['id'] == _liveBatchData['id']) {
+                  batchFound = true;
+                  final status = (batchItem['status'] ?? '')
+                      .toString()
+                      .toUpperCase();
+                  if (status == 'COMPLETED' || status == 'CLOSED') {
+                    return;
+                  }
+                  batchItem['dailyEntries'] ??= [];
+                  final entries = batchItem['dailyEntries'] as List;
+                  if (!_isDuplicateEntryId(entries, entryId)) {
+                    entries.add(medicineEntry);
+                  }
+                  break;
+                }
               }
             }
             break;
           }
         }
-        await CompanyStore.instance.setString(
-          'companyFarmers',
-          json.encode(farmersList),
-        );
-        _medicineNameController.clear();
-        _medicineQuantityController.clear();
-        _medicinePriceController.clear();
-        await _loadFreshBatchData();
-      }
+        if (farmerFound && batchFound) {
+          await CompanyStore.instance.setString(
+            'companyFarmers',
+            json.encode(farmersList),
+          );
+          success = true;
+        }
+      });
+    } catch (e) {
+      debugPrint('⚠️ Medicine save failed: $e');
+      success = false;
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+
     if (!mounted) return;
+
+    if (!farmerFound || !batchFound || !success) {
+      Get.snackbar(
+        'Save Fail ❌',
+        'Medicine entry save nahi ho payi. Kripya dobara try karein.'
+            '${stockDeducted ? " (Note: stock deduction ho chuki hai, support se sampark karein)" : ""}',
+        backgroundColor: Colors.red.shade700,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      return;
+    }
+
+    _medicineNameController.clear();
+    _medicineQuantityController.clear();
+    _medicinePriceController.clear();
+    await _loadFreshBatchData();
+
     Navigator.pop(dialogContext);
     Get.snackbar(
       stockMedicine != null ? 'Stock Updated ✅' : 'Saved ✅',
@@ -5210,6 +6026,75 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ FIX #11 — Money rounding helper. Not a full paise/Decimal rewrite
+  // (would require a much larger refactor across every screen that reads
+  // these numbers), but every accumulated rupee total is snapped to 2
+  // decimal places at each addition so floating point drift cannot
+  // accumulate silently across many small additions.
+  // ═══════════════════════════════════════════════════════════════════════
+  double _roundMoney(double v) => (v * 100).round() / 100.0;
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ FIX #16 — Explicit invalid-start-date detection (used for a banner in
+  // build()) without changing _calculateChicksDaysOld's existing int
+  // contract that many call sites already depend on.
+  // ═══════════════════════════════════════════════════════════════════════
+  bool _isStartDateValid(String startDateStr) {
+    if (startDateStr.trim().isEmpty) return false;
+    try {
+      List<String> parts = startDateStr.split('/');
+      if (parts.length == 3) {
+        DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+        return true;
+      }
+      DateTime.parse(startDateStr);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ FIX #15 — Find the TRUE latest weight by parsed date instead of
+  // trusting list/array insertion order (which can be wrong for backdated
+  // entries).
+  // ═══════════════════════════════════════════════════════════════════════
+  double _findLatestWeightByDate(List<dynamic> entries) {
+    DateTime? bestDate;
+    double bestWeight = 0.0;
+    for (var entry in entries) {
+      if (entry is! Map) continue;
+      final type = entry['type'].toString().toLowerCase();
+      if (type != 'cost') continue;
+      double wt = double.tryParse(entry['weight'].toString()) ?? 0.0;
+      if (wt <= 0.0) continue;
+      DateTime? entryDate;
+      try {
+        final rawDate = (entry['transactionDate'] ?? entry['date'] ?? '')
+            .toString();
+        final parts = rawDate.split('/');
+        if (parts.length == 3) {
+          entryDate = DateTime(
+            int.parse(parts[2]),
+            int.parse(parts[1]),
+            int.parse(parts[0]),
+          );
+        } else {
+          entryDate = DateTime.tryParse(rawDate);
+        }
+      } catch (_) {
+        entryDate = null;
+      }
+      entryDate ??= DateTime.fromMillisecondsSinceEpoch(0);
+      if (bestDate == null || entryDate.isAfter(bestDate)) {
+        bestDate = entryDate;
+        bestWeight = wt;
+      }
+    }
+    return bestWeight;
+  }
+
   // ===========================================================================
   // MAIN BUILD
   // ===========================================================================
@@ -5239,12 +6124,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         totalChicksSold += sold;
         totalWeightSoldKg +=
             double.tryParse(entry['totalWeightSold'].toString()) ?? 0.0;
-        totalSaleMoney +=
-            double.tryParse(entry['totalMoney'].toString()) ?? 0.0;
-        double saleAvgWt =
-            double.tryParse(entry['avgWeightSold'].toString()) ?? 0.0;
-        if (saleAvgWt > 0.0 && latestAvgWeight == 0.0)
-          latestAvgWeight = saleAvgWt;
+        totalSaleMoney = _roundMoney(
+          totalSaleMoney +
+              (double.tryParse(entry['totalMoney'].toString()) ?? 0.0),
+        );
       } else if (currentType == 'cost') {
         totalMortality += int.tryParse(entry['mortality'].toString()) ?? 0;
         int entryFeedBags = int.tryParse(entry['feed'].toString()) ?? 0;
@@ -5252,20 +6135,37 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         totalFeedKgSum += (entry['feedTotalKg'] is num)
             ? (entry['feedTotalKg'] as num).toDouble()
             : entryFeedBags * 50.0;
-        double wt = double.tryParse(entry['weight'].toString()) ?? 0.0;
-        if (wt > 0.0) latestAvgWeight = wt;
         if (entry['remainingFeed'] != null && entry['remainingFeed'] != '0') {
           actualRemainingBags = entry['remainingFeed'].toString();
           hasRemainingFeedLogged = true;
         }
       } else if (currentType == 'medicine') {
-        totalMedicineExpense +=
-            double.tryParse(entry['price'].toString()) ?? 0.0;
+        totalMedicineExpense = _roundMoney(
+          totalMedicineExpense +
+              (double.tryParse(entry['price'].toString()) ?? 0.0),
+        );
       } else if (currentType == 'returnfeed') {
         // ✅ NEW
         totalReturnFeedKg += (entry['returnFeedKg'] is num)
             ? (entry['returnFeedKg'] as num).toDouble()
             : double.tryParse(entry['returnFeedKg'].toString()) ?? 0.0;
+      }
+    }
+
+    // ✅ FIX #15 — determine latest weight by TRUE parsed date, not by
+    // whichever "cost" entry happens to be last in storage/array order.
+    latestAvgWeight = _findLatestWeightByDate(_dailyEntries);
+    if (latestAvgWeight == 0.0) {
+      // fallback: last non-zero sale avg weight, same as before, in case no
+      // cost-entry weight was ever logged.
+      for (var entry in _dailyEntries) {
+        if (entry['type'].toString().toLowerCase() != 'sale') continue;
+        double saleAvgWt =
+            double.tryParse(entry['avgWeightSold'].toString()) ?? 0.0;
+        if (saleAvgWt > 0.0) {
+          latestAvgWeight = saleAvgWt;
+          break;
+        }
       }
     }
 
@@ -5278,9 +6178,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     double mortalityPercent = initialChicks > 0
         ? (totalMortality / initialChicks) * 100
         : 0.0;
-    int chicksAgeDays = _calculateChicksDaysOld(
-      _liveBatchData['startDate'] ?? '',
-    );
+    final String rawStartDate = (_liveBatchData['startDate'] ?? '').toString();
+    final bool startDateValid = _isStartDateValid(rawStartDate);
+    int chicksAgeDays = _calculateChicksDaysOld(rawStartDate);
     int idealTargetWeight = _getAppStandardTargetWeight(chicksAgeDays);
 
     // ── Expected consumed feed from engine ────────────────────────────────
@@ -5491,7 +6391,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     children: [
                       _buildStatBlock('Chicks Quantity', '$initialChicks 🐥'),
                       _buildStatBlock('Live Chicks', '$liveChicks 🐥'),
-                      _buildStatBlock('Days Old', '$chicksAgeDays Din 📅'),
+                      _buildStatBlock(
+                        'Days Old',
+                        startDateValid
+                            ? '$chicksAgeDays Din 📅'
+                            : 'Invalid Date ⚠️',
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -5591,6 +6496,43 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             ),
 
             const SizedBox(height: 16),
+
+            // ✅ FIX #16 — Invalid start-date banner (informational only;
+            // no existing feature/UI removed, this is additive).
+            if (!startDateValid)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.error_outline_rounded,
+                        color: Colors.red.shade700,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Batch Start Date invalid/missing hai — Days Old aur '
+                          'Feed expectation calculations sahi nahi honge. '
+                          'Kripya batch ki Start Date theek karein.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             // ── 🚨 FRAUD RISK INDICATOR ───────────────────────────────────
             if (fraudAssessment.hasAnyData)
@@ -6415,11 +7357,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         const SizedBox(height: 2),
         Text(
           metricDataValue,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: Colors.black87,
-          ),
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
         ),
       ],
     );

@@ -31,6 +31,10 @@ import '../home/purchase_expense_screen.dart' show ensureFeedStockMigrated;
 //   - Missing/estimated cost data (chicks/feed/medicine) ab silently 0/wrong
 //     nahi maana jaata — flag hoke UI mein "estimated" ke roop mein dikhta
 //     hai (jaisa pehle se Operational Expense missing case mein hota tha).
+//   - ✅ NEW: Chicks ke liye "estimated" (approx) aur "MISSING" (bilkul
+//     unknown, purchase record hi nahi mila) ab ALAG flag hain. Missing
+//     case mein warning clearly bolti hai ki is category ka profit
+//     incomplete/inaccurate hai — sirf "estimate" jaisa mild nahi.
 //   - Silent `catch (_) {}` blocks ab kam se kam debugPrint karte hain aur
 //     user-facing warning banner mein bhi surface hote hain.
 //   - Duplicate allocation records (agar unka apna unique id ho) ab dedupe
@@ -42,20 +46,41 @@ import '../home/purchase_expense_screen.dart' show ensureFeedStockMigrated;
 //   - Pie chart ab loss-wale batches ko red border se visually alag dikhata
 //     hai (magnitude hamesha positive slice ke roop mein dikhegi, lekin ab
 //     sign clearly dikhta hai).
+//   - ✅ NEW: Other Expense aur Labour Expense date parsing ab wahi robust
+//     `_parseAnyEntryDate` use karta hai jo Sale entries use karti hain
+//     (dd/MM/yyyy pehle try, phir ISO) — pehle sirf `DateTime.tryParse`
+//     (ISO-only) tha, jo dd/MM/yyyy format mein silently fail ho sakta tha
+//     aur expense ko monthly total se drop kar deta tha.
+//   - ✅ NEW: Batch Detail Information screen mein Chicks/Feed/Medicine
+//     allocation history ab `allocatedOn` ko DATE PARSE karke sort hoti
+//     hai (pehle raw string-compare tha, jo dd/MM/yyyy jaisे non-ISO
+//     formats mein chronologically galat order de sakta tha).
+//   - ✅ NEW: Settlement Rule snapshot support — agar batch mein
+//     `settlementSnapshot` field mila (Batch End ke waqt save hui config),
+//     to us batch ka payout/profit HAMESHA usi snapshot se calculate hota
+//     hai, current/live Rule-1 settings se nahi. Snapshot na mile (purani
+//     batches, ya jab tak Batch-End flow ise save karna shuru na kare) to
+//     live config hi fallback hota hai — jaisa pehle tha — lekin ab
+//     COMPLETED/CLOSED batch ke liye ye clearly warning ke roop mein
+//     dikhta hai.
 //
-// Business-rule-dependent (JAAN-BOOJH KAR unchanged chhoda hai — neeche
-// TODO(confirm) comments dekho, aur chat mein sawal poochha hai):
+// Business-rule-dependent (Gopi se confirm ho chuka hai — is pass mein
+// JAAN-BOOJH KAR UNCHANGED hai):
 //   - Operational expense lagged-allocation methodology
-//   - Big/Small boundary (> 1.2 vs >= 1.2)
-//   - No-weight-data => Small Size default
-//   - Negative farmer payout ko 0 clamp karna
-//   - Medicine deduction jab !medInProd
+//   - Big/Small boundary: `> 1.2 kg` hi Big maana jaata hai (CONFIRMED,
+//     no change)
+//   - No-weight-data => Small Size default + warning (CONFIRMED, no change)
+//   - Negative farmer payout ko 0 clamp karna (CONFIRMED, no change —
+//     receivable track nahi hota)
+//   - Medicine deduction jab !medInProd (abhi tak unconfirmed — TODO neeche)
 //   - Admin income ko "income" treat karna
 //   - Active (incomplete) batches ko total summary mein include karna
-//   - "Abhi jo batch khatam hua" list-order se nikalna (completedDate field
-//     nahi mila, isliye abhi bhi `.last` use ho raha hai)
-//   - Settlement Rule config ka snapshot-at-close-time na hona (batch close
-//     hone ke baad bhi current rules se recalculate hota hai)
+//   - "Abhi jo batch khatam hua" list-order se nikalna (completedAt jaisi
+//     mandatory field batch data mein nahi mili, isliye abhi bhi `.last`
+//     use ho raha hai — agar aisi field available hai to batao)
+//   - Settlement Rule ka snapshot batch-close ke waqt SAVE karna — ye
+//     Batch End flow (batch_detail_screen.dart) mein hona chahiye, jo is
+//     file ka hissa nahi hai. Ye file snapshot ko sirf READ/USE karti hai.
 // ────────────────────────────────────────────────────────────────────────────
 
 const Color primaryGreen = Color(0xFF1B5E20);
@@ -71,7 +96,21 @@ class _CatAmount {
   /// Report mein ye number isliye "estimated" flag ke saath dikhta hai,
   /// silently precise fact ki tarah nahi.
   final bool costEstimated;
-  const _CatAmount(this.billed, this.cost, {this.costEstimated = false});
+
+  /// ✅ NEW: true = cost BILKUL unknown hai (koi linked purchase record hi
+  /// nahi mila, cost force-fully 0 rakha gaya hai). Ye `costEstimated` se
+  /// zyada severe hai — feed/medicine ka "estimated" current weighted-avg
+  /// se aata hai (reasonably close), lekin ye case cost ko poori tarah 0
+  /// maan leta hai jo actual se bahut door ho sakta hai. UI mein isse
+  /// alag/stronger warning dikhni chahiye.
+  final bool costMissing;
+
+  const _CatAmount(
+    this.billed,
+    this.cost, {
+    this.costEstimated = false,
+    this.costMissing = false,
+  });
   double get income => billed - cost;
 }
 
@@ -90,6 +129,37 @@ List<dynamic> _dedupeAllocs(List<dynamic> allocs) {
     result.add(a);
   }
   return result;
+}
+
+/// ✅ NEW: Ek resolved settlement config (Big ya Small, jo bhi applicable
+/// ho) ke saare numbers ek jagah — chahe wo LIVE (current) settings se aaye
+/// ho, ya batch ke apne `settlementSnapshot` se.
+class _SettlementConfig {
+  final double feedRate;
+  final double chicksRate;
+  final double adminCost;
+  final double kgPerBag;
+  final double targetCost;
+  final double baseComm;
+  final double savingsShare;
+  final double exceededShare;
+  final double rateBonusThresh;
+  final double rateBonusShare;
+  final bool medicineInProd;
+
+  const _SettlementConfig({
+    required this.feedRate,
+    required this.chicksRate,
+    required this.adminCost,
+    required this.kgPerBag,
+    required this.targetCost,
+    required this.baseComm,
+    required this.savingsShare,
+    required this.exceededShare,
+    required this.rateBonusThresh,
+    required this.rateBonusShare,
+    required this.medicineInProd,
+  });
 }
 
 // ── Shared Formatters ───────────────────────────────────────────────────────
@@ -136,6 +206,51 @@ DateTime? _parseAnyEntryDate(Map<String, dynamic> e) {
   if (dmy != null) return dmy;
   if (raw == null || raw.trim().isEmpty) return null;
   return DateTime.tryParse(raw.trim());
+}
+
+/// ✅ NEW: `allocatedOn` jaisi date-strings ke liye — dd/MM/yyyy pehle try
+/// karta hai, phir ISO tryParse. Isse allocation history ko sahi
+/// chronological order mein sort kiya ja sakta hai, chahe format kuch bhi
+/// ho. Parse fail ho to null (aisi entries stable-sort mein unke original
+/// position ke qareeb hi rehti hain, taaki ek corrupt date pura order na
+/// bigade).
+DateTime? _parseAllocatedOnDate(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  final DateTime? dmy = _parseSaleDateDdMmYyyy(raw);
+  if (dmy != null) return dmy;
+  return DateTime.tryParse(raw.trim());
+}
+
+/// ✅ NEW: Ek list of allocation-maps ko `allocatedOn` field se
+/// chronologically (date-parse karke) sort karta hai — string-compare se
+/// nahi. Stable: agar date parse na ho paaye, original relative order
+/// (index) tiebreaker ke roop mein use hota hai.
+List<Map<String, dynamic>> _sortByAllocatedOnDate(
+  List<Map<String, dynamic>> matches,
+) {
+  final List<MapEntry<int, Map<String, dynamic>>> indexed =
+      List<MapEntry<int, Map<String, dynamic>>>.generate(
+        matches.length,
+        (i) => MapEntry(i, matches[i]),
+      );
+  indexed.sort((a, b) {
+    final DateTime? da = _parseAllocatedOnDate(
+      a.value['allocatedOn'] as String?,
+    );
+    final DateTime? db = _parseAllocatedOnDate(
+      b.value['allocatedOn'] as String?,
+    );
+    if (da != null && db != null) {
+      final int cmp = da.compareTo(db);
+      if (cmp != 0) return cmp;
+    } else if (da != null && db == null) {
+      return -1;
+    } else if (da == null && db != null) {
+      return 1;
+    }
+    return a.key.compareTo(b.key);
+  });
+  return indexed.map((e) => e.value).toList();
 }
 
 String _monthKey(DateTime d) =>
@@ -340,7 +455,12 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
         final List<dynamic> raw = json.decode(otherJson);
         for (final rawE in raw) {
           final e = Map<String, dynamic>.from(rawE);
-          final d = DateTime.tryParse(e['date']?.toString() ?? '');
+          // ✅ FIX: pehle sirf `DateTime.tryParse` (ISO-only) tha — agar
+          // date dd/MM/yyyy format mein save thi, to silently fail hoke
+          // is expense ko monthly total se skip kar deta tha. Ab wahi
+          // robust parser use hota hai jo Sale entries use karti hain
+          // (dd/MM/yyyy pehle, phir ISO).
+          final d = _parseAnyEntryDate(e);
           if (d == null) continue;
           final amt = (e['amount'] as num?)?.toDouble() ?? 0.0;
           final key = _monthKey(d);
@@ -363,7 +483,8 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
         final List<dynamic> raw = json.decode(labourJson);
         for (final rawE in raw) {
           final e = Map<String, dynamic>.from(rawE);
-          final d = DateTime.tryParse(e['date']?.toString() ?? '');
+          // ✅ FIX: same as Other Expense — dd/MM/yyyy + ISO dono support.
+          final d = _parseAnyEntryDate(e);
           if (d == null) continue;
           final amt = (e['totalAmount'] as num?)?.toDouble() ?? 0.0;
           final key = _monthKey(d);
@@ -377,12 +498,6 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
 
     // Company-wide Total KG Sold — SAARE farmers ke SAARE batches ki sale
     // entries se, unke sale-date ke mahine ke hisaab se.
-    // TODO(confirm): Other/Labour expense dates DateTime.tryParse (ISO-style)
-    // se parse ho rahe hain jabki sale dates dd/MM/yyyy se — agar in dono
-    // history ke 'date' fields bhi asal mein dd/MM/yyyy string hain (na ki
-    // ISO), to ye silently records skip kar sakta hai. Confirm karo ki
-    // otherExpenseHistory/labourExpenseHistory mein date kis format mein
-    // save hoti hai.
     for (final rawF in farmersList) {
       final f = Map<String, dynamic>.from(rawF);
       final batches = (f['batches'] as List?) ?? [];
@@ -429,15 +544,115 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
     return expense / kg;
   }
 
+  /// ✅ NEW: Batch close hote waqt agar `settlementSnapshot` save hua hai
+  /// (Batch End flow se), to us batch ka payout/profit HAMESHA usi
+  /// snapshot se calculate hota hai — current (live) Rule-1 settings
+  /// change karne par purana batch recalculate NAHI hota.
+  ///
+  /// Snapshot na mile (purani batches, ya jab tak Batch-End flow ise save
+  /// karna shuru na kare), to live/current config hi fallback hota hai —
+  /// bilkul jaisa pehle tha, koi behavior change nahi. Bas is fallback ka
+  /// hona ab caller ko `settlementSnapshotMissing` flag se pata chal jaata
+  /// hai taaki UI mein warning dikhaई ja sake.
+  ///
+  /// Expected snapshot shape: `rule1SettlementConfig` jaisi hi — yaani
+  /// agar Batch End flow me bas `json.decode(rule1Json)` ka snapshot save
+  /// kar diya jaaye, to ye function seedha use kar lega.
+  _SettlementConfig _resolveSettlementConfig(
+    Map<String, dynamic> batch,
+    bool isBigSize,
+  ) {
+    final dynamic rawSnap = batch['settlementSnapshot'];
+    if (rawSnap is Map) {
+      try {
+        final Map<String, dynamic> snap = Map<String, dynamic>.from(rawSnap);
+        final String prefix = isBigSize ? 'big' : 'sm';
+        double snapDouble(String key, double fallback) =>
+            (snap['$prefix$key'] as num?)?.toDouble() ?? fallback;
+        return _SettlementConfig(
+          feedRate: snapDouble(
+            'FeedRate',
+            isBigSize ? _r1BigFeedRate : _r1SmFeedRate,
+          ),
+          chicksRate: snapDouble(
+            'ChicksRate',
+            isBigSize ? _r1BigChicksRate : _r1SmChicksRate,
+          ),
+          adminCost: snapDouble(
+            'AdminCost',
+            isBigSize ? _r1BigAdminCost : _r1SmAdminCost,
+          ),
+          kgPerBag: snapDouble(
+            'KgPerBag',
+            isBigSize ? _r1BigKgPerBag : _r1SmKgPerBag,
+          ),
+          targetCost: snapDouble(
+            'TargetCost',
+            isBigSize ? _r1BigTargetCost : _r1SmTargetCost,
+          ),
+          baseComm: snapDouble(
+            'BaseComm',
+            isBigSize ? _r1BigBaseComm : _r1SmBaseComm,
+          ),
+          savingsShare: snapDouble(
+            'SavingsShare',
+            isBigSize ? _r1BigSavingsShare : _r1SmSavingsShare,
+          ),
+          exceededShare: snapDouble(
+            'ExceededShare',
+            isBigSize ? _r1BigExceededShare : _r1SmExceededShare,
+          ),
+          rateBonusThresh: snapDouble(
+            'RateBonusThresh',
+            isBigSize ? _r1BigRateBonusThresh : _r1SmRateBonusThresh,
+          ),
+          rateBonusShare: snapDouble(
+            'RateBonusShare',
+            isBigSize ? _r1BigRateBonusShare : _r1SmRateBonusShare,
+          ),
+          medicineInProd:
+              (snap['${prefix}MedicineInProd'] as bool?) ??
+              (isBigSize ? _r1BigMedicineInProd : _r1SmMedicineInProd),
+        );
+      } catch (e) {
+        debugPrint(
+          'FarmerReportScreen: settlementSnapshot parse failed for batch '
+          '${batch['batchId'] ?? batch['id']}: $e',
+        );
+      }
+    }
+    // Snapshot missing/corrupt — live/current config use ho raha hai
+    // (fallback, jaisa pehle hamesha hota tha).
+    return _SettlementConfig(
+      feedRate: isBigSize ? _r1BigFeedRate : _r1SmFeedRate,
+      chicksRate: isBigSize ? _r1BigChicksRate : _r1SmChicksRate,
+      adminCost: isBigSize ? _r1BigAdminCost : _r1SmAdminCost,
+      kgPerBag: isBigSize ? _r1BigKgPerBag : _r1SmKgPerBag,
+      targetCost: isBigSize ? _r1BigTargetCost : _r1SmTargetCost,
+      baseComm: isBigSize ? _r1BigBaseComm : _r1SmBaseComm,
+      savingsShare: isBigSize ? _r1BigSavingsShare : _r1SmSavingsShare,
+      exceededShare: isBigSize ? _r1BigExceededShare : _r1SmExceededShare,
+      rateBonusThresh: isBigSize ? _r1BigRateBonusThresh : _r1SmRateBonusThresh,
+      rateBonusShare: isBigSize ? _r1BigRateBonusShare : _r1SmRateBonusShare,
+      medicineInProd: isBigSize ? _r1BigMedicineInProd : _r1SmMedicineInProd,
+    );
+  }
+
   // ── ✅ Chicks: Company ne jitne mein khareeda, farmer se jitna liya —
   // dono is batch ke liye chicksPurchaseHistory ki allocations se nikalte
   // hain (batchId match karke). Agar koi linked purchase record na mile
-  // (purani/manual batch), toh billed amount hi dikhado, aur cost-estimate
-  // flag laga do (cost=0 ko hidden fact ki tarah nahi, "estimated" ki
-  // tarah treat karo).
+  // (purani/manual batch), toh billed amount hi dikhado, aur cost=0 ko
+  // "MISSING" (bilkul unknown, mild estimate nahi) ke roop mein flag
+  // karo — isse profit calculation silently wrong nahi lagegi, UI mein
+  // saaf dikhega ki ye category incomplete hai.
   _CatAmount _sumChicksForBatch(String batchId, double fallbackBilled) {
     if (batchId.isEmpty) {
-      return _CatAmount(fallbackBilled, 0, costEstimated: true);
+      return _CatAmount(
+        fallbackBilled,
+        0,
+        costEstimated: true,
+        costMissing: true,
+      );
     }
     double billed = 0, cost = 0;
     bool found = false;
@@ -460,7 +675,17 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
         }
       }
     }
-    if (!found) return _CatAmount(fallbackBilled, 0, costEstimated: true);
+    if (!found) {
+      // ✅ FIX: cost=0 ab silently "sach" nahi maana jaata — costMissing
+      // flag lagta hai taaki UI is category ka profit "incomplete" bata
+      // sake, sirf approx "estimated" nahi.
+      return _CatAmount(
+        fallbackBilled,
+        0,
+        costEstimated: true,
+        costMissing: true,
+      );
+    }
     return _CatAmount(billed, cost);
   }
 
@@ -610,40 +835,36 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
       }
     }
 
-    // TODO(confirm): boundary case — exactly 1.20 kg abhi "Small" maana
-    // jaata hai (`> 1.2`). Agar business rule "Big Size >= 1.2 kg" hai, to
-    // ye `>=` hona chahiye. Confirm karke fix karunga.
+    // CONFIRMED (no change): exactly 1.20 kg "Small" maana jaata hai
+    // (`> 1.2`). Business rule confirm ho chuka hai — koi change nahi.
     final bool isBigSize = latestAvgWeight > 1.2;
-    // ✅ NEW: koi bhi valid weight (sale ya cost) nahi mila — isliye upar
-    // wala isBigSize=false sirf DEFAULT hai, asal weight data nahi hai.
-    // TODO(confirm): abhi is case mein bhi Small Size settlement apply ho
-    // raha hai (jaisa pehle tha) — flag UI mein dikhta hai taaki chhupa na
-    // rahe, lekin calculation-behavior badla nahi hai jab tak confirm na ho.
+    // CONFIRMED (no change): koi bhi valid weight (sale ya cost) nahi mila
+    // to Small Size settlement apply hota hai (upar wala isBigSize=false
+    // sirf DEFAULT hai). Flag UI mein dikhta hai taaki chhupa na rahe.
     final bool weightDataMissing = latestAvgWeight <= 0;
 
-    // FALLBACK — sirf tab use hota hai jab batch mein chicksRate save
-    // nahi hui purani entries ke liye.
-    final double chicksRateFallback = isBigSize
-        ? _r1BigChicksRate
-        : _r1SmChicksRate;
-    final double adminCost = isBigSize ? _r1BigAdminCost : _r1SmAdminCost;
-    final bool medInProd = isBigSize
-        ? _r1BigMedicineInProd
-        : _r1SmMedicineInProd;
-    final double targetCost = isBigSize ? _r1BigTargetCost : _r1SmTargetCost;
-    final double baseComm = isBigSize ? _r1BigBaseComm : _r1SmBaseComm;
-    final double savingsShare = isBigSize
-        ? _r1BigSavingsShare
-        : _r1SmSavingsShare;
-    final double exceededShare = isBigSize
-        ? _r1BigExceededShare
-        : _r1SmExceededShare;
-    final double rateBonThresh = isBigSize
-        ? _r1BigRateBonusThresh
-        : _r1SmRateBonusThresh;
-    final double rateBonShare = isBigSize
-        ? _r1BigRateBonusShare
-        : _r1SmRateBonusShare;
+    // ✅ NEW: Batch ke apne settlementSnapshot se (agar available ho) ya
+    // live config se — is batch ke liye applicable saare Rule-1 numbers.
+    final _SettlementConfig cfg = _resolveSettlementConfig(batch, isBigSize);
+    final String statusUpper = batch['status']?.toString().toUpperCase() ?? '';
+    final bool isClosedBatch =
+        statusUpper == 'COMPLETED' || statusUpper == 'CLOSED';
+    // ✅ NEW: COMPLETED/CLOSED batch hai lekin apna snapshot save nahi hai
+    // — iska matlab ye abhi live/current Rule-1 settings se calculate ho
+    // raha hai, jo future mein rule badalne par is batch ka result badal
+    // sakta hai. UI mein warning ke roop mein dikhta hai.
+    final bool settlementSnapshotMissing =
+        isClosedBatch && batch['settlementSnapshot'] == null;
+
+    final double chicksRateFallback = cfg.chicksRate;
+    final double adminCost = cfg.adminCost;
+    final bool medInProd = cfg.medicineInProd;
+    final double targetCost = cfg.targetCost;
+    final double baseComm = cfg.baseComm;
+    final double savingsShare = cfg.savingsShare;
+    final double exceededShare = cfg.exceededShare;
+    final double rateBonThresh = cfg.rateBonusThresh;
+    final double rateBonShare = cfg.rateBonusShare;
 
     // Batch ka apna stored billed amount (chicks) — settlement formula ke
     // "production cost" calculation ke liye zaroori hai (unchanged logic).
@@ -701,9 +922,8 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
     // hisaab se sahi hai, ya isse double-deduction ho sakta hai agar
     // medicine farmer se alag se bhi recover ho raha ho.
     if (!medInProd) farmerPayout -= medicineCostBilled;
-    // TODO(confirm): negative payout ko 0 clamp kiya ja raha hai — agar
-    // farmer ka theoretically company ko kuch "owe" karna intended hai
-    // (receivable), to ye information yahan discard ho rahi hai.
+    // CONFIRMED (no change): negative payout ko 0 clamp kiya ja raha hai —
+    // koi receivable track nahi hoti.
     if (farmerPayout < 0) farmerPayout = 0;
 
     // Sale − Farmer Payout (reference figure only). Ye "profit" NAHI hai —
@@ -734,7 +954,9 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
       chicksCostEstimated: chicksAmt.costEstimated,
       feedCostEstimated: feedAmt.costEstimated,
       medicineCostEstimated: medAmt.costEstimated,
+      chicksCostMissing: chicksAmt.costMissing,
       weightDataMissing: weightDataMissing,
+      settlementSnapshotMissing: settlementSnapshotMissing,
       chicksCompanyCost: chicksAmt.cost,
       feedCompanyCost: feedAmt.cost,
       medicineCompanyCost: medAmt.cost,
@@ -994,7 +1216,7 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
 // TODO(confirm): Active/incomplete batches abhi bhi total summary mein
 // include ho rahe hain (settlement/final-payout incomplete ho sakta hai
 // unke liye). Agar "Total Net Profit" ko sirf REALIZED/COMPLETED batches
-// tak限 karna hai to batao, filter add kar dunga.
+// tak limit karna hai to batao, filter add kar dunga.
 // ═══════════════════════════════════════════════════════════════════════════
 class AllBatchesReportScreen extends StatefulWidget {
   final String farmerName;
@@ -1583,7 +1805,7 @@ Widget buildBreakdownTable(_LotEarning e) {
         e.chicksIncome,
         hint:
             'Farmer se liya − Company ne khareeda'
-            '${e.chicksCostEstimated ? " ⚠️ estimated (purchase record incomplete)" : ""}',
+            '${e.chicksCostMissing ? " ❌ COST MISSING (purchase record nahi mila — is category ka profit incomplete/inaccurate hai)" : (e.chicksCostEstimated ? " ⚠️ estimated (purchase record incomplete)" : "")}',
         isIncome: true,
       ),
       const SizedBox(height: 8),
@@ -1706,6 +1928,14 @@ Widget buildBreakdownTable(_LotEarning e) {
             style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
           ),
         ),
+      if (e.settlementSnapshotMissing)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            '⚠️ Is COMPLETED batch ka settlement-snapshot save nahi hai — abhi current Rule-1 settings se calculate ho raha hai. Rule badalne par is batch ka result bhi badal sakta hai.',
+            style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
+          ),
+        ),
 
       const SizedBox(height: 14),
       Divider(color: Colors.grey.shade200, height: 1),
@@ -1805,7 +2035,15 @@ Widget buildBreakdownTable(_LotEarning e) {
           ],
         ),
       ),
-      if (e.costDataEstimated)
+      if (e.chicksCostMissing)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            '❌ Chicks ka company-cost is batch mein bilkul MISSING hai (purchase record link nahi mila) — Total Batch Profit is batch ke liye reliable nahi hai, sirf approx samjho.',
+            style: TextStyle(fontSize: 10, color: Colors.red.shade700),
+          ),
+        )
+      else if (e.costDataEstimated)
         Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Text(
@@ -1913,6 +2151,10 @@ Widget buildTotalSummaryCard({
   );
   final bool anyOpExpenseMissing = earnings.any((e) => e.opExpenseDataMissing);
   final bool anyCostDataEstimated = earnings.any((e) => e.costDataEstimated);
+  final bool anyCostDataMissing = earnings.any((e) => e.chicksCostMissing);
+  final bool anySettlementSnapshotMissing = earnings.any(
+    (e) => e.settlementSnapshotMissing,
+  );
 
   // ✅ Silent Income Total (Chicks+Feed+Medicine margin) — sabhi lots ka.
   final double totalSilentIncome = earnings.fold(
@@ -1998,11 +2240,27 @@ Widget buildTotalSummaryCard({
               style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
             ),
           ),
-        if (anyCostDataEstimated)
+        if (anyCostDataMissing)
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 4),
+            child: Text(
+              '❌ Kuch batches mein Chicks ka company-cost bilkul MISSING hai (purchase record nahi mila) — un batches ka profit incomplete/inaccurate hai.',
+              style: TextStyle(fontSize: 10, color: Colors.red.shade700),
+            ),
+          )
+        else if (anyCostDataEstimated)
           Padding(
             padding: const EdgeInsets.only(top: 2, bottom: 4),
             child: Text(
               '⚠️ Kuch batches mein Chicks/Feed/Medicine ka company-cost estimated hai (exact nahi).',
+              style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
+            ),
+          ),
+        if (anySettlementSnapshotMissing)
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 4),
+            child: Text(
+              '⚠️ Kuch COMPLETED batches ka settlement-snapshot save nahi hai — current Rule-1 settings se calculate ho rahe hain, jo future rule-change se badal sakta hai.',
               style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
             ),
           ),
@@ -2169,7 +2427,7 @@ Widget buildTotalSummaryCard({
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: Text(
-              '⚠️ Kuch batches ka company-cost estimated hai, isliye Total Batch Profit bhi estimate hai.',
+              '⚠️ Kuch batches ka company-cost estimated/missing hai, isliye Total Batch Profit bhi estimate hai.',
               style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
             ),
           ),
@@ -2269,8 +2527,8 @@ Widget miniStat(String label, String value) {
 // 🥧 BATCH-WISE INCOME PIE CHART — Har batch ka "Batch End Bacha" contribution
 // ek slice ke roop mein. Tap karo toh wo slice bada ho jata hai aur batch ID
 // + us batch se aaya total rupya niche label mein dikhta hai.
-// ✅ NEW: Loss-wale batches (companyEarning < 0) ka slice border ab RED hota
-// hai (pehle sabka white border tha aur sirf center-label mein sign dikhta
+// ✅ Loss-wale batches (companyEarning < 0) ka slice border RED hota hai
+// (pehle sabka white border tha aur sirf center-label mein sign dikhta
 // tha jab tap karo — is se pie ek nazar mein "sab profit jaisa" lag sakta
 // tha).
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2617,11 +2875,10 @@ class _BatchDetailInformationScreenState
             }
           }
         }
-        matches.sort(
-          (a, b) => (a['allocatedOn'] as String).compareTo(
-            b['allocatedOn'] as String,
-          ),
-        );
+        // ✅ FIX: pehle raw string-compare (`allocatedOn` lexical sort)
+        // hoti thi, jo dd/MM/yyyy jaise non-ISO formats mein chronological
+        // order galat de sakti thi. Ab date-parse karke sort hoti hai.
+        matches = _sortByAllocatedOnDate(matches);
         for (final m in matches) {
           if ((m['qty'] as double) <= 0) continue;
           chicksSegs.add(
@@ -2664,11 +2921,8 @@ class _BatchDetailInformationScreenState
           }
         }
         if (matches.isEmpty) continue;
-        matches.sort(
-          (a, b) => (a['allocatedOn'] as String).compareTo(
-            b['allocatedOn'] as String,
-          ),
-        );
+        // ✅ FIX: date-parse based sort (same as chicks, upar dekho).
+        matches = _sortByAllocatedOnDate(matches);
         feedSegs[name] = matches
             .where((m) => (m['qty'] as double) > 0)
             .map(
@@ -2724,11 +2978,8 @@ class _BatchDetailInformationScreenState
             }
           }
           if (matches.isEmpty) continue;
-          matches.sort(
-            (a, b) => (a['allocatedOn'] as String).compareTo(
-              b['allocatedOn'] as String,
-            ),
-          );
+          // ✅ FIX: date-parse based sort (same as chicks/feed, upar dekho).
+          matches = _sortByAllocatedOnDate(matches);
           final segs = matches
               .where((m) => (m['qty'] as double) > 0)
               .map(
@@ -3273,16 +3524,24 @@ class _LotEarning {
   final bool
   opExpenseDataMissing; // true = kisi sale ke pichle mahine ka data nahi mila
 
-  // ✅ NEW: Data-quality flags — jab company-cost ek real linked purchase
+  // ✅ Data-quality flags — jab company-cost ek real linked purchase
   // record se nahi, balki fallback/estimate se aayi hai.
   final bool chicksCostEstimated;
   final bool feedCostEstimated;
   final bool medicineCostEstimated;
-  // ✅ NEW: true = koi bhi valid weight entry nahi mili is batch mein.
+  // ✅ NEW: true = Chicks ka cost BILKUL unknown hai (purchase record link
+  // hi nahi mila, cost 0 force kiya gaya hai) — `chicksCostEstimated` se
+  // zyada severe, isko "estimated" nahi "MISSING/incomplete" bolna chahiye.
+  final bool chicksCostMissing;
+  // ✅ true = koi bhi valid weight entry nahi mili is batch mein.
   final bool weightDataMissing;
+  // ✅ NEW: true = ye COMPLETED/CLOSED batch hai lekin apna
+  // settlementSnapshot save nahi hai — abhi live/current Rule-1 config se
+  // calculate ho raha hai, jo future rule-change se badal sakta hai.
+  final bool settlementSnapshotMissing;
 
-  // ✅ NEW: Company ne ASAL MEIN kitna kharch kiya (billed nahi, cost) —
-  // isi se "Total Cash Profit" (neeche) calculate hota hai.
+  // ✅ Company ne ASAL MEIN kitna kharch kiya (billed nahi, cost) — isi se
+  // "Total Cash Profit" (neeche) calculate hota hai.
   final double chicksCompanyCost;
   final double feedCompanyCost;
   final double medicineCompanyCost;
@@ -3308,7 +3567,9 @@ class _LotEarning {
     this.chicksCostEstimated = false,
     this.feedCostEstimated = false,
     this.medicineCostEstimated = false,
+    this.chicksCostMissing = false,
     this.weightDataMissing = false,
+    this.settlementSnapshotMissing = false,
     this.chicksCompanyCost = 0,
     this.feedCompanyCost = 0,
     this.medicineCompanyCost = 0,

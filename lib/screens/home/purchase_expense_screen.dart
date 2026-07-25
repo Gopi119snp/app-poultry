@@ -3504,6 +3504,11 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
     text: defaultBillingPerBag.toStringAsFixed(2),
   );
 
+  // ✅ FIX: New controllers for per‑type kg per bag
+  final starterKgPerBagCtrl = TextEditingController(text: '50.0');
+  final growerKgPerBagCtrl = TextEditingController(text: '50.0');
+  final finisherKgPerBagCtrl = TextEditingController(text: '50.0');
+
   return showDialog<bool>(
     context: context,
     barrierDismissible: false,
@@ -3645,6 +3650,7 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                           'Starter',
                           starterQtyCtrl,
                           starterRateCtrl,
+                          starterKgPerBagCtrl, // ✅ FIX: pass kg controller
                           availS,
                           avgCostFor('starter'),
                           setModalState,
@@ -3653,6 +3659,7 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                           'Grower',
                           growerQtyCtrl,
                           growerRateCtrl,
+                          growerKgPerBagCtrl, // ✅ FIX
                           availG,
                           avgCostFor('grower'),
                           setModalState,
@@ -3661,6 +3668,7 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                           'Finisher',
                           finisherQtyCtrl,
                           finisherRateCtrl,
+                          finisherKgPerBagCtrl, // ✅ FIX
                           availF,
                           avgCostFor('finisher'),
                           setModalState,
@@ -3868,6 +3876,28 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                                   '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
                               final int totalBags = (sQty + gQty + fQty)
                                   .toInt();
+
+                              // ✅ FIX: per‑type kg values from controllers
+                              final double sKgPerBag =
+                                  double.tryParse(
+                                    starterKgPerBagCtrl.text.trim(),
+                                  ) ??
+                                  50.0;
+                              final double gKgPerBag =
+                                  double.tryParse(
+                                    growerKgPerBagCtrl.text.trim(),
+                                  ) ??
+                                  50.0;
+                              final double fKgPerBag =
+                                  double.tryParse(
+                                    finisherKgPerBagCtrl.text.trim(),
+                                  ) ??
+                                  50.0;
+                              final double totalFeedKgCalc =
+                                  (sQty * sKgPerBag) +
+                                  (gQty * gKgPerBag) +
+                                  (fQty * fKgPerBag);
+
                               b['dailyEntries'] ??= [];
                               b['dailyEntries'].add({
                                 'type': 'cost',
@@ -3878,8 +3908,10 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                                 'feedStarterBags': sQty.toInt(),
                                 'feedGrowerBags': gQty.toInt(),
                                 'feedFinisherBags': fQty.toInt(),
-                                'feedTotalKg':
-                                    (sQty + gQty + fQty) * feedKgPerBagCfg,
+                                'feedStarterKgPerBag': sKgPerBag,
+                                'feedGrowerKgPerBag': gKgPerBag,
+                                'feedFinisherKgPerBag': fKgPerBag,
+                                'feedTotalKg': totalFeedKgCalc,
                                 'remainingFeed': '0',
                                 'enteredBy': allocatedByRole,
                                 'timestamp': now.toIso8601String(),
@@ -3922,11 +3954,6 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                             'qty': qty,
                             'rate':
                                 double.tryParse(rateByType[id]!.text) ?? 0.0,
-                            // ✅ NEW: Is waqt ka actual purchase avg cost
-                            // snapshot karke save karo — taaki baad mein
-                            // naye feed purchase se is batch ka calculated
-                            // income retroactively na badle (report screen
-                            // isi field ko cost basis maanega).
                             'costAtAllocation':
                                 (stock[idx]['weightedAvgCost'] as num?)
                                     ?.toDouble() ??
@@ -3978,11 +4005,12 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
   );
 }
 
-// ✅ SAFE VERSION — Error-Free _feedAllocInput
+// ✅ SAFE VERSION — Error-Free _feedAllocInput (with kgPerBagCtrl)
 Widget _feedAllocInput(
   String title,
   TextEditingController qtyCtrl,
   TextEditingController rateCtrl,
+  TextEditingController kgPerBagCtrl, // ✅ FIX: added
   double avail,
   double purchaseRatePerBag,
   StateSetter setModalState,
@@ -4072,6 +4100,18 @@ Widget _feedAllocInput(
               ),
             ),
           ],
+        ),
+        // ✅ FIX: new field — bag weight in KG
+        const SizedBox(height: 8),
+        TextField(
+          controller: kgPerBagCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => setModalState(() {}),
+          decoration: const InputDecoration(
+            labelText: 'Is Bag Ka Actual Weight (KG)',
+            hintText: 'e.g. 50.0',
+            isDense: true,
+          ),
         ),
         // Profit / Loss mini widget (only if hasCalc)
         if (hasCalc) ...[

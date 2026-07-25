@@ -52,6 +52,10 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
 
   // Cheque duplicate tracking
   List<String> _uploadedChequeNumbers = [];
+  // ✅ FIX: holds the OCR-detected cheque number until the document commit
+  // actually succeeds — prevents "consuming" a number on a failed save.
+  String? _pendingChequeNumberForCommit;
+  String? _pendingChequeStatusKeyForCommit;
 
   @override
   void initState() {
@@ -101,6 +105,98 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
     }
   }
 
+  // ── ✅ FIX: Centralized field validators (loophole fixes for weak/absent validation) ──
+  bool _isValidPhone(String phone) {
+    return RegExp(r'^[6-9]\d{9}$').hasMatch(phone.trim());
+  }
+
+  bool _isValidAadhaar(String aadhaar) {
+    final a = aadhaar.trim();
+    if (!RegExp(r'^\d{12}$').hasMatch(a)) return false;
+    // Block obviously fake repeated-digit numbers e.g. 000000000000, 111111111111
+    if (RegExp(r'^(\d)\1{11}$').hasMatch(a)) return false;
+    return true;
+  }
+
+  bool _isValidPan(String pan) {
+    if (pan.trim().isEmpty) return true; // PAN optional field
+    return RegExp(
+      r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$',
+    ).hasMatch(pan.trim().toUpperCase());
+  }
+
+  bool _isValidIfsc(String ifsc) {
+    return RegExp(
+      r'^[A-Z]{4}0[A-Z0-9]{6}$',
+    ).hasMatch(ifsc.trim().toUpperCase());
+  }
+
+  bool _isValidAccountNumber(String acc) {
+    final a = acc.trim();
+    return RegExp(r'^\d{9,18}$').hasMatch(a);
+  }
+
+  bool _isValidPin(String pin) {
+    if (pin.trim().isEmpty) return true; // PIN optional field
+    return RegExp(r'^[1-9]\d{5}$').hasMatch(pin.trim());
+  }
+
+  bool _isValidDobText(String dob) {
+    if (dob.trim().isEmpty) return true; // DOB optional field
+    try {
+      DateTime? parsed;
+      final parts = dob.trim().split('/');
+      if (parts.length == 3) {
+        parsed = DateTime(
+          int.parse(parts[2]),
+          int.parse(parts[1]),
+          int.parse(parts[0]),
+        );
+        // reject if normalization changed the date (e.g. 31/02/2020 auto-rolls over)
+        if (parsed.day != int.parse(parts[0]) ||
+            parsed.month != int.parse(parts[1]) ||
+            parsed.year != int.parse(parts[2])) {
+          return false;
+        }
+      } else {
+        parsed = DateTime.tryParse(dob.trim());
+        if (parsed == null) return false;
+      }
+      final now = DateTime.now();
+      if (parsed.isAfter(now)) return false; // future DOB not allowed
+      final age = now.difference(parsed).inDays / 365.25;
+      if (age > 120) return false; // impossible age
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// ✅ FIX: Strict start-date validator — rejects free text, invalid/rolled-over
+  /// dates, and future dates. Returns parsed DateTime or null if invalid.
+  DateTime? _parseStrictDdMmYyyy(String input) {
+    final parts = input.trim().split('/');
+    if (parts.length != 3) return null;
+    final d = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final y = int.tryParse(parts[2]);
+    if (d == null || m == null || y == null) return null;
+    if (m < 1 ||
+        m > 12 ||
+        d < 1 ||
+        d > 31 ||
+        y < 2015 ||
+        y > DateTime.now().year + 1) {
+      return null;
+    }
+    final dt = DateTime(y, m, d);
+    // Dart auto-normalizes invalid dates (e.g. 31/02) — detect and reject that.
+    if (dt.day != d || dt.month != m || dt.year != y) return null;
+    if (dt.isAfter(DateTime.now()))
+      return null; // batch start date can't be in future
+    return dt;
+  }
+
   int _calculateDaysOld(String startDateStr) {
     try {
       List<String> parts = startDateStr.split('/');
@@ -138,23 +234,64 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
       setState(() => _currentFarmer = Map<String, dynamic>.from(foundFarmer!));
       if (_currentFarmer['batches'] != null) {
         final List<dynamic> batches = _currentFarmer['batches'];
-        Map<String, dynamic>? activeBatch;
-        for (var b in batches) {
-          String bStatus = b['status'].toString().toUpperCase();
-          if (bStatus == 'ACTIVE' ||
-              bStatus == 'LIFTING READY' ||
-              bStatus == 'PARTIAL LIFTED') {
-            activeBatch = b as Map<String, dynamic>;
-            break;
-          }
+        // ✅ FIX: detect (not silently ignore) more than one open batch — data
+        // corruption / race-condition signal. We still surface only the first
+        // one in the UI (no UI change), but we no longer pretend it's normal.
+        List<Map<String, dynamic>> openBatches = batches
+            .where((b) {
+              String s = b['status'].toString().toUpperCase();
+              return s == 'ACTIVE' ||
+                  s == 'LIFTING READY' ||
+                  s == 'PARTIAL LIFTED';
+            })
+            .cast<Map<String, dynamic>>()
+            .toList();
+        if (openBatches.length > 1) {
+          debugPrint(
+            '⚠️ DATA INTEGRITY WARNING: Farmer ${_currentFarmer['id']} has '
+            '${openBatches.length} simultaneously-open batches. Only the first '
+            'will be treated as the active batch until this is corrected.',
+          );
         }
+        Map<String, dynamic>? activeBatch = openBatches.isNotEmpty
+            ? openBatches.first
+            : null;
         if (activeBatch != null) {
           if (!mounted) return;
           int daysOld = _calculateDaysOld(activeBatch['startDate'] ?? '');
-          if (activeBatch['status'].toString().toUpperCase() == 'ACTIVE' &&
+          String currentStatus = activeBatch['status'].toString().toUpperCase();
+          String? newStatus;
+          if (currentStatus == 'ACTIVE' &&
               daysOld >= minLiftingDays &&
               daysOld <= maxLiftingDays) {
-            activeBatch['status'] = 'LIFTING READY';
+            newStatus = 'LIFTING READY';
+          } else if ((currentStatus == 'ACTIVE' ||
+                  currentStatus == 'LIFTING READY') &&
+              daysOld > maxLiftingDays) {
+            // ✅ FIX: batches that blow past maxLiftingDays no longer stay
+            // ACTIVE/LIFTING READY forever — flagged so office can act on it.
+            newStatus = 'OVERDUE';
+          }
+          if (newStatus != null && newStatus != activeBatch['status']) {
+            activeBatch['status'] = newStatus;
+            // ✅ FIX: persist the status change immediately instead of only
+            // holding it in memory (previous code changed status in-memory
+            // but never called saveJsonList, so storage stayed stale).
+            for (var f in farmersList) {
+              if (f['id'] == widget.farmer['id']) {
+                for (var b in (f['batches'] ?? [])) {
+                  if (b['id'] == activeBatch['id']) {
+                    b['status'] = newStatus;
+                    break;
+                  }
+                }
+                break;
+              }
+            }
+            await CompanyStore.instance.saveJsonList(
+              'companyFarmers',
+              farmersList,
+            );
           }
           setState(() {
             _hasActiveBatch = true;
@@ -179,20 +316,34 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
         source: ImageSource.gallery,
         imageQuality: 80,
       );
-      if (f == null) return;
+      if (f == null || !mounted) return; // ✅ FIX: mounted check after await
       setState(() => _isLoading = true);
       List<Map<String, dynamic>> list = await CompanyStore.instance.getJsonList(
         'companyFarmers',
       );
+      bool found = false;
       for (var farmer in list) {
         if (farmer['id'] == widget.farmer['id']) {
           farmer['hasPhoto'] = true;
           farmer['photoPath'] = f.path;
+          found = true;
           break;
         }
       }
+      if (!found) {
+        // ✅ FIX: don't show success if farmer record wasn't actually found
+        if (!mounted) return;
+        Get.snackbar(
+          'Error',
+          'Farmer record nahi mila. Photo save nahi hui.',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+        return;
+      }
       await CompanyStore.instance.saveJsonList('companyFarmers', list);
       await _checkActiveBatchStatus();
+      if (!mounted) return;
       Get.snackbar(
         'Photo Updated',
         'Profile photo successfully save ho gaya.',
@@ -202,7 +353,7 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
     } catch (e) {
       debugPrint('Photo pick error: $e');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -213,20 +364,33 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
         source: ImageSource.gallery,
         imageQuality: 80,
       );
-      if (f == null) return;
+      if (f == null || !mounted) return; // ✅ FIX: mounted check after await
       setState(() => _isLoading = true);
       List<Map<String, dynamic>> list = await CompanyStore.instance.getJsonList(
         'companyFarmers',
       );
+      bool found = false;
       for (var farmer in list) {
         if (farmer['id'] == widget.farmer['id']) {
           farmer['hasSignature'] = true;
           farmer['signaturePath'] = f.path;
+          found = true;
           break;
         }
       }
+      if (!found) {
+        if (!mounted) return;
+        Get.snackbar(
+          'Error',
+          'Farmer record nahi mila. Signature save nahi hui.',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+        return;
+      }
       await CompanyStore.instance.saveJsonList('companyFarmers', list);
       await _checkActiveBatchStatus();
+      if (!mounted) return;
       Get.snackbar(
         'Signature Updated',
         'Signature successfully save ho gaya.',
@@ -236,7 +400,7 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
     } catch (e) {
       debugPrint('Signature pick error: $e');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -383,31 +547,84 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
   Future<void> _updateBatchDataSave() async {
     String chicksCount = _chicksCountController.text.trim();
     String startDate = _startDateController.text.trim();
-    if (chicksCount.isEmpty || int.tryParse(chicksCount) == null) {
+    int? parsedChicks = int.tryParse(chicksCount);
+    // ✅ FIX: reject 0 / negative chicks count (old check only verified it parsed)
+    if (chicksCount.isEmpty || parsedChicks == null || parsedChicks <= 0) {
       Get.snackbar(
         'Error',
-        'Sahi chicks sankhya daalo',
+        'Chicks sankhya 0 ya negative nahi ho sakti. Sahi sankhya daalo.',
         backgroundColor: Colors.red,
         colorText: Colors.white,
       );
       return;
     }
+    // ✅ FIX: strict date validation — rejects free text/invalid/future dates
+    // that used to silently become "day-0" in age calculations.
+    final parsedDate = _parseStrictDdMmYyyy(startDate);
+    if (parsedDate == null) {
+      Get.snackbar(
+        'Error',
+        'Start Date sahi format (DD/MM/YYYY) mein aur valid honi chahiye. Future date allowed nahi hai.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
     var farmersList = await CompanyStore.instance.getJsonList('companyFarmers');
+    bool farmerFound = false;
+    bool batchFound = false;
+    bool blockedHasEntries = false;
     for (var f in farmersList) {
       if (f['id'] == widget.farmer['id']) {
+        farmerFound = true;
         for (var b in (f['batches'] ?? [])) {
           if (b['id'] == _activeBatchData!['id']) {
-            b['chicksCount'] = int.parse(chicksCount);
+            batchFound = true;
+            // ✅ FIX: once daily entries (mortality/feed/sale/medicine) exist
+            // against this batch, chicksCount/startDate can no longer be
+            // silently edited — that used to corrupt historical accounting.
+            final List<dynamic> entries = b['dailyEntries'] ?? [];
+            final bool countChanged =
+                b['chicksCount'].toString() != parsedChicks.toString();
+            final bool dateChanged = (b['startDate'] ?? '') != startDate;
+            if (entries.isNotEmpty && (countChanged || dateChanged)) {
+              blockedHasEntries = true;
+              break;
+            }
+            b['chicksCount'] = parsedChicks;
             b['startDate'] = startDate;
             double rate = double.tryParse(b['chicksRate'].toString()) ?? 40.0;
-            b['totalChicksCost'] = (int.parse(chicksCount) * rate)
-                .toStringAsFixed(2);
+            b['totalChicksCost'] = (parsedChicks * rate).toStringAsFixed(2);
             break;
           }
         }
         break;
       }
     }
+
+    if (!farmerFound || !batchFound) {
+      Get.snackbar(
+        'Error',
+        'Farmer ya batch record nahi mila. Changes save nahi hui.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+    if (blockedHasEntries) {
+      Get.snackbar(
+        'Edit Blocked',
+        'Is batch mein already daily entries (mortality/feed/sale) darj ho chuki hain, '
+            'isliye Chicks Count ya Start Date ab change nahi ki ja sakti — isse '
+            'accounting galat ho jaati hai.',
+        backgroundColor: Colors.orange.shade700,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+
     await CompanyStore.instance.saveJsonList('companyFarmers', farmersList);
     _chicksCountController.clear();
     if (!mounted) return;
@@ -425,33 +642,83 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
   Future<void> _startNewBatchDataSave() async {
     String chicksCount = _chicksCountController.text.trim();
     String startDate = _startDateController.text.trim();
-    if (chicksCount.isEmpty || int.tryParse(chicksCount) == null) {
+    int? parsedChicks = int.tryParse(chicksCount);
+    // ✅ FIX: reject 0 / negative chicks count
+    if (chicksCount.isEmpty || parsedChicks == null || parsedChicks <= 0) {
       Get.snackbar(
         'Error',
-        'Sahi chicks sankhya daalo',
+        'Chicks sankhya 0 ya negative nahi ho sakti. Sahi sankhya daalo.',
         backgroundColor: Colors.red,
         colorText: Colors.white,
       );
       return;
     }
+    // ✅ FIX: strict date validation
+    final parsedDate = _parseStrictDdMmYyyy(startDate);
+    if (parsedDate == null) {
+      Get.snackbar(
+        'Error',
+        'Start Date sahi format (DD/MM/YYYY) mein aur valid honi chahiye. Future date allowed nahi hai.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
     var farmersList = await CompanyStore.instance.getJsonList('companyFarmers');
+    bool farmerFound = false;
+    bool blockedActiveExists = false;
+
+    // ✅ FIX: configurable chicks rate instead of hard-coded 40.0 — falls back
+    // to 40.0 only if admin hasn't configured a rate yet. Using SharedPreferences
+    // directly here since it mirrors how minLiftingDays/maxLiftingDays are read
+    // elsewhere in this codebase, and avoids assuming a CompanyStore.getDouble API.
+    double configuredChicksRate = 40.0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      configuredChicksRate = prefs.getDouble('defaultChicksRate') ?? 40.0;
+    } catch (_) {}
+
     for (var f in farmersList) {
       if (f['id'] == widget.farmer['id']) {
+        farmerFound = true;
         if (f['batches'] == null) f['batches'] = [];
+
+        // ✅ FIX: guard against a second active batch being created for the
+        // same farmer (e.g. via double-tap / stale UI state) — this method
+        // used to add a batch unconditionally with no such check.
+        bool alreadyHasOpenBatch = (f['batches'] as List).any((b) {
+          String s = b['status'].toString().toUpperCase();
+          return s == 'ACTIVE' ||
+              s == 'LIFTING READY' ||
+              s == 'PARTIAL LIFTED' ||
+              s == 'OVERDUE';
+        });
+        if (alreadyHasOpenBatch) {
+          blockedActiveExists = true;
+          break;
+        }
+
         int lotNumber = f['batches'].length + 1;
-        String farmerName = f['name'] ?? 'FAR';
-        String prefix = farmerName.trim().length >= 3
-            ? farmerName.trim().substring(0, 3).toUpperCase()
-            : farmerName.trim().toUpperCase().padRight(3, 'X');
+        // ✅ FIX: batch ID prefix now derived from the farmer's permanent ID
+        // (not the editable name), so renaming the farmer later no longer
+        // makes old/new batch IDs inconsistent, and collisions between two
+        // farmers with the same first-3-letters can no longer happen.
+        String farmerIdPart = (f['id'] ?? 'FAR').toString();
+        String idSeed = farmerIdPart.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+        String prefix = idSeed.length >= 3
+            ? idSeed.substring(0, 3).toUpperCase()
+            : idSeed.toUpperCase().padRight(3, 'X');
         String formattedBatchId =
-            '${prefix}001-LOT-${lotNumber.toString().padLeft(3, '0')}';
+            '${prefix}-LOT-${lotNumber.toString().padLeft(3, '0')}-${DateTime.now().millisecondsSinceEpoch % 100000}';
         f['batches'].add({
           'id': formattedBatchId,
           'batchId': formattedBatchId,
           'lotNumber': lotNumber,
-          'chicksCount': int.parse(chicksCount),
-          'chicksRate': 40.0,
-          'totalChicksCost': (int.parse(chicksCount) * 40.0).toStringAsFixed(2),
+          'chicksCount': parsedChicks,
+          'chicksRate': configuredChicksRate,
+          'totalChicksCost': (parsedChicks * configuredChicksRate)
+              .toStringAsFixed(2),
           'startDate': startDate,
           'status': 'ACTIVE',
           'dailyEntries': [],
@@ -459,6 +726,27 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
         break;
       }
     }
+
+    if (!farmerFound) {
+      Get.snackbar(
+        'Error',
+        'Farmer record nahi mila. Batch create nahi hua.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+    if (blockedActiveExists) {
+      Get.snackbar(
+        'Batch Already Active',
+        'Is farmer ki ek batch already active hai. Ek farmer ki ek hi active batch ho sakti hai.',
+        backgroundColor: Colors.orange.shade700,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 4),
+      );
+      return;
+    }
+
     await CompanyStore.instance.saveJsonList('companyFarmers', farmersList);
     _chicksCountController.clear();
     if (!mounted) return;
@@ -671,6 +959,10 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
     String name = _editNameController.text.trim();
     String phone = _editPhoneController.text.trim();
     String aadhaar = _editAadhaarController.text.trim();
+    String pan = _editPanController.text.trim().toUpperCase();
+    String pin = _editPinController.text.trim();
+    String dob = _editDobController.text.trim();
+
     if (name.isEmpty || phone.isEmpty || aadhaar.isEmpty) {
       Get.snackbar(
         'Error',
@@ -680,30 +972,129 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
       );
       return;
     }
+    // ✅ FIX: real field-format validation (previously only checked "not empty")
+    if (!_isValidPhone(phone)) {
+      Get.snackbar(
+        'Error',
+        'Phone number valid 10-digit Indian mobile number hona chahiye (6-9 se shuru).',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+    if (!_isValidAadhaar(aadhaar)) {
+      Get.snackbar(
+        'Error',
+        'Aadhaar number 12 digit ka valid number hona chahiye.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+    if (!_isValidPan(pan)) {
+      Get.snackbar(
+        'Error',
+        'PAN format sahi nahi hai. Sahi format: ABCDE1234F',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+    if (!_isValidPin(pin)) {
+      Get.snackbar(
+        'Error',
+        'PIN Code 6-digit valid number hona chahiye.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+    if (!_isValidDobText(dob)) {
+      Get.snackbar(
+        'Error',
+        'Date of Birth valid honi chahiye — future date ya impossible age allowed nahi hai.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
     try {
       setState(() => _isLoading = true);
       var farmersList = await CompanyStore.instance.getJsonList(
         'companyFarmers',
       );
+      bool farmerFound = false;
       for (var f in farmersList) {
         if (f['id'] == widget.farmer['id']) {
+          farmerFound = true;
+
+          // ✅ FIX: duplicate identity check across other farmers (phone/aadhaar/pan)
+          for (var other in farmersList) {
+            if (other['id'] == f['id']) continue;
+            if ((other['phone'] ?? '').toString().trim() == phone) {
+              throw 'DUPLICATE_PHONE';
+            }
+            if ((other['aadhaar'] ?? '').toString().trim() == aadhaar) {
+              throw 'DUPLICATE_AADHAAR';
+            }
+            if (pan.isNotEmpty &&
+                (other['pan'] ?? '').toString().trim().toUpperCase() == pan) {
+              throw 'DUPLICATE_PAN';
+            }
+          }
+
+          // ✅ FIX: if identity-critical fields (name/aadhaar/pan) change,
+          // previously-verified KYC documents no longer match the new baseline
+          // — reset their verification flags so office knows to re-verify.
+          bool nameChanged = (f['name'] ?? '').toString().trim() != name;
+          bool aadhaarChanged =
+              (f['aadhaar'] ?? '').toString().trim() != aadhaar;
+          bool panChanged =
+              (f['pan'] ?? '').toString().trim().toUpperCase() != pan;
+
+          if (nameChanged || aadhaarChanged) {
+            f['hasAadhaarFront'] = false;
+            f['hasAadhaarBack'] = false;
+            f['extractedAadhaarFrontNum'] = null;
+          }
+          if (nameChanged || panChanged) {
+            f['hasPanPhoto'] = false;
+          }
+
           f['name'] = name;
-          f['dob'] = _editDobController.text.trim();
+          f['dob'] = dob;
           f['relationName'] = _editRelationNameController.text.trim();
           f['phone'] = phone;
           f['aadhaar'] = aadhaar;
-          f['pan'] = _editPanController.text.trim().toUpperCase();
-          f['pin'] = _editPinController.text.trim();
+          f['pan'] = pan;
+          f['pin'] = pin;
           f['street'] = _editStreetController.text.trim();
           f['panchayat'] = _editPanchayatController.text.trim();
           f['postOffice'] = _editPostOfficeController.text.trim();
           f['policeStation'] = _editPoliceStationController.text.trim();
           f['district'] = _editDistrictController.text.trim();
           f['state'] = _editStateController.text.trim();
+
+          if (nameChanged || aadhaarChanged || panChanged) {
+            f['identityLastEditedOn'] = DateTime.now().toIso8601String();
+          }
           break;
         }
       }
+
+      if (!farmerFound) {
+        Get.snackbar(
+          'Error',
+          'Farmer record nahi mila. Details save nahi hui.',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+        return;
+      }
+
       await CompanyStore.instance.saveJsonList('companyFarmers', farmersList);
+      if (!mounted) return;
       Navigator.pop(context);
       await _checkActiveBatchStatus();
       Get.snackbar(
@@ -713,9 +1104,28 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
         colorText: Colors.white,
       );
     } catch (e) {
-      debugPrint('Personal edit error: $e');
+      String msg = 'Details save nahi ho payi.';
+      if (e == 'DUPLICATE_PHONE') {
+        msg =
+            'Ye Phone number kisi aur farmer ke record mein already registered hai!';
+      } else if (e == 'DUPLICATE_AADHAAR') {
+        msg =
+            'Ye Aadhaar number kisi aur farmer ke record mein already registered hai!';
+      } else if (e == 'DUPLICATE_PAN') {
+        msg =
+            'Ye PAN number kisi aur farmer ke record mein already registered hai!';
+      } else {
+        debugPrint('Personal edit error: $e');
+      }
+      Get.snackbar(
+        'Error',
+        msg,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 4),
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -819,13 +1229,52 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
       );
       return;
     }
+    // ✅ FIX: real IFSC/account-number format validation (previously only "not empty")
+    if (!_isValidIfsc(ifsc)) {
+      Get.snackbar(
+        'Error',
+        'IFSC Code format sahi nahi hai. Sahi format: ABCD0123456',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+    if (!_isValidAccountNumber(accountNumber)) {
+      Get.snackbar(
+        'Error',
+        'Account Number 9-18 digit ka valid number hona chahiye.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
     try {
       setState(() => _isLoading = true);
       var farmersList = await CompanyStore.instance.getJsonList(
         'companyFarmers',
       );
+      bool farmerFound = false;
       for (var f in farmersList) {
         if (f['id'] == widget.farmer['id']) {
+          farmerFound = true;
+
+          bool accountChanged =
+              (f['accountNumber'] ?? '').toString().trim() != accountNumber;
+          bool ifscChanged =
+              (f['ifsc'] ?? '').toString().trim().toUpperCase() != ifsc;
+
+          // ✅ FIX: if bank account/IFSC changes, previously-verified security
+          // cheques and PC cheque no longer correspond to the new account —
+          // reset their verification flags instead of leaving them "Uploaded".
+          if (accountChanged || ifscChanged) {
+            f['hasChq1'] = false;
+            f['hasChq2'] = false;
+            f['hasChq3'] = false;
+            f['hasChq4'] = false;
+            f['hasPcCheque'] = false;
+            f['bankLastEditedOn'] = DateTime.now().toIso8601String();
+          }
+
           f['bankName'] = bankName;
           f['accountHolder'] = accountHolder;
           f['accountNumber'] = accountNumber;
@@ -833,7 +1282,19 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
           break;
         }
       }
+
+      if (!farmerFound) {
+        Get.snackbar(
+          'Error',
+          'Farmer record nahi mila. Bank details save nahi hui.',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+        return;
+      }
+
       await CompanyStore.instance.saveJsonList('companyFarmers', farmersList);
+      if (!mounted) return;
       Navigator.pop(context);
       await _checkActiveBatchStatus();
       Get.snackbar(
@@ -844,8 +1305,14 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
       );
     } catch (e) {
       debugPrint('Bank edit error: $e');
+      Get.snackbar(
+        'Error',
+        'Bank details save nahi ho payi.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -897,18 +1364,34 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
             ) ||
             extractedText.contains("UNIQUE IDENTIFICATION");
         RegExp rx = RegExp(r'\d{4}\s?\d{4}\s?\d{4}');
-        String num = rx.stringMatch(extractedText) ?? "";
+        String num = rx.stringMatch(extractedText)?.replaceAll(" ", "") ?? "";
         int kw = (hasName ? 1 : 0) + (hasDob ? 1 : 0) + (hasGender ? 1 : 0);
-        if (kw >= 2 || hasGovt) {
-          validationPassed = true;
-          if (num.isNotEmpty)
-            _currentFarmer['extractedAadhaarFrontNum'] = num.replaceAll(
-              " ",
-              "",
-            );
-        } else {
+
+        // ✅ FIX: previously `kw >= 2 || hasGovt` meant a single "GOVERNMENT OF
+        // INDIA" phrase alone (found on many unrelated govt documents) was
+        // enough to pass. Now BOTH a real Aadhaar-number pattern AND at least
+        // one genuine ID keyword are required, and the 12-digit number must
+        // actually be extractable and match the farmer's registered Aadhaar.
+        String registeredAadhaar = (_currentFarmer['aadhaar'] ?? '')
+            .toString()
+            .trim();
+        bool hasStrongKeywordSignal = kw >= 2 && hasGovt;
+        if (num.isEmpty) {
           blockReason =
-              "Aadhaar Front side nahi lag rahi! 'NAME', 'DOB', 'GENDER' keywords nahi mile.";
+              "Aadhaar Front par 12-digit Aadhaar number clearly nahi mila. Saaf photo kheinchein.";
+        } else if (!hasStrongKeywordSignal) {
+          blockReason =
+              "Aadhaar Front side nahi lag rahi! 'NAME', 'DOB', 'GENDER' aur Govt-of-India marker sab zaroori hain.";
+        } else if (registeredAadhaar.isNotEmpty && num != registeredAadhaar) {
+          blockReason =
+              "Ye Aadhaar card is farmer ka registered Aadhaar number ($registeredAadhaar) se match nahi karta! "
+              "Kisi aur vyakti ka Aadhaar upload kiya gaya lagta hai.";
+        } else {
+          validationPassed = true;
+          _currentFarmer['extractedAadhaarFrontNum'] = num;
+          // ✅ FIX: persist immediately so re-opening the screen doesn't lose
+          // this value and silently bypass Aadhaar Back cross-matching.
+          await _persistFarmerField('extractedAadhaarFrontNum', num);
         }
       }
       // AADHAAR BACK
@@ -928,50 +1411,80 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
             extractedText.contains("PINCODE") ||
             extractedText.contains("\u092a\u093f\u0928");
         RegExp rx = RegExp(r'\d{4}\s?\d{4}\s?\d{4}');
-        String num = rx.stringMatch(extractedText) ?? "";
+        String num = rx.stringMatch(extractedText)?.replaceAll(" ", "") ?? "";
         int kw = (hasAddr ? 1 : 0) + (hasFather ? 1 : 0) + (hasPin ? 1 : 0);
-        if (kw >= 1 || num.isNotEmpty) {
-          if (num.isNotEmpty &&
-              _currentFarmer['extractedAadhaarFrontNum'] != null) {
-            String back = num.replaceAll(" ", "");
-            String front = _currentFarmer['extractedAadhaarFrontNum']
-                .toString();
-            if (back != front) {
-              blockReason =
-                  "Fraud Alert! Aadhaar Front ($front) aur Back ($back) ka 12-digit number match nahi ho raha!";
-            } else {
-              validationPassed = true;
-            }
-          } else {
-            validationPassed = kw >= 1;
-            if (!validationPassed)
-              blockReason =
-                  "Aadhaar Back side nahi lag rahi! 'ADDRESS', 'FATHER', 'PIN' keywords nahi mile.";
-          }
-        } else {
+
+        // ✅ FIX: previously ANY single keyword (even without the 12-digit
+        // number) could pass Aadhaar Back — meaning almost any address proof
+        // would be accepted. Now: (1) front must already be verified & its
+        // number persisted, (2) back must yield the same 12-digit number, and
+        // (3) at least one genuine back-side keyword must also be present.
+        if (_currentFarmer['extractedAadhaarFrontNum'] == null ||
+            _currentFarmer['extractedAadhaarFrontNum'].toString().isEmpty) {
+          blockReason =
+              "Pehle Aadhaar Front side verify/upload karein — uske baad hi Back verify ho sakti hai.";
+        } else if (num.isEmpty) {
+          blockReason =
+              "Aadhaar Back par 12-digit Aadhaar number clearly nahi mila. Saaf photo kheinchein.";
+        } else if (kw < 1) {
           blockReason =
               "Aadhaar Back side nahi lag rahi! 'ADDRESS', 'FATHER', 'PIN' keywords nahi mile.";
+        } else {
+          String front = _currentFarmer['extractedAadhaarFrontNum'].toString();
+          if (num != front) {
+            blockReason =
+                "Fraud Alert! Aadhaar Front ($front) aur Back ($num) ka 12-digit number match nahi ho raha!";
+          } else {
+            validationPassed = true;
+          }
         }
       }
       // PAN CARD
       else if (statusKey == 'hasPanPhoto') {
+        RegExp panRx = RegExp(r'[A-Z]{5}[0-9]{4}[A-Z]{1}');
+        String? ocrPan = panRx.stringMatch(extractedText);
         bool hasPan =
-            RegExp(r'[A-Z]{5}[0-9]{4}[A-Z]{1}').hasMatch(extractedText) ||
+            ocrPan != null ||
             extractedText.contains("INCOME TAX") ||
             extractedText.contains("PERMANENT ACCOUNT") ||
             extractedText.contains("GOVT. OF INDIA");
-        List<String> parts = farmerName.split(' ');
-        bool nameMatch = parts.any(
-          (p) => p.length > 2 && extractedText.contains(p),
-        );
-        if (hasPan && nameMatch) {
-          validationPassed = true;
-        } else if (!hasPan) {
+        // ✅ FIX: previously ANY single 3+ char fragment of the name (e.g. just
+        // a common surname like "KUMAR") was enough to "match". Now require
+        // BOTH the first name-part AND the last name-part to individually
+        // appear in the OCR text (much harder to false-positive on).
+        List<String> parts = farmerName
+            .split(' ')
+            .where((p) => p.trim().isNotEmpty)
+            .toList();
+        bool nameMatch;
+        if (parts.length >= 2) {
+          nameMatch =
+              extractedText.contains(parts.first) &&
+              extractedText.contains(parts.last);
+        } else if (parts.length == 1) {
+          nameMatch =
+              parts.first.length > 2 && extractedText.contains(parts.first);
+        } else {
+          nameMatch = false;
+        }
+
+        String registeredPan = (_currentFarmer['pan'] ?? '')
+            .toString()
+            .trim()
+            .toUpperCase();
+        if (!hasPan) {
           blockReason =
               "Valid PAN Card nahi lag raha! PAN format (ABCDE1234F) ya 'INCOME TAX' keyword nahi mila.";
-        } else {
+        } else if (!nameMatch) {
           blockReason =
-              "PAN Card par darj naam farmer ke naam ($farmerName) se match nahi ho raha!";
+              "PAN Card par darj naam farmer ke poore naam ($farmerName) se match nahi ho raha!";
+        } else if (registeredPan.isNotEmpty &&
+            ocrPan != null &&
+            ocrPan != registeredPan) {
+          blockReason =
+              "Ye PAN card is farmer ke registered PAN ($registeredPan) se match nahi karta!";
+        } else {
+          validationPassed = true;
         }
       }
       // 4 BLANK CHEQUES
@@ -1002,13 +1515,26 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
           if (chequeNum.isEmpty) {
             blockReason =
                 "Cheque mein 6-digit cheque number nahi mila! Saaf photo kheinchein.";
-          } else if (_uploadedChequeNumbers.contains(chequeNum)) {
-            blockReason =
-                "Duplicate Cheque! Cheque number $chequeNum pehle hi upload ho chuka hai. Naya cheque use karein.";
           } else {
-            validationPassed = true;
-            _uploadedChequeNumbers.add(chequeNum);
-            await _saveChequeNumberToPersistence(chequeNum);
+            // ✅ FIX: duplicate check is now COMPANY-WIDE (across all farmers),
+            // not just this farmer's own uploaded list — a cheque re-used on
+            // a different farmer profile is now also caught.
+            bool isDuplicate = await _isChequeNumberDuplicateCompanyWide(
+              chequeNum,
+            );
+            if (isDuplicate) {
+              blockReason =
+                  "Duplicate Cheque! Cheque number $chequeNum pehle hi kisi record mein upload ho chuka hai. Naya cheque use karein.";
+            } else {
+              validationPassed = true;
+              // ✅ FIX: cheque number is no longer reserved here before the
+              // document is actually committed — it's saved inside
+              // _commitDocumentDataToPersistence only after a successful
+              // save, so a failed commit can no longer "consume" a number
+              // without ever storing the document.
+              _pendingChequeNumberForCommit = chequeNum;
+              _pendingChequeStatusKeyForCommit = statusKey;
+            }
           }
         }
       }
@@ -1027,7 +1553,10 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
               extractedText.contains("1000") ||
               extractedText.contains("1,000") ||
               extractedText.contains("ONE THOUSAND") ||
-              extractedText.contains("RS");
+              // ✅ FIX: bare "RS" used to count as an amount match by itself
+              // (e.g. any cheque with just "Rs." printed on it would pass).
+              // Now require "RS" to be immediately followed by 1000/1,000.
+              RegExp(r'RS\.?\s*1[,]?000\b').hasMatch(extractedText);
           String? sigPath = _currentFarmer['signaturePath']?.toString();
           bool hasSig =
               sigPath != null &&
@@ -1263,17 +1792,84 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
     }
   }
 
-  Future<void> _saveChequeNumberToPersistence(String chequeNum) async {
+  /// ✅ FIX: generic single-field persistence helper with farmer-not-found
+  /// detection (previously several save paths would silently do nothing and
+  /// still show a success message when the farmer record couldn't be found).
+  Future<bool> _persistFarmerField(String key, dynamic value) async {
+    var list = await CompanyStore.instance.getJsonList('companyFarmers');
+    bool found = false;
+    for (var f in list) {
+      if (f['id'] == widget.farmer['id']) {
+        f[key] = value;
+        found = true;
+        break;
+      }
+    }
+    if (found) {
+      await CompanyStore.instance.saveJsonList('companyFarmers', list);
+    } else {
+      debugPrint(
+        '⚠️ _persistFarmerField: farmer ${widget.farmer['id']} not found — "$key" not saved.',
+      );
+    }
+    return found;
+  }
+
+  /// ✅ FIX: company-wide duplicate check — a cheque re-used across two
+  /// different farmer profiles is now caught (previously each farmer only
+  /// checked their own uploaded list, so a cheque leaf photo re-used on a
+  /// second farmer's profile would sail through).
+  Future<bool> _isChequeNumberDuplicateCompanyWide(String chequeNum) async {
+    final list = await CompanyStore.instance.getJsonList('companyFarmers');
+    for (var f in list) {
+      List<dynamic> nums = f['uploadedChequeNumbers'] ?? [];
+      if (nums.map((e) => e.toString()).contains(chequeNum)) return true;
+    }
+    return false;
+  }
+
+  /// ✅ FIX: called only from inside a successful _commitDocumentDataToPersistence
+  /// (i.e. after the document itself is actually saved) — so a cheque number
+  /// can never be "consumed" by a commit that ultimately failed. Also removes
+  /// the old number for that specific slot before storing the new one, so
+  /// replacing a cheque photo doesn't leave a stale duplicate entry behind.
+  Future<void> _saveChequeNumberToPersistence(
+    String chequeNum,
+    String slotKey,
+  ) async {
     var list = await CompanyStore.instance.getJsonList('companyFarmers');
     for (var f in list) {
       if (f['id'] == widget.farmer['id']) {
         List<dynamic> existing = f['uploadedChequeNumbers'] ?? [];
+        // ✅ FIX: per-slot mapping so we know which number belonged to which
+        // of the 4 cheque leaf slots — needed to clean up on replace.
+        Map<String, dynamic> slotMap = Map<String, dynamic>.from(
+          f['chequeSlotNumbers'] ?? {},
+        );
+        String? oldNumberForSlot = slotMap[slotKey]?.toString();
+        if (oldNumberForSlot != null && oldNumberForSlot != chequeNum) {
+          existing.remove(oldNumberForSlot);
+        }
         if (!existing.contains(chequeNum)) existing.add(chequeNum);
+        slotMap[slotKey] = chequeNum;
         f['uploadedChequeNumbers'] = existing;
+        f['chequeSlotNumbers'] = slotMap;
         break;
       }
     }
     await CompanyStore.instance.saveJsonList('companyFarmers', list);
+    if (mounted) {
+      setState(() {
+        _uploadedChequeNumbers = List<String>.from(
+          (list.firstWhere(
+                    (f) => f['id'] == widget.farmer['id'],
+                    orElse: () => {},
+                  )['uploadedChequeNumbers'] ??
+                  [])
+              .map((e) => e.toString()),
+        );
+      });
+    }
   }
 
   Future<void> _commitDocumentDataToPersistence(
@@ -1282,14 +1878,46 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
     String selectedFilePath,
   ) async {
     var list = await CompanyStore.instance.getJsonList('companyFarmers');
+    bool found = false;
     for (var f in list) {
       if (f['id'] == widget.farmer['id']) {
         f[statusKey] = true;
         f[pathKey] = selectedFilePath;
+        found = true;
         break;
       }
     }
+
+    if (!found) {
+      // ✅ FIX: previously this loop would just do nothing and the caller
+      // would still show a "Success" snackbar even though nothing was saved.
+      Get.snackbar(
+        'Error',
+        'Farmer record nahi mila. Document save nahi hua.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      // Clear any pending cheque number so it isn't accidentally consumed later.
+      _pendingChequeNumberForCommit = null;
+      _pendingChequeStatusKeyForCommit = null;
+      return;
+    }
+
     await CompanyStore.instance.saveJsonList('companyFarmers', list);
+
+    // ✅ FIX: cheque number is only written to the duplicate-tracking list
+    // here — i.e. only after the document itself has been successfully
+    // committed to storage — not earlier at OCR-pass time.
+    if (_pendingChequeNumberForCommit != null &&
+        _pendingChequeStatusKeyForCommit == statusKey) {
+      await _saveChequeNumberToPersistence(
+        _pendingChequeNumberForCommit!,
+        statusKey,
+      );
+      _pendingChequeNumberForCommit = null;
+      _pendingChequeStatusKeyForCommit = null;
+    }
+
     await _checkActiveBatchStatus();
     Get.snackbar(
       'Success',
@@ -2304,8 +2932,13 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
   }
 
   Widget _buildDocumentItem(String label, String statusKey, String pathKey) {
-    bool isUploaded = _currentFarmer[statusKey] == true;
     String? imgPath = _currentFarmer[pathKey]?.toString();
+    // ✅ FIX: previously "Uploaded" was shown purely from the boolean flag,
+    // even if the underlying file had been deleted/moved. Now we also verify
+    // the file still exists on disk.
+    bool fileExists =
+        imgPath != null && imgPath.isNotEmpty && File(imgPath).existsSync();
+    bool isUploaded = _currentFarmer[statusKey] == true && fileExists;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

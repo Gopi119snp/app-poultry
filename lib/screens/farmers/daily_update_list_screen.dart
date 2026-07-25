@@ -41,8 +41,8 @@ class _DayRow {
   final double dailyFeedKg;
   final double totalFeedKg;
   final double feedStockKg;
-  final bool isShortfall; // ✅ NEW: true if feedStockKg is negative
-  final double returnFeedKgToday; // ✅ NEW: return feed for this day
+  final bool isShortfall; // true if feedStockKg is negative
+  final double returnFeedKgToday;
   final double autoWeightKg;
   final double? manualWeightKg;
   final double autoFcr;
@@ -63,7 +63,7 @@ class _DayRow {
     required this.totalFeedKg,
     required this.feedStockKg,
     required this.isShortfall,
-    required this.returnFeedKgToday, // ✅ NEW
+    required this.returnFeedKgToday,
     required this.autoWeightKg,
     required this.manualWeightKg,
     required this.autoFcr,
@@ -96,6 +96,12 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
   double _fallbackAdminCost = 2.0;
   double _fallbackKgPerBag = 50.0;
 
+  // #22 / #23 fix: instead of silently faking a Day-1 row or silently
+  // falling back to "today" for a bad start date, we track the state and
+  // show an honest message in the same empty-state slot the UI already had.
+  bool _batchNotStarted = false;
+  bool _startDateInvalid = false;
+
   List<_DayRow> _rows = [];
   late List<dynamic> _localDailyEntries;
 
@@ -113,7 +119,11 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     if (weightRaw != null && weightRaw.isNotEmpty) {
       try {
         _weightConfig = WeightGrowthRuleConfig.fromJson(jsonDecode(weightRaw));
-      } catch (_) {}
+      } catch (e) {
+        // #30 fix: don't swallow config errors silently — at least log them
+        // so a corrupt config doesn't silently fall back to defaults unnoticed.
+        debugPrint('DailyUpdateList: weightGrowthRuleConfig parse failed: $e');
+      }
     }
 
     final perfAlertRaw = await CompanyStore.instance.getString(
@@ -124,7 +134,9 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         _performanceConfig = PerformanceAlertConfig.fromJson(
           jsonDecode(perfAlertRaw),
         );
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('DailyUpdateList: performanceAlertConfig parse failed: $e');
+      }
     }
 
     _appliedRuleId = await CompanyStore.instance.getInt('appliedCompanyRuleId');
@@ -135,7 +147,9 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       if (rule1Raw != null && rule1Raw.isNotEmpty) {
         try {
           _rule1Config = jsonDecode(rule1Raw) as Map<String, dynamic>;
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('DailyUpdateList: rule1SettlementConfig parse failed: $e');
+        }
       }
     }
 
@@ -148,16 +162,25 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         _fallbackFeedRate = (decoded['feedRatePerKg'] ?? 38.0).toDouble();
         _fallbackAdminCost = (decoded['adminCostPerKg'] ?? 2.0).toDouble();
         _fallbackKgPerBag = (decoded['kgPerBag'] ?? 50.0).toDouble();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('DailyUpdateList: runningCostConfig parse failed: $e');
+      }
     }
 
     _computeRows();
+
+    // #31 fix: guard setState after the async gaps above in case the
+    // screen was closed while these awaits were still in flight.
+    if (!mounted) return;
     setState(() => _loading = false);
   }
 
   ({double chickPrice, double feedRate, double adminCost, double kgPerBag})
   _resolveCostRates(double weightKgForSizeCheck) {
     if (_appliedRuleId == 1 && _rule1Config != null) {
+      // NOTE (#8): boundary behaviour at exactly 1.2 kg is unchanged here —
+      // confirm with business rule whether 1.2 kg itself should count as
+      // Big or Small before changing `>` to `>=`.
       final bool isBigSize = weightKgForSizeCheck > 1.2;
       final c = _rule1Config!;
       if (isBigSize) {
@@ -210,30 +233,68 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
 
   void _computeRows() {
     final int initialChicks = widget.batchData['chicksCount'] ?? 0;
-    final DateTime startDate =
-        _parseDdMmYyyy(widget.batchData['startDate']) ?? DateTime.now();
+    final DateTime? parsedStart = _parseDdMmYyyy(widget.batchData['startDate']);
+    _startDateInvalid = parsedStart == null;
+    final DateTime startDate = parsedStart ?? DateTime.now();
 
     final DateTime today = DateTime.now();
-    int chicksAgeDays = today.difference(startDate).inDays + 1;
-    if (chicksAgeDays < 1) chicksAgeDays = 1;
+    final int rawAgeDays = today.difference(startDate).inDays + 1;
 
+    // #22 fix: a future start date used to force a fake "Day 1" to render
+    // today. Now we simply show no rows until the batch actually starts.
+    if (rawAgeDays < 1) {
+      _batchNotStarted = true;
+      _rows = [];
+      return;
+    }
+    _batchNotStarted = false;
+    final int chicksAgeDays = rawAgeDays;
+
+    // ---- Parse cost entries, keeping timestamp so same-day duplicates can
+    // be resolved by "most recently entered" instead of list order (#19,#20,#21) ----
     final List<Map<String, dynamic>> costEntries = [];
     for (final e in _localDailyEntries) {
       if (e['type'].toString().toLowerCase() != 'cost') continue;
       final d = _parseDdMmYyyy(e['date']);
       if (d == null) continue;
+      final String remainingRaw = (e['remainingFeed'] ?? '').toString();
       costEntries.add({
         'date': d,
         'mortality': int.tryParse(e['mortality'].toString()) ?? 0,
         'feedBags': int.tryParse(e['feed'].toString()) ?? 0,
         'weightKg': double.tryParse(e['weight'].toString()) ?? 0.0,
-        'remainingFeedBags': int.tryParse(e['remainingFeed'].toString()) ?? 0,
+        // #17/#18 fix: null = "not reported" is now distinct from an
+        // explicitly reported 0 bags remaining.
+        'remainingFeedBags': remainingRaw.isEmpty
+            ? null
+            : int.tryParse(remainingRaw),
         'hasMismatch': e['hasMismatch'] == true,
         'mismatchReason': e['mismatchReason']?.toString(),
+        'timestamp': DateTime.tryParse(e['timestamp']?.toString() ?? '') ?? d,
+      });
+    }
+    // #19/#20/#21 fix: sort by actual entry timestamp so "the last one we
+    // see while looping" is genuinely the most recent report, not just
+    // whatever order happened to be in the list.
+    costEntries.sort(
+      (a, b) =>
+          (a['timestamp'] as DateTime).compareTo(b['timestamp'] as DateTime),
+    );
+
+    // #1 fix: sale entries are now read here too, so sold birds come out of
+    // Live Chicks — previously only mortality did, which meant feed,
+    // biomass, FCR and Cost/Kg kept being computed for birds already sold.
+    final List<Map<String, dynamic>> saleEntries = [];
+    for (final e in _localDailyEntries) {
+      if (e['type'].toString().toLowerCase() != 'sale') continue;
+      final d = _parseDdMmYyyy(e['date']);
+      if (d == null) continue;
+      saleEntries.add({
+        'date': d,
+        'chicksSold': int.tryParse(e['chicksSold'].toString()) ?? 0,
       });
     }
 
-    // ---- NEW: Parse return feed entries ----
     final List<Map<String, dynamic>> returnFeedEntries = [];
     for (final e in _localDailyEntries) {
       if (e['type'].toString().toLowerCase() != 'returnfeed') continue;
@@ -248,8 +309,23 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     }
 
     int cumulativeMortality = 0;
+    int cumulativeSold = 0;
     double cumulativeFeedConsumedKg = 0.0;
-    double cumulativeFeedDeliveredKg = 0.0;
+
+    // #3/#4 fix: delivered / returned feed are now kept as immutable
+    // running totals. Reconciliation variance is tracked SEPARATELY instead
+    // of being folded back into "delivered", so it can no longer fabricate
+    // fake deliveries or corrupt what the Fraud Risk Engine sees.
+    double grossDeliveredKg = 0.0;
+    double cumulativeReturnedKg = 0.0;
+    double reconciliationVarianceKg = 0.0;
+
+    // #9/#10 fix: chick cost is locked once (purchase-time snapshot) and
+    // feed cost accrues incrementally at each day's own rate, so a later
+    // rate/category change no longer rewrites already-incurred historical cost.
+    double? lockedChickCost;
+    double cumulativeFeedCostRs = 0.0;
+
     double? lastManualWeightKg;
     double lastActualRemainingFeedKg = 0.0;
     bool remainingFeedEverReported = false;
@@ -262,10 +338,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       int feedBagsDeliveredToday = 0;
       double? weightEnteredToday;
       int? remainingFeedBagsToday;
+      bool remainingFeedReportedToday = false;
       bool hasMismatchToday = false;
       final List<String> mismatchReasonsToday = [];
 
-      // ---- NEW: Accumulate return feed for this day ----
       double returnFeedKgToday = 0.0;
       for (final rf in returnFeedEntries) {
         if (_sameDay(rf['date'] as DateTime, date)) {
@@ -273,14 +349,28 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
         }
       }
 
+      // #1 fix: accumulate sales up to and including this day.
+      int soldToday = 0;
+      for (final s in saleEntries) {
+        if (_sameDay(s['date'] as DateTime, date)) {
+          soldToday += s['chicksSold'] as int;
+        }
+      }
+      cumulativeSold += soldToday;
+
       for (final entry in costEntries) {
         if (_sameDay(entry['date'] as DateTime, date)) {
           mortalityToday += entry['mortality'] as int;
           feedBagsDeliveredToday += entry['feedBags'] as int;
           final w = entry['weightKg'] as double;
           if (w > 0) weightEnteredToday = w;
-          final rf = entry['remainingFeedBags'] as int;
-          if (rf > 0) remainingFeedBagsToday = rf;
+          final rf = entry['remainingFeedBags'] as int?;
+          if (rf != null) {
+            // #17 fix: an explicit 0 is now respected as a real report,
+            // not treated as "nothing reported".
+            remainingFeedBagsToday = rf;
+            remainingFeedReportedToday = true;
+          }
           if (entry['hasMismatch'] == true) {
             hasMismatchToday = true;
             final reason = entry['mismatchReason'] as String?;
@@ -292,10 +382,12 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       }
 
       cumulativeMortality += mortalityToday;
-      final int liveChicks = (initialChicks - cumulativeMortality).clamp(
-        0,
-        initialChicks,
-      );
+      // #1 fix: Live Chicks now subtracts sold birds too.
+      final int liveChicks =
+          (initialChicks - cumulativeMortality - cumulativeSold).clamp(
+            0,
+            initialChicks,
+          );
       final double mortalityPercent = initialChicks > 0
           ? (cumulativeMortality / initialChicks) * 100
           : 0.0;
@@ -315,6 +407,11 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           ) /
           1000.0;
 
+      // NOTE (#6/#7): manual weight still carries forward to future days
+      // until the next measurement, unchanged from current behaviour. This
+      // affects both FCR/Cost drift over time and Rule 1 size classification
+      // — confirm with business rule before changing this (measurement-day
+      // only vs. carry-forward vs. growth-curve estimate).
       if (weightEnteredToday != null) {
         lastManualWeightKg = weightEnteredToday;
       }
@@ -322,30 +419,49 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
 
       final ratesToday = _resolveCostRates(manualWeightKg ?? autoWeightKg);
 
-      // ---- Feed stock calculation with reconciliation ----
-      cumulativeFeedDeliveredKg += feedBagsDeliveredToday * ratesToday.kgPerBag;
+      // #9/#10 fix: chick cost snapshot taken once, not recalculated every
+      // day off whatever the current rate/category happens to be.
+      lockedChickCost ??= initialChicks * ratesToday.chickPrice;
 
-      // ---- NEW: Subtract return feed immediately ----
-      cumulativeFeedDeliveredKg -= returnFeedKgToday;
+      // ---- Feed stock: immutable delivered/returned totals (#2 partial, #3, #4) ----
+      final double deliveredTodayKg =
+          feedBagsDeliveredToday * ratesToday.kgPerBag;
+      grossDeliveredKg += deliveredTodayKg;
+      cumulativeReturnedKg += returnFeedKgToday;
 
-      double feedStockKg = cumulativeFeedDeliveredKg - cumulativeFeedConsumedKg;
+      // #9/#10 fix: feed cost accrues at TODAY's rate for TODAY's
+      // consumption only — historical days keep the rate that applied when
+      // their feed was actually consumed.
+      cumulativeFeedCostRs += dailyFeedKg * ratesToday.feedRate;
 
-      // 🔥 FIX: If the field has reported actual remaining feed, use it as ground truth
-      // and correct cumulative delivered so that future days stay in sync.
-      if (remainingFeedBagsToday != null) {
+      final double netAvailableFeedKg =
+          grossDeliveredKg - cumulativeReturnedKg - cumulativeFeedConsumedKg;
+      double feedStockKg = netAvailableFeedKg + reconciliationVarianceKg;
+
+      // #3/#4 fix: when the farmer reports actual remaining stock, we
+      // record the gap as a separate "variance" instead of mutating the
+      // immutable delivered total. Delivered/returned history is never
+      // rewritten, and the Fraud Risk Engine below is fed the real net
+      // delivered figure, not a drift-adjusted one.
+      if (remainingFeedReportedToday) {
         final double reportedStockKg =
-            remainingFeedBagsToday * ratesToday.kgPerBag;
-        final double drift = reportedStockKg - feedStockKg;
-        cumulativeFeedDeliveredKg += drift; // ← correct the drift
-        feedStockKg = reportedStockKg; // set to actual reported
+            (remainingFeedBagsToday ?? 0) * ratesToday.kgPerBag;
+        reconciliationVarianceKg = reportedStockKg - netAvailableFeedKg;
+        feedStockKg = reportedStockKg;
         lastActualRemainingFeedKg = reportedStockKg;
         remainingFeedEverReported = true;
       }
 
-      // ✅ No clamp – keep negative values to highlight shortfall
       final bool isShortfall = feedStockKg < 0;
 
       // ---- FCR ----
+      // NOTE (#26/#27): these still use liveChicks/cumulative feed as-is.
+      // With #1 fixed, liveChicks now correctly excludes sold birds, which
+      // improves this, but cumulativeFeedConsumedKg still includes feed
+      // consumed by birds before they were sold (correct for a
+      // "feed-to-date" FCR). If you want FCR based on harvested+standing
+      // biomass instead, that's a separate formula decision (#27/#28) —
+      // flagging rather than silently changing your FCR definition.
       final double autoBiomassKg = liveChicks * autoWeightKg;
       final double autoFcr = autoBiomassKg > 0
           ? cumulativeFeedConsumedKg / autoBiomassKg
@@ -365,18 +481,17 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           ? liveChicks * manualWeightKg
           : autoBiomassKg;
 
-      final double cumulativeChickCost = initialChicks * ratesToday.chickPrice;
-      final double cumulativeFeedCost =
-          cumulativeFeedConsumedKg * ratesToday.feedRate;
       final double cumulativeAdminCost = biomassForCost * ratesToday.adminCost;
       final double cumulativeProductionCost =
-          cumulativeChickCost + cumulativeFeedCost + cumulativeAdminCost;
+          lockedChickCost + cumulativeFeedCostRs + cumulativeAdminCost;
       final double costPerKg = biomassForCost > 0
           ? cumulativeProductionCost / biomassForCost
           : 0.0;
 
       final FraudRiskAssessment fraud = FraudRiskEngine.assess(
-        feedDeliveredKg: cumulativeFeedDeliveredKg,
+        // #4 fix: pass the real net-delivered figure (gross - returned),
+        // not a value that reconciliation drift has silently mutated.
+        feedDeliveredKg: grossDeliveredKg - cumulativeReturnedKg,
         expectedConsumedKg: cumulativeFeedConsumedKg,
         actualRemainingKg: lastActualRemainingFeedKg,
         remainingFeedEverReported: remainingFeedEverReported,
@@ -394,7 +509,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
           totalFeedKg: cumulativeFeedConsumedKg,
           feedStockKg: feedStockKg,
           isShortfall: isShortfall,
-          returnFeedKgToday: returnFeedKgToday, // ✅ added
+          returnFeedKgToday: returnFeedKgToday,
           autoWeightKg: autoWeightKg,
           manualWeightKg: manualWeightKg,
           autoFcr: autoFcr,
@@ -524,6 +639,11 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                       'chickPricePerPiece': chick,
                       'feedRatePerKg': feed,
                       'adminCostPerKg': admin,
+                      // #11 fix: kgPerBag was being dropped on every save
+                      // (this sheet has no field for it, but it must still
+                      // be preserved rather than silently lost — otherwise
+                      // it reverts to the 50.0 default on next load).
+                      'kgPerBag': _fallbackKgPerBag,
                     }),
                   );
 
@@ -817,6 +937,17 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     );
   }
 
+  void _showError(String message) {
+    Get.snackbar(
+      'Invalid Value ⚠️',
+      message,
+      backgroundColor: Colors.red.shade600,
+      colorText: Colors.white,
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(15),
+    );
+  }
+
   Future<void> _saveDayEntry({
     required BuildContext dialogContext,
     required String dateStr,
@@ -840,22 +971,52 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       return;
     }
 
-    final double? weightVal = double.tryParse(weightInput);
-    final int? mortalityVal = int.tryParse(mortalityInput);
-    final int? feedVal = int.tryParse(feedInput);
-    final int? remainingVal = int.tryParse(remainingFeedInput);
-
-    if ((weightVal != null && weightVal < 0) ||
-        (mortalityVal != null && mortalityVal < 0) ||
-        (remainingVal != null && remainingVal < 0)) {
-      Get.snackbar(
-        'Invalid Value ⚠️',
-        'Weight, Mortality aur Remaining Feed negative nahi ho sakti!',
-        backgroundColor: Colors.red.shade600,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(15),
+    // #15 fix: a non-empty but unparsable value (e.g. "abc") used to get
+    // silently saved as raw text and later treated as 0 wherever it was
+    // read. Now it's rejected up front instead of corrupting the data.
+    if (weightInput.isNotEmpty && double.tryParse(weightInput) == null) {
+      _showError('Weight ki value samajh nahi aayi. Sirf number likhein.');
+      return;
+    }
+    if (mortalityInput.isNotEmpty && int.tryParse(mortalityInput) == null) {
+      _showError('Mortality ki value samajh nahi aayi. Sirf number likhein.');
+      return;
+    }
+    if (feedInput.isNotEmpty && int.tryParse(feedInput) == null) {
+      _showError('Feed bags ki value samajh nahi aayi. Sirf number likhein.');
+      return;
+    }
+    if (remainingFeedInput.isNotEmpty &&
+        int.tryParse(remainingFeedInput) == null) {
+      _showError(
+        'Remaining feed ki value samajh nahi aayi. Sirf number likhein.',
       );
+      return;
+    }
+
+    final double? weightVal = weightInput.isEmpty
+        ? null
+        : double.parse(weightInput);
+    final int? mortalityVal = mortalityInput.isEmpty
+        ? null
+        : int.parse(mortalityInput);
+    final int? feedVal = feedInput.isEmpty ? null : int.parse(feedInput);
+    final int? remainingVal = remainingFeedInput.isEmpty
+        ? null
+        : int.parse(remainingFeedInput);
+
+    // #16 fix: weight = 0, if entered, used to save fine but then get
+    // silently ignored by the calculation (only `w > 0` counted as a real
+    // entry) — so the user saw "Saved" but nothing actually changed. Now we
+    // reject it up front with a clear message instead of a silent no-op.
+    if (weightVal != null && weightVal <= 0) {
+      _showError('Weight 0 se bada hona chahiye.');
+      return;
+    }
+
+    if ((mortalityVal != null && mortalityVal < 0) ||
+        (remainingVal != null && remainingVal < 0)) {
+      _showError('Mortality aur Remaining Feed negative nahi ho sakti!');
       return;
     }
 
@@ -901,13 +1062,15 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       }
     }
 
-    final int sameDateCostCount = _localDailyEntries
-        .where(
-          (e) =>
-              e['type'].toString().toLowerCase() == 'cost' &&
-              e['date'].toString() == dateStr,
-        )
-        .length;
+    // #14 fix: compare actual calendar dates instead of raw date strings,
+    // so "01/07/2026" vs "1/7/2026" vs an ISO string can't be used to dodge
+    // the 3-entries-per-day limit.
+    final DateTime? selectedDate = _parseDdMmYyyy(dateStr);
+    final int sameDateCostCount = _localDailyEntries.where((e) {
+      if (e['type'].toString().toLowerCase() != 'cost') return false;
+      final d = _parseDdMmYyyy(e['date']);
+      return d != null && selectedDate != null && _sameDay(d, selectedDate);
+    }).length;
     if (sameDateCostCount >= 3) {
       Get.snackbar(
         'Limit Reached ⚠️',
@@ -929,10 +1092,13 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
       final Map<String, dynamic> logEntry = {
         'type': 'cost',
         'date': dateStr,
-        'weight': weightInput.isEmpty ? '0' : weightInput,
-        'mortality': mortalityInput.isEmpty ? '0' : mortalityInput,
-        'feed': feedInput.isEmpty ? '0' : feedInput,
-        'remainingFeed': remainingFeedInput.isEmpty ? '0' : remainingFeedInput,
+        // #17/#18 fix: keep the raw input as-is instead of forcing an
+        // empty field to the string '0'. An empty string now genuinely
+        // means "nothing entered", distinct from an explicit "0".
+        'weight': weightInput,
+        'mortality': mortalityInput,
+        'feed': feedInput,
+        'remainingFeed': remainingFeedInput,
         'enteredBy': widget.userRole,
         'timestamp': DateTime.now().toIso8601String(),
       };
@@ -1280,7 +1446,18 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                   // Table
                   Expanded(
                     child: _rows.isEmpty
-                        ? const Center(child: Text('Koi din data nahi hai'))
+                        ? Center(
+                            child: Text(
+                              // #22/#23 fix: honest empty-state messaging
+                              // instead of silently faking a Day 1 or
+                              // silently treating a bad date as "today".
+                              _startDateInvalid
+                                  ? 'Batch ki start date sahi format mein nahi hai — pehle use theek karein.'
+                                  : _batchNotStarted
+                                  ? 'Yeh batch abhi start nahi hua hai.'
+                                  : 'Koi din data nahi hai',
+                            ),
+                          )
                         : Padding(
                             padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                             child: Container(
@@ -1465,7 +1642,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
                                               r.totalFeedKg.toStringAsFixed(2),
                                             ),
                                           ),
-                                          // ── 🔥 FEED STOCK CELL with shortfall and return marker ──
+                                          // ── FEED STOCK CELL with shortfall and return marker ──
                                           DataCell(
                                             Column(
                                               crossAxisAlignment:
