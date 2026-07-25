@@ -131,6 +131,7 @@ class PermissionService {
               label: 'Daily Update List',
               emoji: '📝',
             ),
+            PermissionNode(id: 'feedReturn', label: 'Return Feed', emoji: '↩️'),
             PermissionNode(id: 'batchEnd', label: 'Batch End', emoji: '🏁'),
           ],
         ),
@@ -146,9 +147,115 @@ class PermissionService {
       id: 'purchaseExpense',
       label: 'Purchase / Expense',
       emoji: '🛒',
+      isLeaf: false,
+      hasPermission: true,
+      children: [
+        PermissionNode(
+          id: 'chicksPurchase',
+          label: 'Chicks Purchase',
+          emoji: '🐣',
+          isLeaf: false,
+          hasPermission: true,
+          children: [
+            PermissionNode(
+              id: 'chicksPurchaseEntry',
+              label: 'Purchase Entry',
+              emoji: '🛒',
+            ),
+            PermissionNode(
+              id: 'chicksAllocation',
+              label: 'Allocation (Farmer ko dena)',
+              emoji: '📤',
+            ),
+          ],
+        ),
+        PermissionNode(
+          id: 'feedPurchase',
+          label: 'Feed Purchase',
+          emoji: '🌾',
+          isLeaf: false,
+          hasPermission: true,
+          children: [
+            PermissionNode(
+              id: 'feedPurchaseEntry',
+              label: 'Purchase Entry',
+              emoji: '🛒',
+            ),
+            PermissionNode(
+              id: 'feedAllocation',
+              label: 'Allocation (Farmer ko dena)',
+              emoji: '📤',
+            ),
+          ],
+        ),
+        PermissionNode(
+          id: 'medicinePurchase',
+          label: 'Medicine Purchase',
+          emoji: '💊',
+          isLeaf: false,
+          hasPermission: true,
+          children: [
+            PermissionNode(
+              id: 'medicinePurchaseEntry',
+              label: 'Purchase Entry',
+              emoji: '🛒',
+            ),
+            PermissionNode(
+              id: 'medicineAllocation2',
+              label: 'Allocation (Farmer ko dena)',
+              emoji: '📤',
+            ),
+          ],
+        ),
+        PermissionNode(
+          id: 'labourExpense',
+          label: 'Labour / Manager Expense',
+          emoji: '👷',
+        ),
+        PermissionNode(id: 'otherExpense', label: 'Other Expense', emoji: '📋'),
+      ],
     ),
-    PermissionNode(id: 'sales', label: 'Sales / Lifting', emoji: '💰'),
-    PermissionNode(id: 'reports', label: 'Reports', emoji: '📊'),
+    PermissionNode(
+      id: 'sales',
+      label: 'Sales / Lifting',
+      emoji: '💰',
+      isLeaf: false,
+      hasPermission: true,
+      children: [
+        PermissionNode(id: 'chicksSale', label: 'Chicks Sale', emoji: '🐣'),
+        PermissionNode(id: 'feedSale', label: 'Feed Sale', emoji: '🌾'),
+        PermissionNode(id: 'medicineSale', label: 'Medicine Sale', emoji: '💊'),
+        PermissionNode(
+          id: 'chickenLiftingSale',
+          label: 'Chicken Sale (Lifting)',
+          emoji: '🐔',
+        ),
+      ],
+    ),
+    PermissionNode(
+      id: 'reports',
+      label: 'Reports',
+      emoji: '📊',
+      isLeaf: false,
+      hasPermission: true,
+      children: [
+        PermissionNode(
+          id: 'opExpenseRecoveryReport',
+          label: 'Operational Expense Recovery',
+          emoji: '💹',
+        ),
+        PermissionNode(
+          id: 'batchPerformanceReport',
+          label: 'Batch Performance',
+          emoji: '📈',
+        ),
+        PermissionNode(
+          id: 'farmerProfitLossReport',
+          label: 'Farmer Profit / Loss',
+          emoji: '📉',
+        ),
+      ],
+    ),
     PermissionNode(id: 'accounts', label: 'Accounts', emoji: '🧾'),
     PermissionNode(id: 'settlement', label: 'Settlement Engine', emoji: '⚖️'),
   ];
