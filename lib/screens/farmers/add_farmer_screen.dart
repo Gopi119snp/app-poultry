@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'add_farmer_screen_step2.dart';
+import '../../widgets/permission_gate.dart';
 
 class AddFarmerScreen extends StatefulWidget {
   const AddFarmerScreen({super.key});
@@ -233,76 +234,115 @@ class _AddFarmerScreenState extends State<AddFarmerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        backgroundColor: primaryGreen,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          'Farmer Add Karo',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
+    return PermissionScreenGate(
+      moduleId: 'farmerProfile',
+      action: 'add',
+      child: Scaffold(
+        backgroundColor: Colors.grey.shade50,
+        appBar: AppBar(
+          backgroundColor: primaryGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+            onPressed: () => Get.back(),
+          ),
+          title: const Text(
+            'Farmer Add Karo',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
           ),
         ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildProgress(),
-              const SizedBox(height: 24),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildProgress(),
+                const SizedBox(height: 24),
 
-              // ── PERSONAL INFO ────────────────======
-              _sectionLabel('👤 PERSONAL INFORMATION'),
-              const SizedBox(height: 14),
+                // ── PERSONAL INFO ────────────────======
+                _sectionLabel('👤 PERSONAL INFORMATION'),
+                const SizedBox(height: 14),
 
-              _buildInput(
-                controller: _nameController,
-                label: 'Farmer ka Poora Naam *',
-                hint: 'e.g. Ramesh Kumar',
-                icon: Icons.person_rounded,
-              ),
+                _buildInput(
+                  controller: _nameController,
+                  label: 'Farmer ka Poora Naam *',
+                  hint: 'e.g. Ramesh Kumar',
+                  icon: Icons.person_rounded,
+                ),
 
-              // DOB — auto format
-              _buildLabel('Date of Birth *'),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: TextField(
-                  controller: _dobController,
-                  keyboardType: TextInputType.number,
-                  maxLength: 10,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'DDMMYYYY likhte jaao',
-                    hintStyle: TextStyle(
-                      color: Colors.grey.shade400,
-                      fontSize: 13,
+                // DOB — auto format
+                _buildLabel('Date of Birth *'),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: TextField(
+                    controller: _dobController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 10,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
                     ),
+                    decoration: InputDecoration(
+                      hintText: 'DDMMYYYY likhte jaao',
+                      hintStyle: TextStyle(
+                        color: Colors.grey.shade400,
+                        fontSize: 13,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.calendar_today_rounded,
+                        color: Colors.grey.shade400,
+                        size: 20,
+                      ),
+                      helperText: 'Sirf numbers daalo — / automatic aayega',
+                      helperStyle: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 11,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      counterText: '',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                          color: primaryGreen,
+                          width: 1.5,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 18,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Relation Type
+                _buildLabel('Relation Type *'),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: _selectedRelation,
+                  decoration: InputDecoration(
                     prefixIcon: Icon(
-                      Icons.calendar_today_rounded,
+                      Icons.people_rounded,
                       color: Colors.grey.shade400,
                       size: 20,
                     ),
-                    helperText: 'Sirf numbers daalo — / automatic aayega',
-                    helperStyle: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 11,
-                    ),
                     filled: true,
                     fillColor: Colors.white,
-                    counterText: '',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(color: Colors.grey.shade200),
@@ -319,219 +359,187 @@ class _AddFarmerScreenState extends State<AddFarmerScreen> {
                       ),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 18,
+                      horizontal: 14,
+                      vertical: 16,
                     ),
                   ),
-                ),
-              ),
-
-              // Relation Type
-              _buildLabel('Relation Type *'),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                value: _selectedRelation,
-                decoration: InputDecoration(
-                  prefixIcon: Icon(
-                    Icons.people_rounded,
-                    color: Colors.grey.shade400,
-                    size: 20,
+                  hint: Text(
+                    'Chuniye',
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
                   ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: primaryGreen,
-                      width: 1.5,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 16,
-                  ),
-                ),
-                hint: Text(
-                  'Chuniye',
-                  style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                ),
-                items: _relations
-                    .map(
-                      (r) => DropdownMenuItem(
-                        value: r,
-                        child: Text(r, style: const TextStyle(fontSize: 13)),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (val) => setState(() => _selectedRelation = val),
-              ),
-              const SizedBox(height: 16),
-
-              _buildInput(
-                controller: _relationNameController,
-                label: 'Relation ka Naam *',
-                hint: 'e.g. Suresh Kumar',
-                icon: Icons.person_outline_rounded,
-              ),
-
-              _buildInput(
-                controller: _phoneController,
-                label: 'Phone Number *',
-                hint: '10 digit mobile number',
-                icon: Icons.phone_rounded,
-                keyboardType: TextInputType.phone,
-                maxLength: 10,
-              ),
-
-              const SizedBox(height: 8),
-
-              // ── LOCATION ───────────────────────────
-              _sectionLabel('📍 LOCATION INFORMATION'),
-              const SizedBox(height: 14),
-
-              _buildInput(
-                controller: _pinController,
-                label: 'PIN Code *',
-                hint: 'e.g. 800001',
-                icon: Icons.pin_drop_rounded,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                suffix: _isLoadingPin
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                  items: _relations
+                      .map(
+                        (r) => DropdownMenuItem(
+                          value: r,
+                          child: Text(r, style: const TextStyle(fontSize: 13)),
+                        ),
                       )
-                    : null,
-              ),
+                      .toList(),
+                  onChanged: (val) => setState(() => _selectedRelation = val),
+                ),
+                const SizedBox(height: 16),
 
-              _buildInput(
-                controller: _districtController,
-                label: 'District (Auto-fill)',
-                hint: 'PIN code daalte hi aayega',
-                icon: Icons.location_city_rounded,
-                enabled: false,
-              ),
+                _buildInput(
+                  controller: _relationNameController,
+                  label: 'Relation ka Naam *',
+                  hint: 'e.g. Suresh Kumar',
+                  icon: Icons.person_outline_rounded,
+                ),
 
-              // State Dropdown
-              _buildLabel('State *'),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                value: _selectedState,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  prefixIcon: Icon(
-                    Icons.map_rounded,
-                    color: Colors.grey.shade400,
-                    size: 20,
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: primaryGreen,
-                      width: 1.5,
+                _buildInput(
+                  controller: _phoneController,
+                  label: 'Phone Number *',
+                  hint: '10 digit mobile number',
+                  icon: Icons.phone_rounded,
+                  keyboardType: TextInputType.phone,
+                  maxLength: 10,
+                ),
+
+                const SizedBox(height: 8),
+
+                // ── LOCATION ───────────────────────────
+                _sectionLabel('📍 LOCATION INFORMATION'),
+                const SizedBox(height: 14),
+
+                _buildInput(
+                  controller: _pinController,
+                  label: 'PIN Code *',
+                  hint: 'e.g. 800001',
+                  icon: Icons.pin_drop_rounded,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  suffix: _isLoadingPin
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : null,
+                ),
+
+                _buildInput(
+                  controller: _districtController,
+                  label: 'District (Auto-fill)',
+                  hint: 'PIN code daalte hi aayega',
+                  icon: Icons.location_city_rounded,
+                  enabled: false,
+                ),
+
+                // State Dropdown
+                _buildLabel('State *'),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: _selectedState,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    prefixIcon: Icon(
+                      Icons.map_rounded,
+                      color: Colors.grey.shade400,
+                      size: 20,
                     ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 16,
-                  ),
-                ),
-                hint: Text(
-                  'State chuniye',
-                  style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                ),
-                items: _states
-                    .map(
-                      (s) => DropdownMenuItem(
-                        value: s,
-                        child: Text(s, style: const TextStyle(fontSize: 13)),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade200),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade200),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: primaryGreen,
+                        width: 1.5,
                       ),
-                    )
-                    .toList(),
-                onChanged: (val) {
-                  setState(() {
-                    _selectedState = val;
-                    _stateController.text = val ?? '';
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-
-              _buildInput(
-                controller: _streetController,
-                label: 'Street / Mohalla *',
-                hint: 'e.g. Gandhi Nagar',
-                icon: Icons.signpost_rounded,
-              ),
-
-              _buildInput(
-                controller: _panchayatController,
-                label: 'Panchayat *',
-                hint: 'e.g. Rampur Panchayat',
-                icon: Icons.account_balance_rounded,
-              ),
-
-              _buildInput(
-                controller: _postOfficeController,
-                label: 'Post Office',
-                hint: 'e.g. Ballia Bazar',
-                icon: Icons.local_post_office_rounded,
-                enabled: true,
-              ),
-
-              _buildInput(
-                controller: _policeStationController,
-                label: 'Police Station',
-                hint: 'e.g. Kotwali',
-                icon: Icons.local_police_rounded,
-              ),
-
-              const SizedBox(height: 8),
-
-              // Action trigger button layout element placement
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _goToStep2,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryGreen,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    elevation: 3,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 16,
                     ),
                   ),
-                  child: const Text(
-                    'Aage Badhein — Step 2 →',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  hint: Text(
+                    'State chuniye',
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                  ),
+                  items: _states
+                      .map(
+                        (s) => DropdownMenuItem(
+                          value: s,
+                          child: Text(s, style: const TextStyle(fontSize: 13)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedState = val;
+                      _stateController.text = val ?? '';
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+
+                _buildInput(
+                  controller: _streetController,
+                  label: 'Street / Mohalla *',
+                  hint: 'e.g. Gandhi Nagar',
+                  icon: Icons.signpost_rounded,
+                ),
+
+                _buildInput(
+                  controller: _panchayatController,
+                  label: 'Panchayat *',
+                  hint: 'e.g. Rampur Panchayat',
+                  icon: Icons.account_balance_rounded,
+                ),
+
+                _buildInput(
+                  controller: _postOfficeController,
+                  label: 'Post Office',
+                  hint: 'e.g. Ballia Bazar',
+                  icon: Icons.local_post_office_rounded,
+                  enabled: true,
+                ),
+
+                _buildInput(
+                  controller: _policeStationController,
+                  label: 'Police Station',
+                  hint: 'e.g. Kotwali',
+                  icon: Icons.local_police_rounded,
+                ),
+
+                const SizedBox(height: 8),
+
+                // Action trigger button layout element placement
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _goToStep2,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      elevation: 3,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      'Aage Badhein — Step 2 →',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 40),
-            ],
+                const SizedBox(height: 40),
+              ],
+            ),
           ),
         ),
-      ),
+      ), // Scaffold close
     );
   }
 

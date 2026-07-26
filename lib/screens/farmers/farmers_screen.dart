@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'add_farmer_screen.dart';
 import 'farmer_profile_screen.dart';
 import '../../services/company_store.dart';
+import '../../services/permission_service.dart'; // ✏️ EDIT 1
 
 class FarmersScreen extends StatefulWidget {
   final VoidCallback? onFarmerAdded;
@@ -18,10 +19,26 @@ class _FarmersScreenState extends State<FarmersScreen> {
   static const Color primaryGreen = Color(0xFF1B5E20);
   List<Map<String, dynamic>> _farmers = [];
 
+  // ── 🔐 PERMISSION FLAGS ─────────────────────────────────────────────────  // ✏️ EDIT 2
+  bool _canAddFarmer = false;
+  bool _canViewFarmerProfile = false;
+
   @override
   void initState() {
     super.initState();
     _loadFarmers();
+    _loadPermissionFlags(); // ✏️ EDIT 2
+  }
+
+  Future<void> _loadPermissionFlags() async {
+    // ✏️ EDIT 2
+    final canAdd = await PermissionService.can('farmerProfile', 'add');
+    final canView = await PermissionService.can('farmerProfile', 'view');
+    if (!mounted) return;
+    setState(() {
+      _canAddFarmer = canAdd;
+      _canViewFarmerProfile = canView;
+    });
   }
 
   Future<void> _loadFarmers() async {
@@ -63,36 +80,37 @@ class _FarmersScreenState extends State<FarmersScreen> {
                       ),
                     ),
                     const Spacer(),
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        final result = await Get.to(
-                          () => const AddFarmerScreen(),
-                        );
-                        if (result == true) {
-                          await _loadFarmers();
-                        }
-                      },
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text(
-                        'Add Farmer',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+                    if (_canAddFarmer) // ✏️ EDIT 3
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          final result = await Get.to(
+                            () => const AddFarmerScreen(),
+                          );
+                          if (result == true) {
+                            await _loadFarmers();
+                          }
+                        },
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text(
+                          'Add Farmer',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: primaryGreen,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: primaryGreen,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -140,25 +158,29 @@ class _FarmersScreenState extends State<FarmersScreen> {
             style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () async {
-              final result = await Get.to(() => const AddFarmerScreen());
-              if (result == true) await _loadFarmers();
-            },
-            icon: const Icon(Icons.add),
-            label: const Text(
-              '+ Pehla Farmer Add Karo',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: primaryGreen,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          if (_canAddFarmer) // ✏️ EDIT 4
+            ElevatedButton.icon(
+              onPressed: () async {
+                final result = await Get.to(() => const AddFarmerScreen());
+                if (result == true) await _loadFarmers();
+              },
+              icon: const Icon(Icons.add),
+              label: const Text(
+                '+ Pehla Farmer Add Karo',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryGreen,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 14,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -168,6 +190,18 @@ class _FarmersScreenState extends State<FarmersScreen> {
     return GestureDetector(
       // FIXED: Isko async banaya taaki jab FarmerProfileScreen se wapas aayein toh naya batch save hone par list aur kpi auto-refresh ho ske
       onTap: () async {
+        if (!_canViewFarmerProfile) {
+          // ✏️ EDIT 5
+          Get.snackbar(
+            'Access Nahi Hai',
+            'Farmer profile dekhne ka permission aapko nahi diya gaya hai.',
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(15),
+          );
+          return;
+        }
         final result = await Get.to(() => FarmerProfileScreen(farmer: farmer));
         if (result == true) {
           await _loadFarmers(); // Refresh list if batch was started

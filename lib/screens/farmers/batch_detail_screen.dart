@@ -22,6 +22,7 @@ import '../../../utils/feed_consumption_rule_engine.dart';
 import '../../../utils/fraud_risk_engine.dart';
 import '../../../utils/performance_alert_engine.dart';
 import 'daily_update_list_screen.dart';
+import '../../../services/permission_service.dart';
 
 // =============================================================================
 // BATCH DETAIL & DAILY DATA ENTRY SCREEN
@@ -110,6 +111,23 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   int _maxLiftingDays = 60;
   DateTime _selectedDate = DateTime.now();
 
+  // ── 🔐 PERMISSION FLAGS ─────────────────────────────────────────────────
+  bool _canAddFeedEntry = false;
+  bool _canAddWeight = false;
+  bool _canAddMortality = false;
+  bool _canAddRemainingFeed = false;
+  bool _canAddSale = false;
+  bool _canAddMedicine = false;
+  bool _canViewDailyUpdateList = false;
+  bool _canAddReturnFeed = false;
+  bool _canAddBatchEnd = false;
+
+  bool get _canShowFlockRecordButton =>
+      _canAddFeedEntry ||
+      _canAddWeight ||
+      _canAddMortality ||
+      _canAddRemainingFeed;
+
   // ── Farmer Info ──────────────────────────────────────────────────────────
   String _farmerName = '';
   String _farmerPhone = '';
@@ -181,6 +199,35 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     _dateController.text = _formatDate(DateTime.now());
     _loadFreshBatchData();
     _initDownloadNotifications();
+    _loadPermissionFlags();
+  }
+
+  Future<void> _loadPermissionFlags() async {
+    final feedEntry = await PermissionService.can('feedEntry', 'add');
+    final weight = await PermissionService.can('averageWeight', 'add');
+    final mortality = await PermissionService.can('mortality', 'add');
+    final remainingFeed = await PermissionService.can('remainingFeed', 'add');
+    final sale = await PermissionService.can('batchSales', 'add');
+    final medicine = await PermissionService.can('batchMedicine', 'add');
+    final dailyUpdateList = await PermissionService.can(
+      'dailyUpdateList',
+      'view',
+    );
+    final returnFeed = await PermissionService.can('feedReturn', 'add');
+    final batchEnd = await PermissionService.can('batchEnd', 'add');
+
+    if (!mounted) return;
+    setState(() {
+      _canAddFeedEntry = feedEntry;
+      _canAddWeight = weight;
+      _canAddMortality = mortality;
+      _canAddRemainingFeed = remainingFeed;
+      _canAddSale = sale;
+      _canAddMedicine = medicine;
+      _canViewDailyUpdateList = dailyUpdateList;
+      _canAddReturnFeed = returnFeed;
+      _canAddBatchEnd = batchEnd;
+    });
   }
 
   // ── Download notification setup ─────────────────────────────────────────
@@ -3953,6 +4000,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   // DIALOGS
   // ===========================================================================
 
+  // ── ✅ NEW: Return Feed dialog wrapper with permission gate ──────────
+  void _startBatchEndFlow({required VoidCallback onDone}) {
+    if (_canAddReturnFeed) {
+      _showReturnFeedDialog(onDone: onDone);
+    } else {
+      // Return Feed permission nahi hai — seedha aage badho
+      onDone();
+    }
+  }
+
   void _showDailyEntryDialog() {
     final existingEntries = List<dynamic>.from(_dailyEntries);
     _mortalityPhotoBytes = null;
@@ -4008,8 +4065,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   // ═══════════════════════════════════════════════════════
                   // 🏢 SECTION 1 — FEED (Owner / Office Manager hi bhar sakte)
                   // ═══════════════════════════════════════════════════════
-                  if (widget.userRole == 'Owner' ||
-                      widget.userRole == 'Office Manager') ...[
+                  if ((widget.userRole == 'Owner' ||
+                          widget.userRole == 'Office Manager') &&
+                      _canAddFeedEntry) ...[
                     const Text(
                       '🏢 Feed Section (Owner / Office Manager)',
                       style: TextStyle(
@@ -4048,8 +4106,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   // ═══════════════════════════════════════════════════════
                   // 🌾 SECTION 2 — WEIGHT / MORTALITY / REMAINING FEED
                   // ═══════════════════════════════════════════════════════
-                  if (widget.userRole == 'Owner' ||
-                      widget.userRole == 'Field Manager') ...[
+                  if ((widget.userRole == 'Owner' ||
+                          widget.userRole == 'Field Manager') &&
+                      (_canAddWeight ||
+                          _canAddMortality ||
+                          _canAddRemainingFeed)) ...[
                     const Text(
                       '🌾 Field Manager Entries',
                       style: TextStyle(
@@ -6300,11 +6361,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           ],
         ),
         actions: [
-          if (showBatchEndBtn)
+          if (showBatchEndBtn && _canAddBatchEnd)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: TextButton.icon(
-                onPressed: () => _showReturnFeedDialog(
+                onPressed: () => _startBatchEndFlow(
                   onDone: () => _showBatchEndConfirmation(
                     liveChicks: liveChicks,
                     latestAvgWeight: latestAvgWeight,
@@ -6576,11 +6637,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             const SizedBox(height: 16),
 
             // ── BATCH END BANNER ──────────────────────────────────────────
-            if (showBatchEndBtn)
+            if (showBatchEndBtn && _canAddBatchEnd)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: GestureDetector(
-                  onTap: () => _showReturnFeedDialog(
+                  onTap: () => _startBatchEndFlow(
                     onDone: () => _showBatchEndConfirmation(
                       liveChicks: liveChicks,
                       latestAvgWeight: latestAvgWeight,
@@ -6653,7 +6714,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 ),
               ),
 
-            if (showBatchEndBtn) const SizedBox(height: 12),
+            if (showBatchEndBtn && _canAddBatchEnd) const SizedBox(height: 12),
 
             // ── SETTLEMENT RASID BUTTON ───────────────────────────────────
             if (showSettlementRasidBtn)
@@ -6735,24 +6796,27 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Row(
                   children: [
-                    _buildQuickActionCard(
-                      label: '+ Flock Record',
-                      icon: Icons.add_circle_outline_rounded,
-                      accentColor: primaryGreen,
-                      onTap: _showDailyEntryDialog,
-                    ),
-                    _buildQuickActionCard(
-                      label: '+ Sale',
-                      icon: Icons.monetization_on_outlined,
-                      accentColor: Colors.orange,
-                      onTap: _showSalesEntryDialog,
-                    ),
-                    _buildQuickActionCard(
-                      label: 'Medicine',
-                      icon: Icons.medical_services_outlined,
-                      accentColor: Colors.purple,
-                      onTap: _showMedicineEntryDialog,
-                    ),
+                    if (_canShowFlockRecordButton)
+                      _buildQuickActionCard(
+                        label: '+ Flock Record',
+                        icon: Icons.add_circle_outline_rounded,
+                        accentColor: primaryGreen,
+                        onTap: _showDailyEntryDialog,
+                      ),
+                    if (_canAddSale)
+                      _buildQuickActionCard(
+                        label: '+ Sale',
+                        icon: Icons.monetization_on_outlined,
+                        accentColor: Colors.orange,
+                        onTap: _showSalesEntryDialog,
+                      ),
+                    if (_canAddMedicine)
+                      _buildQuickActionCard(
+                        label: 'Medicine',
+                        icon: Icons.medical_services_outlined,
+                        accentColor: Colors.purple,
+                        onTap: _showMedicineEntryDialog,
+                      ),
                   ],
                 ),
               ),
@@ -6760,7 +6824,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             if (dynamicStatus != 'COMPLETED') const SizedBox(height: 16),
 
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
@@ -6775,43 +6839,45 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               ),
             ),
 
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 44,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: primaryGreen,
-                    side: BorderSide(color: primaryGreen.withOpacity(0.6)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  icon: const Icon(Icons.calendar_view_day_rounded, size: 20),
-                  label: const Text(
-                    'Daily Update List Dekho',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => DailyUpdateListScreen(
-                          batchData: _liveBatchData,
-                          dailyEntries: _dailyEntries,
-                          feedRuleConfig: _feedRuleConfig,
-                          farmerId: widget.farmerId,
-                          userRole: widget.userRole,
-                        ),
+            if (_canViewDailyUpdateList) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primaryGreen,
+                      side: BorderSide(color: primaryGreen.withOpacity(0.6)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                    );
-                    await _loadFreshBatchData();
-                  },
+                    ),
+                    icon: const Icon(Icons.calendar_view_day_rounded, size: 20),
+                    label: const Text(
+                      'Daily Update List Dekho',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => DailyUpdateListScreen(
+                            batchData: _liveBatchData,
+                            dailyEntries: _dailyEntries,
+                            feedRuleConfig: _feedRuleConfig,
+                            farmerId: widget.farmerId,
+                            userRole: widget.userRole,
+                          ),
+                        ),
+                      );
+                      await _loadFreshBatchData();
+                    },
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
+              const SizedBox(height: 10),
+            ],
 
             // ── DATA LIST ─────────────────────────────────────────────────
             // ✅ CHANGED: Expanded hata diya, ab conditional widget ke saath

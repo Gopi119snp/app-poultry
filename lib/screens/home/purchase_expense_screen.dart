@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:poultrypro/services/company_store.dart';
 import 'package:poultrypro/services/session_service.dart';
+import '../../services/permission_service.dart'; // ✅ EDIT 1
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔗 SHARED HELPERS — Farmer ka batch dhoondhna / naya batch ID banana
@@ -2067,6 +2068,27 @@ class PurchaseExpenseScreen extends StatelessWidget {
     );
   }
 
+  // ✅ EDIT 2: helper method for loading permissions
+  Future<Map<String, bool>> _loadCategoryPermissions() async {
+    final chicks = await PermissionService.can('chicksPurchase', 'view');
+    final feed = await PermissionService.can('feedPurchase', 'view');
+    final medicine = await PermissionService.can('medicinePurchase', 'view');
+    final labour = await PermissionService.can('labourExpense', 'view');
+    final other = await PermissionService.can('otherExpense', 'view');
+    final labourAdd = await PermissionService.can('labourExpense', 'add');
+    final otherAdd = await PermissionService.can('otherExpense', 'add');
+    return {
+      'chicks': chicks,
+      'feed': feed,
+      'medicine': medicine,
+      'labour': labour,
+      'other': other,
+      'labourAdd': labourAdd,
+      'otherAdd': otherAdd,
+    };
+  }
+
+  // ✅ EDIT 2: replaced build method
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2144,147 +2166,184 @@ class PurchaseExpenseScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 14),
+                  FutureBuilder<Map<String, bool>>(
+                    future: _loadCategoryPermissions(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      final perms = snapshot.data!;
+                      final List<Widget> cards = [];
 
-                  // ── Row 1 ──
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _PurchaseCategoryCard(
-                          emoji: '🐣',
-                          label: 'Chicks',
-                          subtitle: 'Day Old Chicks',
-                          bgColor: Colors.yellow.shade50,
-                          borderColor: Colors.yellow.shade300,
-                          iconBg: Colors.yellow.shade200,
-                          textColor: Colors.orange.shade900,
-                          badgeText: 'Stock In',
-                          onTap: () => Get.to(
-                            () => ChicksHistoryScreen(
-                              onChicksTap: onChicksTap,
-                              onShowAllocation: _showAllocationDialog,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: _PurchaseCategoryCard(
-                          emoji: '🌾',
-                          label: 'Feed',
-                          subtitle: 'Starter, Grower, Finisher',
-                          bgColor: Colors.blue.shade50,
-                          borderColor: Colors.blue.shade200,
-                          iconBg: Colors.blue.shade100,
-                          textColor: Colors.blue.shade800,
-                          badgeText: 'Stock Ready',
-                          onTap: () => Get.to(
-                            () => FeedHistoryScreen(onFeedTap: onFeedTap),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-
-                  // ── Row 2 ──
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _PurchaseCategoryCard(
-                          emoji: '💊',
-                          label: 'Medicine',
-                          subtitle: 'Dawai, Tika, Vitamin',
-                          bgColor: Colors.teal.shade50,
-                          borderColor: Colors.teal.shade200,
-                          iconBg: Colors.teal.shade100,
-                          textColor: Colors.teal.shade800,
-                          badgeText: 'Farmer Rate',
-                          onTap: () => Get.to(
-                            () => MedicineHistoryScreen(
-                              onMedicineTap: onMedicineTap,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: _PurchaseCategoryCard(
-                          emoji: '👷',
-                          label: 'Labour',
-                          subtitle: 'Majdoor, Kaam kharcha',
-                          bgColor: Colors.orange.shade50,
-                          borderColor: Colors.orange.shade200,
-                          iconBg: Colors.orange.shade100,
-                          textColor: Colors.orange.shade800,
-                          badgeText: 'Company Expense',
-                          onTap: () => Get.to(
-                            () => CategoryHistoryScreen(
-                              title: 'Labour Expense',
-                              emoji: '👷',
-                              themeColor: Colors.orange.shade800,
-                              historyPrefsKey: 'labourExpenseHistory',
-                              dateKey: 'date',
-                              onAddTap: onLabourTap,
-                              addButtonLabel: 'Naya Labour Expense',
-                              emptyMessage: 'Koi record nahi.',
-                              itemBuilder: (context, entry) => historyEntryCard(
-                                title: entry['workerName'] ?? '-',
-                                subtitle:
-                                    '${entry['labourType']} | ${entry['unitMode']}',
-                                amountLabel:
-                                    '₹${(entry['totalAmount'] as num).toDouble().toStringAsFixed(2)}',
-                                entry: entry,
-                                dateKey: 'date',
-                                color: Colors.orange.shade800,
+                      if (perms['chicks'] == true) {
+                        cards.add(
+                          _PurchaseCategoryCard(
+                            emoji: '🐣',
+                            label: 'Chicks',
+                            subtitle: 'Day Old Chicks',
+                            bgColor: Colors.yellow.shade50,
+                            borderColor: Colors.yellow.shade300,
+                            iconBg: Colors.yellow.shade200,
+                            textColor: Colors.orange.shade900,
+                            badgeText: 'Stock In',
+                            onTap: () => Get.to(
+                              () => ChicksHistoryScreen(
+                                onChicksTap: onChicksTap,
+                                onShowAllocation: _showAllocationDialog,
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 14),
-                  // ── Row 3 ──
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _PurchaseCategoryCard(
-                          emoji: '📋',
-                          label: 'Other Expense',
-                          subtitle: 'Miscellaneous kharcha',
-                          bgColor: Colors.purple.shade50,
-                          borderColor: Colors.purple.shade200,
-                          iconBg: Colors.purple.shade100,
-                          textColor: Colors.purple.shade800,
-                          badgeText: 'Company Expense',
-                          onTap: () => Get.to(
-                            () => CategoryHistoryScreen(
-                              title: 'Other Expense',
-                              emoji: '📋',
-                              themeColor: Colors.purple.shade700,
-                              historyPrefsKey: 'otherExpenseHistory',
-                              dateKey: 'date',
-                              onAddTap: onOtherTap,
-                              addButtonLabel: 'Naya Expense Add Karo',
-                              emptyMessage: 'Koi record nahi.',
-                              itemBuilder: (context, entry) => historyEntryCard(
-                                title: entry['expenseType'] ?? '-',
-                                subtitle: entry['note'] ?? 'Koi note nahi',
-                                amountLabel:
-                                    '₹${(entry['amount'] as num).toDouble().toStringAsFixed(2)}',
-                                entry: entry,
-                                dateKey: 'date',
-                                color: Colors.purple.shade700,
+                        );
+                      }
+                      if (perms['feed'] == true) {
+                        cards.add(
+                          _PurchaseCategoryCard(
+                            emoji: '🌾',
+                            label: 'Feed',
+                            subtitle: 'Starter, Grower, Finisher',
+                            bgColor: Colors.blue.shade50,
+                            borderColor: Colors.blue.shade200,
+                            iconBg: Colors.blue.shade100,
+                            textColor: Colors.blue.shade800,
+                            badgeText: 'Stock Ready',
+                            onTap: () => Get.to(
+                              () => FeedHistoryScreen(onFeedTap: onFeedTap),
+                            ),
+                          ),
+                        );
+                      }
+                      if (perms['medicine'] == true) {
+                        cards.add(
+                          _PurchaseCategoryCard(
+                            emoji: '💊',
+                            label: 'Medicine',
+                            subtitle: 'Dawai, Tika, Vitamin',
+                            bgColor: Colors.teal.shade50,
+                            borderColor: Colors.teal.shade200,
+                            iconBg: Colors.teal.shade100,
+                            textColor: Colors.teal.shade800,
+                            badgeText: 'Farmer Rate',
+                            onTap: () => Get.to(
+                              () => MedicineHistoryScreen(
+                                onMedicineTap: onMedicineTap,
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                      const Expanded(child: SizedBox()),
-                    ],
+                        );
+                      }
+                      if (perms['labour'] == true) {
+                        cards.add(
+                          _PurchaseCategoryCard(
+                            emoji: '👷',
+                            label: 'Labour',
+                            subtitle: 'Majdoor, Kaam kharcha',
+                            bgColor: Colors.orange.shade50,
+                            borderColor: Colors.orange.shade200,
+                            iconBg: Colors.orange.shade100,
+                            textColor: Colors.orange.shade800,
+                            badgeText: 'Company Expense',
+                            onTap: () => Get.to(
+                              () => CategoryHistoryScreen(
+                                title: 'Labour Expense',
+                                emoji: '👷',
+                                themeColor: Colors.orange.shade800,
+                                historyPrefsKey: 'labourExpenseHistory',
+                                dateKey: 'date',
+                                onAddTap: onLabourTap,
+                                addButtonLabel: 'Naya Labour Expense',
+                                emptyMessage: 'Koi record nahi.',
+                                canAdd: perms['labourAdd'] == true,
+                                itemBuilder: (context, entry) => historyEntryCard(
+                                  title: entry['workerName'] ?? '-',
+                                  subtitle:
+                                      '${entry['labourType']} | ${entry['unitMode']}',
+                                  amountLabel:
+                                      '₹${(entry['totalAmount'] as num).toDouble().toStringAsFixed(2)}',
+                                  entry: entry,
+                                  dateKey: 'date',
+                                  color: Colors.orange.shade800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      if (perms['other'] == true) {
+                        cards.add(
+                          _PurchaseCategoryCard(
+                            emoji: '📋',
+                            label: 'Other Expense',
+                            subtitle: 'Miscellaneous kharcha',
+                            bgColor: Colors.purple.shade50,
+                            borderColor: Colors.purple.shade200,
+                            iconBg: Colors.purple.shade100,
+                            textColor: Colors.purple.shade800,
+                            badgeText: 'Company Expense',
+                            onTap: () => Get.to(
+                              () => CategoryHistoryScreen(
+                                title: 'Other Expense',
+                                emoji: '📋',
+                                themeColor: Colors.purple.shade700,
+                                historyPrefsKey: 'otherExpenseHistory',
+                                dateKey: 'date',
+                                onAddTap: onOtherTap,
+                                addButtonLabel: 'Naya Expense Add Karo',
+                                emptyMessage: 'Koi record nahi.',
+                                canAdd: perms['otherAdd'] == true,
+                                itemBuilder: (context, entry) => historyEntryCard(
+                                  title: entry['expenseType'] ?? '-',
+                                  subtitle: entry['note'] ?? 'Koi note nahi',
+                                  amountLabel:
+                                      '₹${(entry['amount'] as num).toDouble().toStringAsFixed(2)}',
+                                  entry: entry,
+                                  dateKey: 'date',
+                                  color: Colors.purple.shade700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
+                      if (cards.isEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 30),
+                          child: Center(
+                            child: Text(
+                              'Aapko is section ka access nahi diya gaya hai.',
+                              style: TextStyle(color: Colors.grey.shade500),
+                            ),
+                          ),
+                        );
+                      }
+
+                      final List<Widget> rows = [];
+                      for (int i = 0; i < cards.length; i += 2) {
+                        final bool hasSecond = i + 1 < cards.length;
+                        rows.add(
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 14),
+                            child: Row(
+                              children: [
+                                Expanded(child: cards[i]),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: hasSecond
+                                      ? cards[i + 1]
+                                      : const SizedBox(),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      return Column(children: rows);
+                    },
                   ),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),
@@ -2322,11 +2381,26 @@ class ChicksHistoryScreen extends StatefulWidget {
 class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
   List<ChicksPurchase> _entries = [];
   bool _isLoading = true;
+  // ✅ EDIT 4: permission flags
+  bool _canAddPurchase = false;
+  bool _canAllocate = false;
 
   @override
   void initState() {
     super.initState();
     _loadHistory();
+    _loadPermissions();
+  }
+
+  // ✅ EDIT 4: load permissions
+  Future<void> _loadPermissions() async {
+    final addPerm = await PermissionService.can('chicksPurchaseEntry', 'add');
+    final allocPerm = await PermissionService.can('chicksAllocation', 'add');
+    if (!mounted) return;
+    setState(() {
+      _canAddPurchase = addPerm;
+      _canAllocate = allocPerm;
+    });
   }
 
   // SAFE LOAD — ek corrupt entry se puri list crash nahi hogi
@@ -2443,28 +2517,29 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
       ),
       body: Column(
         children: [
-          // Add Button
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  await widget.onChicksTap();
-                  _loadHistory();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange.shade800,
-                ),
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text(
-                  'Naya Chicks Purchase Add Karo',
-                  style: TextStyle(color: Colors.white),
+          // Add Button — gated
+          if (_canAddPurchase)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    await widget.onChicksTap();
+                    _loadHistory();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade800,
+                  ),
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: const Text(
+                    'Naya Chicks Purchase Add Karo',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
               ),
             ),
-          ),
 
           // List
           Expanded(
@@ -2640,7 +2715,7 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
                                 width: double.infinity,
                                 child: ElevatedButton.icon(
                                   // STEP 3 CONDITION: remainingQty > 0 ho toh enable
-                                  onPressed: fullyAllocated
+                                  onPressed: (fullyAllocated || !_canAllocate)
                                       ? null
                                       : () {
                                           widget.onShowAllocation(
@@ -3142,11 +3217,25 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
   List<Map<String, dynamic>> _feedStock = [];
   bool _isLoading = true;
   bool _changed = false;
+  // ✅ EDIT 5: permission flags
+  bool _canAddPurchase = false;
+  bool _canAllocate = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadPermissions();
+  }
+
+  Future<void> _loadPermissions() async {
+    final addPerm = await PermissionService.can('feedPurchaseEntry', 'add');
+    final allocPerm = await PermissionService.can('feedAllocation', 'add');
+    if (!mounted) return;
+    setState(() {
+      _canAddPurchase = addPerm;
+      _canAllocate = allocPerm;
+    });
   }
 
   Future<void> _load() async {
@@ -3196,56 +3285,60 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
             : ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        await widget.onFeedTap();
-                        _changed = true;
-                        _load();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade700,
-                      ),
-                      icon: const Icon(Icons.add, color: Colors.white),
-                      label: const Text(
-                        'Naya Feed Purchase',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final result = await _showFeedAllocateToFarmerDialog(
-                          context,
-                          _feedStock,
-                        );
-                        if (result == true) {
+                  if (_canAddPurchase) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          await widget.onFeedTap();
                           _changed = true;
                           _load();
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange.shade700,
-                      ),
-                      icon: const Icon(
-                        Icons.person_add_alt_1_rounded,
-                        color: Colors.white,
-                      ),
-                      label: const Text(
-                        'Allocate to Farmer',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade700,
+                        ),
+                        icon: const Icon(Icons.add, color: Colors.white),
+                        label: const Text(
+                          'Naya Feed Purchase',
+                          style: TextStyle(color: Colors.white),
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_canAllocate) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          final result = await _showFeedAllocateToFarmerDialog(
+                            context,
+                            _feedStock,
+                          );
+                          if (result == true) {
+                            _changed = true;
+                            _load();
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade700,
+                        ),
+                        icon: const Icon(
+                          Icons.person_add_alt_1_rounded,
+                          color: Colors.white,
+                        ),
+                        label: const Text(
+                          'Allocate to Farmer',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   ..._feedStock.map(
                     (f) => _FeedRunningStockCard(
@@ -5096,6 +5189,7 @@ class CategoryHistoryScreen extends StatefulWidget {
   final Future<void> Function() onAddTap;
   final String addButtonLabel;
   final String emptyMessage;
+  final bool canAdd; // ✅ EDIT 3: added
   final Widget Function(BuildContext context, Map<String, dynamic> entry)
   itemBuilder;
   final List<Widget> Function(Map<String, dynamic> entry)? actionsBuilder;
@@ -5111,6 +5205,7 @@ class CategoryHistoryScreen extends StatefulWidget {
     required this.addButtonLabel,
     required this.emptyMessage,
     required this.itemBuilder,
+    this.canAdd = true, // ✅ EDIT 3: default true
     this.actionsBuilder,
   });
 
@@ -5151,27 +5246,28 @@ class _CategoryHistoryScreenState extends State<CategoryHistoryScreen> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  await widget.onAddTap();
-                  _loadHistory();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: widget.themeColor,
-                ),
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: Text(
-                  widget.addButtonLabel,
-                  style: const TextStyle(color: Colors.white),
+          if (widget.canAdd) // ✅ EDIT 3: conditionally show button
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    await widget.onAddTap();
+                    _loadHistory();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.themeColor,
+                  ),
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: Text(
+                    widget.addButtonLabel,
+                    style: const TextStyle(color: Colors.white),
+                  ),
                 ),
               ),
             ),
-          ),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -5614,11 +5710,25 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
   // mId → list of {buyerName, qty, unit, saleId, mobile, date}
   Map<String, List<Map<String, dynamic>>> _privateSalesByMed = {};
   bool _isLoading = true;
+  // ✅ EDIT 6: permission flags
+  bool _canAddPurchase = false;
+  bool _canAllocate = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _loadPermissions();
+  }
+
+  Future<void> _loadPermissions() async {
+    final addPerm = await PermissionService.can('medicinePurchaseEntry', 'add');
+    final allocPerm = await PermissionService.can('medicineAllocation2', 'add');
+    if (!mounted) return;
+    setState(() {
+      _canAddPurchase = addPerm;
+      _canAllocate = allocPerm;
+    });
   }
 
   Future<void> _loadData() async {
@@ -5749,60 +5859,65 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  await widget.onMedicineTap();
-                  _loadData();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal.shade700,
-                ),
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text(
-                  'Naya Medicine Add Karo',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ),
-          ),
-          // ── Allocate to Farmer button ──
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            child: SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: _medicines.isEmpty
-                    ? null
-                    : () async {
-                        await Get.to(
-                          () => AllocateMedicineToFarmerScreen(
-                            medicines: _medicines,
-                            availBaseQty: _availBaseQty,
-                          ),
-                        );
-                        _loadData();
-                      },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange.shade700,
-                  disabledBackgroundColor: Colors.grey.shade300,
-                ),
-                icon: const Icon(Icons.person_add_rounded, color: Colors.white),
-                label: const Text(
-                  'Allocate to Farmer',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+          if (_canAddPurchase)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    await widget.onMedicineTap();
+                    _loadData();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal.shade700,
+                  ),
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: const Text(
+                    'Naya Medicine Add Karo',
+                    style: TextStyle(color: Colors.white),
                   ),
                 ),
               ),
             ),
-          ),
+          // ── Allocate to Farmer button ──
+          if (_canAllocate)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: _medicines.isEmpty
+                      ? null
+                      : () async {
+                          await Get.to(
+                            () => AllocateMedicineToFarmerScreen(
+                              medicines: _medicines,
+                              availBaseQty: _availBaseQty,
+                            ),
+                          );
+                          _loadData();
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade700,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                  ),
+                  icon: const Icon(
+                    Icons.person_add_rounded,
+                    color: Colors.white,
+                  ),
+                  label: const Text(
+                    'Allocate to Farmer',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())

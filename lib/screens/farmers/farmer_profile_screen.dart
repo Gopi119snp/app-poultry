@@ -9,6 +9,7 @@ import 'package:google_ml_kit/google_ml_kit.dart';
 import 'batch_detail_screen.dart';
 import 'batch_create_screen.dart';
 import 'farmer_report_screen.dart';
+import '../../services/permission_service.dart';
 
 class FarmerProfileScreen extends StatefulWidget {
   final Map<String, dynamic> farmer;
@@ -57,6 +58,17 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
   String? _pendingChequeNumberForCommit;
   String? _pendingChequeStatusKeyForCommit;
 
+  // ── 🔐 PERMISSION FLAGS ─────────────────────────────────────────────────
+  bool _permissionsLoaded = false;
+  bool _canViewProfile = false;
+  bool _canEditProfile = false;
+  bool _canViewBank = false;
+  bool _canEditBank = false;
+  bool _canViewBatchTab = false;
+  bool _canAddBatch = false;
+  bool _canEditBatch = false;
+  bool _canViewReportTab = false;
+
   @override
   void initState() {
     super.initState();
@@ -65,6 +77,41 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
         "${DateTime.now().day.toString().padLeft(2, '0')}/${DateTime.now().month.toString().padLeft(2, '0')}/${DateTime.now().year}";
     _checkActiveBatchStatus();
     _loadUploadedChequeNumbers();
+    _loadPermissionFlags();
+  }
+
+  Future<void> _loadPermissionFlags() async {
+    final viewProfile = await PermissionService.can('farmerProfile', 'view');
+    final editProfile = await PermissionService.can('farmerProfile', 'edit');
+    final viewBank = await PermissionService.can('farmerBankDetail', 'view');
+    final editBank = await PermissionService.can('farmerBankDetail', 'edit');
+    final viewBatch = await PermissionService.can('batchCreate', 'view');
+    final addBatch = await PermissionService.can('batchCreate', 'add');
+    final editBatch = await PermissionService.can('batchCreate', 'edit');
+    final viewReport = await PermissionService.can('farmerReportGroup', 'view');
+
+    if (!mounted) return;
+    setState(() {
+      _canViewProfile = viewProfile;
+      _canEditProfile = editProfile;
+      _canViewBank = viewBank;
+      _canEditBank = editBank;
+      _canViewBatchTab = viewBatch;
+      _canAddBatch = addBatch;
+      _canEditBatch = editBatch;
+      _canViewReportTab = viewReport;
+      _permissionsLoaded = true;
+    });
+  }
+
+  List<MapEntry<String, Widget Function()>> _buildVisibleTabs() {
+    final List<MapEntry<String, Widget Function()>> tabs = [];
+    if (_canViewProfile) tabs.add(MapEntry('Personal', _buildPersonalTab));
+    if (_canViewBatchTab) tabs.add(MapEntry('Batch', _buildBatchTab));
+    if (_canViewProfile) tabs.add(MapEntry('Document', _buildDocumentTab));
+    if (_canViewBank) tabs.add(MapEntry('Bank', _buildBankTab));
+    if (_canViewReportTab) tabs.add(MapEntry('Report', _buildReportTab));
+    return tabs;
   }
 
   @override
@@ -1998,6 +2045,21 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
   // ── BUILD ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    if (!_permissionsLoaded) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(backgroundColor: primaryGreen, elevation: 0),
+        body: const Center(
+          child: CircularProgressIndicator(color: primaryGreen),
+        ),
+      );
+    }
+
+    final visibleTabs = _buildVisibleTabs();
+    final safeIndex = visibleTabs.isEmpty
+        ? 0
+        : _currentTab.clamp(0, visibleTabs.length - 1);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -2021,17 +2083,16 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
           Column(
             children: [
               _buildProfileHeader(),
-              _buildTabBar(),
+              _buildTabBar(visibleTabs, safeIndex),
               Expanded(
-                child: _currentTab == 0
-                    ? _buildPersonalTab()
-                    : _currentTab == 1
-                    ? _buildBatchTab()
-                    : _currentTab == 2
-                    ? _buildDocumentTab()
-                    : _currentTab == 3
-                    ? _buildBankTab()
-                    : _buildReportTab(),
+                child: visibleTabs.isEmpty
+                    ? Center(
+                        child: Text(
+                          'Is farmer ke liye koi permission nahi hai.',
+                          style: TextStyle(color: Colors.grey.shade500),
+                        ),
+                      )
+                    : visibleTabs[safeIndex].value(),
               ),
             ],
           ),
@@ -2184,23 +2245,22 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
     );
   }
 
-  Widget _buildTabBar() {
+  Widget _buildTabBar(
+    List<MapEntry<String, Widget Function()>> visibleTabs,
+    int safeIndex,
+  ) {
     return Container(
       color: Colors.white,
       child: Row(
-        children: [
-          _buildTabItem('Personal', 0),
-          _buildTabItem('Batch', 1),
-          _buildTabItem('Document', 2),
-          _buildTabItem('Bank', 3),
-          _buildTabItem('Report', 4),
-        ],
+        children: List.generate(visibleTabs.length, (i) {
+          return _buildTabItem(visibleTabs[i].key, i, safeIndex);
+        }),
       ),
     );
   }
 
-  Widget _buildTabItem(String label, int index) {
-    final isActive = _currentTab == index;
+  Widget _buildTabItem(String label, int index, int safeIndex) {
+    final isActive = safeIndex == index;
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => _currentTab = index),
@@ -2254,22 +2314,23 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
                   fontSize: 12,
                 ),
               ),
-              TextButton.icon(
-                onPressed: _showEditPersonalDialog,
-                icon: const Icon(
-                  Icons.edit_rounded,
-                  size: 14,
-                  color: primaryGreen,
-                ),
-                label: const Text(
-                  'Edit Details',
-                  style: TextStyle(
+              if (_canEditProfile)
+                TextButton.icon(
+                  onPressed: _showEditPersonalDialog,
+                  icon: const Icon(
+                    Icons.edit_rounded,
+                    size: 14,
                     color: primaryGreen,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                  ),
+                  label: const Text(
+                    'Edit Details',
+                    style: TextStyle(
+                      color: primaryGreen,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -2391,28 +2452,31 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
                       ),
                     ],
                     const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: _pickAndSaveProfilePhoto,
-                        icon: const Icon(
-                          Icons.add_a_photo_outlined,
-                          size: 14,
-                          color: primaryGreen,
-                        ),
-                        label: Text(
-                          hasPhoto ? 'Change Photo' : 'Upload Photo',
-                          style: const TextStyle(
-                            fontSize: 12,
+                    if (_canEditProfile)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _pickAndSaveProfilePhoto,
+                          icon: const Icon(
+                            Icons.add_a_photo_outlined,
+                            size: 14,
                             color: primaryGreen,
-                            fontWeight: FontWeight.bold,
+                          ),
+                          label: Text(
+                            hasPhoto ? 'Change Photo' : 'Upload Photo',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: primaryGreen,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
+
+              // SIGNATURE ROW — tap to view, button to change
 
               // SIGNATURE ROW — tap to view, button to change
               Container(
@@ -2472,25 +2536,26 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
                       ),
                     ],
                     const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: _pickAndSaveSignature,
-                        icon: const Icon(
-                          Icons.draw_outlined,
-                          size: 14,
-                          color: primaryGreen,
-                        ),
-                        label: Text(
-                          hasSig ? 'Change Signature' : 'Upload Signature',
-                          style: const TextStyle(
-                            fontSize: 12,
+                    if (_canEditProfile)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _pickAndSaveSignature,
+                          icon: const Icon(
+                            Icons.draw_outlined,
+                            size: 14,
                             color: primaryGreen,
-                            fontWeight: FontWeight.bold,
+                          ),
+                          label: Text(
+                            hasSig ? 'Change Signature' : 'Upload Signature',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: primaryGreen,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -2539,7 +2604,7 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    if (_hasActiveBatch)
+                    if (_hasActiveBatch && _canEditBatch)
                       IconButton(
                         icon: const Icon(
                           Icons.edit_note_rounded,
@@ -2648,47 +2713,49 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            final result = await Get.to(
-                              () => BatchCreateScreen(farmer: _currentFarmer),
-                            );
-                            if (result == true) {
-                              await _checkActiveBatchStatus();
-                              if (_hasActiveBatch && _activeBatchData != null) {
-                                Get.to(
-                                  () => BatchDetailScreen(
-                                    farmerId: _currentFarmer['id'] ?? '',
-                                    batchData: _activeBatchData!,
-                                    userRole: 'Owner',
-                                  ),
-                                );
+                        if (_canAddBatch)
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final result = await Get.to(
+                                () => BatchCreateScreen(farmer: _currentFarmer),
+                              );
+                              if (result == true) {
+                                await _checkActiveBatchStatus();
+                                if (_hasActiveBatch &&
+                                    _activeBatchData != null) {
+                                  Get.to(
+                                    () => BatchDetailScreen(
+                                      farmerId: _currentFarmer['id'] ?? '',
+                                      batchData: _activeBatchData!,
+                                      userRole: 'Owner',
+                                    ),
+                                  );
+                                }
                               }
-                            }
-                          },
-                          icon: const Icon(
-                            Icons.add,
-                            size: 18,
-                            color: Colors.white,
-                          ),
-                          label: const Text(
-                            'Naya Batch Shuru Karo',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
+                            },
+                            icon: const Icon(
+                              Icons.add,
+                              size: 18,
                               color: Colors.white,
                             ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: primaryGreen,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
+                            label: const Text(
+                              'Naya Batch Shuru Karo',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryGreen,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 12,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -2992,10 +3059,20 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
           const SizedBox(height: 10),
           GestureDetector(
             onTap: () {
-              if (isUploaded && imgPath != null)
+              if (isUploaded && imgPath != null) {
                 _openDocumentLightboxPreview(imgPath, label);
-              else
+              } else if (_canEditProfile) {
                 _pickAndSaveDocumentPhoto(statusKey, pathKey);
+              } else {
+                Get.snackbar(
+                  'Access Nahi Hai',
+                  'Document upload karne ka permission nahi diya gaya hai.',
+                  backgroundColor: Colors.red,
+                  colorText: Colors.white,
+                  snackPosition: SnackPosition.BOTTOM,
+                  margin: const EdgeInsets.all(15),
+                );
+              }
             },
             child:
                 imgPath != null &&
@@ -3014,26 +3091,27 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: () =>
-                              _pickAndSaveDocumentPhoto(statusKey, pathKey),
-                          icon: const Icon(
-                            Icons.refresh_rounded,
-                            size: 14,
-                            color: primaryGreen,
-                          ),
-                          label: const Text(
-                            'Change / Re-upload',
-                            style: TextStyle(
-                              fontSize: 11,
+                      if (_canEditProfile)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: () =>
+                                _pickAndSaveDocumentPhoto(statusKey, pathKey),
+                            icon: const Icon(
+                              Icons.refresh_rounded,
+                              size: 14,
                               color: primaryGreen,
-                              fontWeight: FontWeight.bold,
+                            ),
+                            label: const Text(
+                              'Change / Re-upload',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: primaryGreen,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   )
                 : Container(
@@ -3087,22 +3165,23 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
                   fontSize: 12,
                 ),
               ),
-              TextButton.icon(
-                onPressed: _showEditBankDialog,
-                icon: const Icon(
-                  Icons.edit_rounded,
-                  size: 14,
-                  color: primaryGreen,
-                ),
-                label: const Text(
-                  'Edit Bank Details',
-                  style: TextStyle(
+              if (_canEditBank)
+                TextButton.icon(
+                  onPressed: _showEditBankDialog,
+                  icon: const Icon(
+                    Icons.edit_rounded,
+                    size: 14,
                     color: primaryGreen,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                  ),
+                  label: const Text(
+                    'Edit Bank Details',
+                    style: TextStyle(
+                      color: primaryGreen,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 6),

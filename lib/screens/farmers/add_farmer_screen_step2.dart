@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../services/company_store.dart';
 import '../../services/session_service.dart';
+import '../../widgets/permission_gate.dart';
 
 class AddFarmerScreenStep2 extends StatefulWidget {
   final Map<String, dynamic> step1Data;
@@ -141,8 +142,8 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
 
     setState(() => _isLoading = true);
 
-    List<Map<String, dynamic>> farmers =
-        await CompanyStore.instance.getJsonList('companyFarmers');
+    List<Map<String, dynamic>> farmers = await CompanyStore.instance
+        .getJsonList('companyFarmers');
 
     // ── DUPLICATE CHECK ────────────────────────
     final phone = widget.step1Data['phone'];
@@ -237,170 +238,174 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        backgroundColor: primaryGreen,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          'Farmer Add Karo',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
+    return PermissionScreenGate(
+      moduleId: 'farmerProfile',
+      action: 'add',
+      child: Scaffold(
+        backgroundColor: Colors.grey.shade50,
+        appBar: AppBar(
+          backgroundColor: primaryGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+            onPressed: () => Get.back(),
+          ),
+          title: const Text(
+            'Farmer Add Karo',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
           ),
         ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildProgress(),
-              const SizedBox(height: 16),
-              _buildStep1Summary(),
-              const SizedBox(height: 20),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildProgress(),
+                const SizedBox(height: 16),
+                _buildStep1Summary(),
+                const SizedBox(height: 20),
 
-              // ── DOCUMENTS ──────────────────────────
-              _sectionLabel('🪪 DOCUMENTS'),
-              const SizedBox(height: 14),
+                // ── DOCUMENTS ──────────────────────────
+                _sectionLabel('🪪 DOCUMENTS'),
+                const SizedBox(height: 14),
 
-              _buildInput(
-                controller: _aadhaarController,
-                label: 'Aadhaar Number *',
-                hint: '1234 5678 9012',
-                icon: Icons.credit_card_rounded,
-                keyboardType: TextInputType.number,
-                maxLength: 14,
-              ),
-
-              _buildInput(
-                controller: _panController,
-                label: 'PAN Number (Optional)',
-                hint: 'e.g. ABCDE1234F',
-                icon: Icons.badge_rounded,
-                maxLength: 10,
-              ),
-
-              _buildLabel('Farmer ki Photo'),
-              const SizedBox(height: 8),
-              _buildPhotoUpload(
-                label: 'Photo Upload Karo',
-                icon: Icons.add_a_photo_rounded,
-                imageFile: _farmerPhotoFile,
-                onTap: () => _pickImage(true),
-              ),
-              const SizedBox(height: 16),
-
-              _buildLabel('Signature / Thumb Print Photo'),
-              const SizedBox(height: 8),
-              _buildPhotoUpload(
-                label: 'Signature ya Thumb Upload Karo',
-                icon: Icons.fingerprint_rounded,
-                imageFile: _signaturePhotoFile,
-                onTap: () => _pickImage(false),
-              ),
-              const SizedBox(height: 20),
-
-              // ── BANK DETAILS ───────────────────────
-              _sectionLabel('🏦 BANK DETAILS'),
-              const SizedBox(height: 14),
-
-              _buildInput(
-                controller: _bankNameController,
-                label: 'Bank ka Naam *',
-                hint: 'e.g. State Bank of India',
-                icon: Icons.account_balance_rounded,
-              ),
-
-              _buildInput(
-                controller: _accountHolderController,
-                label: 'Account Holder ka Naam *',
-                hint: 'e.g. Ramesh Kumar',
-                icon: Icons.person_rounded,
-              ),
-
-              _buildInput(
-                controller: _accountNumberController,
-                label: 'Account Number *',
-                hint: 'Bank account number',
-                icon: Icons.numbers_rounded,
-                keyboardType: TextInputType.number,
-                maxLength: 18,
-              ),
-
-              _buildInput(
-                controller: _confirmAccountController,
-                label: 'Account Number Confirm Karo *',
-                hint: 'Dobara account number daalo',
-                icon: Icons.numbers_rounded,
-                keyboardType: TextInputType.number,
-                maxLength: 18,
-              ),
-
-              _buildInput(
-                controller: _ifscController,
-                label: 'IFSC Code *',
-                hint: 'e.g. SBIN0001234 ya UCBA0632884',
-                icon: Icons.code_rounded,
-                maxLength: 11,
-              ),
-
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16, top: 2),
-                child: Text(
-                  '* IFSC code cheque book ya passbook mein milega',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade500,
-                    fontStyle: FontStyle.italic,
-                  ),
+                _buildInput(
+                  controller: _aadhaarController,
+                  label: 'Aadhaar Number *',
+                  hint: '1234 5678 9012',
+                  icon: Icons.credit_card_rounded,
+                  keyboardType: TextInputType.number,
+                  maxLength: 14,
                 ),
-              ),
 
-              const SizedBox(height: 8),
+                _buildInput(
+                  controller: _panController,
+                  label: 'PAN Number (Optional)',
+                  hint: 'e.g. ABCDE1234F',
+                  icon: Icons.badge_rounded,
+                  maxLength: 10,
+                ),
 
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submitFarmer,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryGreen,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    elevation: 3,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                _buildLabel('Farmer ki Photo'),
+                const SizedBox(height: 8),
+                _buildPhotoUpload(
+                  label: 'Photo Upload Karo',
+                  icon: Icons.add_a_photo_rounded,
+                  imageFile: _farmerPhotoFile,
+                  onTap: () => _pickImage(true),
+                ),
+                const SizedBox(height: 16),
+
+                _buildLabel('Signature / Thumb Print Photo'),
+                const SizedBox(height: 8),
+                _buildPhotoUpload(
+                  label: 'Signature ya Thumb Upload Karo',
+                  icon: Icons.fingerprint_rounded,
+                  imageFile: _signaturePhotoFile,
+                  onTap: () => _pickImage(false),
+                ),
+                const SizedBox(height: 20),
+
+                // ── BANK DETAILS ───────────────────────
+                _sectionLabel('🏦 BANK DETAILS'),
+                const SizedBox(height: 14),
+
+                _buildInput(
+                  controller: _bankNameController,
+                  label: 'Bank ka Naam *',
+                  hint: 'e.g. State Bank of India',
+                  icon: Icons.account_balance_rounded,
+                ),
+
+                _buildInput(
+                  controller: _accountHolderController,
+                  label: 'Account Holder ka Naam *',
+                  hint: 'e.g. Ramesh Kumar',
+                  icon: Icons.person_rounded,
+                ),
+
+                _buildInput(
+                  controller: _accountNumberController,
+                  label: 'Account Number *',
+                  hint: 'Bank account number',
+                  icon: Icons.numbers_rounded,
+                  keyboardType: TextInputType.number,
+                  maxLength: 18,
+                ),
+
+                _buildInput(
+                  controller: _confirmAccountController,
+                  label: 'Account Number Confirm Karo *',
+                  hint: 'Dobara account number daalo',
+                  icon: Icons.numbers_rounded,
+                  keyboardType: TextInputType.number,
+                  maxLength: 18,
+                ),
+
+                _buildInput(
+                  controller: _ifscController,
+                  label: 'IFSC Code *',
+                  hint: 'e.g. SBIN0001234 ya UCBA0632884',
+                  icon: Icons.code_rounded,
+                  maxLength: 11,
+                ),
+
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16, top: 2),
+                  child: Text(
+                    '* IFSC code cheque book ya passbook mein milega',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade500,
+                      fontStyle: FontStyle.italic,
                     ),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      : const Text(
-                          '✅ Farmer Register Karo',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
                 ),
-              ),
-              const SizedBox(height: 40),
-            ],
+
+                const SizedBox(height: 8),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _submitFarmer,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      elevation: 3,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ),
+                          )
+                        : const Text(
+                            '✅ Farmer Register Karo',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 40),
+              ],
+            ),
           ),
         ),
-      ),
+      ), // Scaffold close
     );
   }
 

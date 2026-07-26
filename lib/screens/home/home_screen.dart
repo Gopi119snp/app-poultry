@@ -25,6 +25,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'reports_screen.dart'; // Agar reports_screen usi folder mein hai jahan home_screen hai
 import 'settings_screen.dart';
+import '../../services/permission_service.dart'; // ✅ EDIT 1
 
 // ── ✅ Imports for stock history screens
 import 'feed_stock_history_screen.dart';
@@ -89,6 +90,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _dustScaleAnim;
   bool _showDust = false;
 
+  // ── 🔐 PERMISSION FLAGS (Home screen ke liye) ──────────────────────────────
+  bool _canViewPurchase = false;
+  bool _canViewSales = false;
+  bool _canViewReportsQuick = false;
+  bool _canViewAccountsQuick = false;
+  bool _canViewSettlement = false;
+  bool _canViewSettingsPermissions = false;
+  bool _canViewFeedRule = false;
+  bool _canViewWeightRule = false;
+  bool _canViewPerfRule = false;
+  bool _canEditLiftingRange = false;
+
   @override
   void initState() {
     super.initState();
@@ -96,6 +109,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _loadKpiData();
     _loadStockData();
     _loadAppliedRuleState();
+    _loadPermissionFlags(); // ✅ EDIT 3
+
     _instantRefreshTimer = Timer.periodic(
       const Duration(seconds: 15), // ⬅️ increased interval for performance
       (timer) {
@@ -167,6 +182,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         if (savedRuleId == 2) _isRule2Editing = false;
       });
     }
+  }
+
+  // ✅ EDIT 3: Permissions load karne wala method
+  Future<void> _loadPermissionFlags() async {
+    final purchase = await PermissionService.can('purchaseExpense', 'view');
+    final sales = await PermissionService.can('sales', 'view');
+    final reports = await PermissionService.can('reports', 'view');
+    final accounts = await PermissionService.can('accounts', 'view');
+    final settlement = await PermissionService.can('settlement', 'view');
+    final settingsPerm = await PermissionService.can(
+      'settingsPermissions',
+      'view',
+    );
+    final feedRule = await PermissionService.can('feedConsumptionRule', 'view');
+    final weightRule = await PermissionService.can('weightGrowthRule', 'view');
+    final perfRule = await PermissionService.can(
+      'performanceAlertRule',
+      'view',
+    );
+    final liftingEdit = await PermissionService.can('liftingRangeSet', 'edit');
+
+    if (!mounted) return;
+    setState(() {
+      _canViewPurchase = purchase;
+      _canViewSales = sales;
+      _canViewReportsQuick = reports;
+      _canViewAccountsQuick = accounts;
+      _canViewSettlement = settlement;
+      _canViewSettingsPermissions = settingsPerm;
+      _canViewFeedRule = feedRule;
+      _canViewWeightRule = weightRule;
+      _canViewPerfRule = perfRule;
+      _canEditLiftingRange = liftingEdit;
+    });
   }
 
   // =============================================================================
@@ -1130,7 +1179,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       if (company.isEmpty || billedQty <= 0 || rate <= 0) {
                         Get.snackbar(
                           'Sahi Value Daalein ⚠️',
-                          'Company ka naam, Billed Quantity aur Rate bharna zaroori hai.',
+                          'Company ka naam, Billed Quantity aur rate bharna zaroori hai.',
                           backgroundColor: Colors.red,
                           colorText: Colors.white,
                           snackPosition: SnackPosition.BOTTOM,
@@ -5143,103 +5192,116 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const SizedBox(height: 22),
               const Divider(height: 1, color: Color(0xFFF0F0F0)),
               const SizedBox(height: 20),
-              _premiumSheetTile(
-                icon: Icons.receipt_long_rounded,
-                iconBg: const Color(0xFFE3F2FD),
-                iconColor: Colors.blue.shade700,
-                title: 'Batch Settlement',
-                subtitle: 'Farmer ka final profit & recovery calculate karo',
-                badgeText: 'Live Engine ⚡',
-                badgeColor: const Color(0xFFE3F2FD),
-                badgeTextColor: Colors.blue.shade800,
-                onTap: () {
-                  Navigator.pop(context);
-                  _showLiveSettlementWizard();
-                },
-              ),
-              const SizedBox(height: 12),
-              _premiumSheetTile(
-                icon: Icons.admin_panel_settings_rounded,
-                iconBg: const Color(0xFFE8F5E9),
-                iconColor: primaryGreen,
-                title: 'Settings & Permissions',
-                subtitle:
-                    'Office/Field Manager ko kya dikhna, add ya edit karne ka access do',
-                badgeText: 'Configure',
-                badgeColor: Colors.green.shade50,
-                badgeTextColor: primaryGreen,
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const SettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              _premiumSheetTile(
-                icon: Icons.grass_rounded,
-                iconBg: const Color(0xFFFFF3E0),
-                iconColor: Colors.orange.shade800,
-                title: 'Feed Consumption Rule',
-                subtitle:
-                    'Daily feed formula apni company ke hisaab se set karo',
-                badgeText: 'Configure',
-                badgeColor: Colors.orange.shade50,
-                badgeTextColor: Colors.orange.shade800,
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const FeedConsumptionRuleScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              _premiumSheetTile(
-                icon: Icons.monitor_weight_rounded,
-                iconBg: const Color(0xFFE3F2FD),
-                iconColor: Colors.blue.shade800,
-                title: 'Weight Growth Rule',
-                subtitle: 'Automatic body weight ka growth curve set karo',
-                badgeText: 'Configure',
-                badgeColor: Colors.blue.shade50,
-                badgeTextColor: Colors.blue.shade800,
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const WeightGrowthRuleScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              _premiumSheetTile(
-                icon: Icons.traffic_rounded,
-                iconBg: const Color(0xFFFFEBEE),
-                iconColor: Colors.red.shade700,
-                title: 'Performance Alert Rule',
-                subtitle:
-                    'FCR aur Mortality ke Red/Green/Yellow limits set karo',
-                badgeText: 'Configure',
-                badgeColor: Colors.red.shade50,
-                badgeTextColor: Colors.red.shade700,
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const PerformanceAlertRuleScreen(),
-                    ),
-                  );
-                },
-              ),
+
+              // ✅ EDIT 5: Conditional tiles
+              if (_canViewSettlement) ...[
+                _premiumSheetTile(
+                  icon: Icons.receipt_long_rounded,
+                  iconBg: const Color(0xFFE3F2FD),
+                  iconColor: Colors.blue.shade700,
+                  title: 'Batch Settlement',
+                  subtitle: 'Farmer ka final profit & recovery calculate karo',
+                  badgeText: 'Live Engine ⚡',
+                  badgeColor: const Color(0xFFE3F2FD),
+                  badgeTextColor: Colors.blue.shade800,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showLiveSettlementWizard();
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (_canViewSettingsPermissions) ...[
+                _premiumSheetTile(
+                  icon: Icons.admin_panel_settings_rounded,
+                  iconBg: const Color(0xFFE8F5E9),
+                  iconColor: primaryGreen,
+                  title: 'Settings & Permissions',
+                  subtitle:
+                      'Office/Field Manager ko kya dikhna, add ya edit karne ka access do',
+                  badgeText: 'Configure',
+                  badgeColor: Colors.green.shade50,
+                  badgeTextColor: primaryGreen,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (_canViewFeedRule) ...[
+                _premiumSheetTile(
+                  icon: Icons.grass_rounded,
+                  iconBg: const Color(0xFFFFF3E0),
+                  iconColor: Colors.orange.shade800,
+                  title: 'Feed Consumption Rule',
+                  subtitle:
+                      'Daily feed formula apni company ke hisaab se set karo',
+                  badgeText: 'Configure',
+                  badgeColor: Colors.orange.shade50,
+                  badgeTextColor: Colors.orange.shade800,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const FeedConsumptionRuleScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (_canViewWeightRule) ...[
+                _premiumSheetTile(
+                  icon: Icons.monitor_weight_rounded,
+                  iconBg: const Color(0xFFE3F2FD),
+                  iconColor: Colors.blue.shade800,
+                  title: 'Weight Growth Rule',
+                  subtitle: 'Automatic body weight ka growth curve set karo',
+                  badgeText: 'Configure',
+                  badgeColor: Colors.blue.shade50,
+                  badgeTextColor: Colors.blue.shade800,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const WeightGrowthRuleScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (_canViewPerfRule)
+                _premiumSheetTile(
+                  icon: Icons.traffic_rounded,
+                  iconBg: const Color(0xFFFFEBEE),
+                  iconColor: Colors.red.shade700,
+                  title: 'Performance Alert Rule',
+                  subtitle:
+                      'FCR aur Mortality ke Red/Green/Yellow limits set karo',
+                  badgeText: 'Configure',
+                  badgeColor: Colors.red.shade50,
+                  badgeTextColor: Colors.red.shade700,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            const PerformanceAlertRuleScreen(),
+                      ),
+                    );
+                  },
+                ),
+
               const SizedBox(height: 24),
               Container(
                 width: double.infinity,
@@ -5656,58 +5718,66 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(height: 12),
+                // ✅ EDIT 4: Conditional Quick Actions
                 Row(
                   children: [
-                    _quickAction(
-                      Icons.add_shopping_cart,
-                      'Purchase\nExpense',
-                      primaryGreen,
-                      onTap: () {
-                        Get.to(
-                          () => PurchaseExpenseScreen(
-                            onChicksTap: _showChicksPurchaseForm,
-                            onFeedTap: _showFeedPurchaseForm,
-                            onMedicineTap: _showMedicinePurchaseForm,
-                            onLabourTap: _showLabourExpenseForm,
-                            onOtherTap: _showOtherExpenseForm,
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 10),
-                    _quickAction(
-                      Icons.point_of_sale,
-                      '+ Sale',
-                      Colors.orange,
-                      onTap: () {
-                        Get.to(
-                          () => SalesScreen(
-                            onChicksSaleTap: () async {},
-                            onFeedSaleTap: () async {},
-                            onMedicineSaleTap: () async {},
-                            onChickenSaleTap: () async {},
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 10),
-                    _quickAction(
-                      Icons.bar_chart,
-                      'Reports',
-                      Colors.blue,
-                      onTap: () {
-                        Get.to(() => const ReportsScreen());
-                      },
-                    ),
-                    const SizedBox(width: 10),
-                    _quickAction(
-                      Icons.account_balance_wallet,
-                      'Accounts',
-                      Colors.purple,
-                      onTap: () {
-                        Get.to(() => const AccountsScreen());
-                      },
-                    ),
+                    if (_canViewPurchase) ...[
+                      _quickAction(
+                        Icons.add_shopping_cart,
+                        'Purchase\nExpense',
+                        primaryGreen,
+                        onTap: () {
+                          Get.to(
+                            () => PurchaseExpenseScreen(
+                              onChicksTap: _showChicksPurchaseForm,
+                              onFeedTap: _showFeedPurchaseForm,
+                              onMedicineTap: _showMedicinePurchaseForm,
+                              onLabourTap: _showLabourExpenseForm,
+                              onOtherTap: _showOtherExpenseForm,
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    if (_canViewSales) ...[
+                      _quickAction(
+                        Icons.point_of_sale,
+                        '+ Sale',
+                        Colors.orange,
+                        onTap: () {
+                          Get.to(
+                            () => SalesScreen(
+                              onChicksSaleTap: () async {},
+                              onFeedSaleTap: () async {},
+                              onMedicineSaleTap: () async {},
+                              onChickenSaleTap: () async {},
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    if (_canViewReportsQuick) ...[
+                      _quickAction(
+                        Icons.bar_chart,
+                        'Reports',
+                        Colors.blue,
+                        onTap: () {
+                          Get.to(() => const ReportsScreen());
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    if (_canViewAccountsQuick)
+                      _quickAction(
+                        Icons.account_balance_wallet,
+                        'Accounts',
+                        Colors.purple,
+                        onTap: () {
+                          Get.to(() => const AccountsScreen());
+                        },
+                      ),
                   ],
                 ),
               ],
@@ -5854,14 +5924,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.settings_suggest_rounded,
-                      color: Colors.white,
-                      size: 24,
+                  // ✅ EDIT 6: Conditionally show settings icon
+                  if (_canEditLiftingRange)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.settings_suggest_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                      onPressed: _showLiftingSettingsDialog,
                     ),
-                    onPressed: _showLiftingSettingsDialog,
-                  ),
                 ],
               ),
               const SizedBox(height: 4),

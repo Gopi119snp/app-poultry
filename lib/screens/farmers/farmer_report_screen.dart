@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import '../../services/company_store.dart';
 import '../home/purchase_expense_screen.dart' show ensureFeedStockMigrated;
+import '../../services/permission_service.dart';
 
 // =============================================================================
 // FARMER REPORT SCREEN — Main screen ab sirf "abhi jo batch khatam hua" (sabse
@@ -318,10 +319,24 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
   double _r1SmRateBonusShare = 10.0;
   bool _r1SmMedicineInProd = true;
 
+  bool _canViewAllReports = false;
+  bool _canViewDetailInfo = false;
+
   @override
   void initState() {
     super.initState();
     _loadData();
+    _loadReportPermissionFlags();
+  }
+
+  Future<void> _loadReportPermissionFlags() async {
+    final allReports = await PermissionService.can('farmerAllReports', 'view');
+    final detailInfo = await PermissionService.can('farmerDetailInfo', 'view');
+    if (!mounted) return;
+    setState(() {
+      _canViewAllReports = allReports;
+      _canViewDetailInfo = detailInfo;
+    });
   }
 
   Future<void> _loadData() async {
@@ -1050,7 +1065,7 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            buildLotCard(recent),
+            buildLotCard(recent, canViewDetailInfo: _canViewDetailInfo),
           ] else ...[
             Container(
               width: double.infinity,
@@ -1091,38 +1106,41 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
           const SizedBox(height: 20),
 
           // ✅ Sabhi Reports dekhne ka button — alag screen khulti hai
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AllBatchesReportScreen(
-                      farmerName: widget.farmer['name']?.toString() ?? 'Farmer',
-                      earnings: earnings,
+          if (_canViewAllReports)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AllBatchesReportScreen(
+                        farmerName:
+                            widget.farmer['name']?.toString() ?? 'Farmer',
+                        earnings: earnings,
+                        canViewDetailInfo: _canViewDetailInfo,
+                      ),
                     ),
+                  );
+                },
+                icon: const Icon(Icons.bar_chart_rounded, size: 20),
+                label: Text(
+                  'Sabhi Reports Dekho (${earnings.length} Lots)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
                   ),
-                );
-              },
-              icon: const Icon(Icons.bar_chart_rounded, size: 20),
-              label: Text(
-                'Sabhi Reports Dekho (${earnings.length} Lots)',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
                 ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryGreen,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryGreen,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -1221,11 +1239,13 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
 class AllBatchesReportScreen extends StatefulWidget {
   final String farmerName;
   final List<_LotEarning> earnings;
+  final bool canViewDetailInfo;
 
   const AllBatchesReportScreen({
     super.key,
     required this.farmerName,
     required this.earnings,
+    this.canViewDetailInfo = false,
   });
 
   @override
@@ -1308,7 +1328,10 @@ class _AllBatchesReportScreenState extends State<AllBatchesReportScreen> {
                           lastNBatches: _lastNBatches,
                         );
                       }
-                      return buildLotCard(earnings[index]);
+                      return buildLotCard(
+                        earnings[index],
+                        canViewDetailInfo: widget.canViewDetailInfo,
+                      );
                     },
                   ),
           ),
@@ -1469,7 +1492,7 @@ Widget kpiChip(String label, String value, Color bg, {String? emoji}) {
 }
 
 // ── Lot Card ──────────────────────────────────────────────────────────────
-Widget buildLotCard(_LotEarning e) {
+Widget buildLotCard(_LotEarning e, {bool canViewDetailInfo = false}) {
   final bool isCompleted = e.status == 'COMPLETED' || e.status == 'CLOSED';
   final bool hasData = e.totalSaleMoney > 0;
 
@@ -1610,48 +1633,48 @@ Widget buildLotCard(_LotEarning e) {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
             child: buildBreakdownTable(e),
           ),
-
           // Detail Information button — Chicks/Feed/Medicine ka alag-alag
           // line/area chart (Company Rate vs Farmer Rate) dikhane wali
           // screen kholta hai.
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Builder(
-              builder: (context) => SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            BatchDetailInformationScreen(batchId: e.batchId),
-                      ),
-                    );
-                  },
-                  icon: const Icon(
-                    Icons.query_stats_rounded,
-                    size: 18,
-                    color: primaryGreen,
-                  ),
-                  label: const Text(
-                    'Detail Information Dekho',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
+          if (canViewDetailInfo)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Builder(
+                builder: (context) => SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              BatchDetailInformationScreen(batchId: e.batchId),
+                        ),
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.query_stats_rounded,
+                      size: 18,
                       color: primaryGreen,
                     ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: primaryGreen),
-                    padding: const EdgeInsets.symmetric(vertical: 11),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                    label: const Text(
+                      'Detail Information Dekho',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: primaryGreen,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: primaryGreen),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
         ],
       ],
     ),

@@ -137,11 +137,24 @@ class PermissionService {
         ),
       ],
     ),
-    PermissionNode(id: 'feedStock', label: 'Feed Inventory', emoji: '🌾'),
     PermissionNode(
-      id: 'medicineStock',
-      label: 'Medicine Inventory',
-      emoji: '💉',
+      id: 'stockManagement',
+      label: 'Stock Management',
+      emoji: '📦',
+      isLeaf: false,
+      hasPermission: true,
+      children: [
+        PermissionNode(
+          id: 'feedStock',
+          label: 'Feed Stock Overview',
+          emoji: '🌾',
+        ),
+        PermissionNode(
+          id: 'medicineStock',
+          label: 'Medicine Stock Overview',
+          emoji: '💉',
+        ),
+      ],
     ),
     PermissionNode(
       id: 'purchaseExpense',
@@ -256,8 +269,60 @@ class PermissionService {
         ),
       ],
     ),
-    PermissionNode(id: 'accounts', label: 'Accounts', emoji: '🧾'),
+    PermissionNode(
+      id: 'accounts',
+      label: 'Accounts',
+      emoji: '🧾',
+      isLeaf: false,
+      hasPermission: true,
+      children: [
+        PermissionNode(id: 'accountsOverview', label: 'Overview', emoji: '📊'),
+        PermissionNode(id: 'accountsUdhaar', label: 'Udhaar', emoji: '⏳'),
+        PermissionNode(id: 'accountsKharcha', label: 'Kharcha', emoji: '💸'),
+        PermissionNode(id: 'accountsKharida', label: 'Kharida', emoji: '🛒'),
+        PermissionNode(id: 'accountsSales', label: 'Sales', emoji: '🎁'),
+      ],
+    ),
     PermissionNode(id: 'settlement', label: 'Settlement Engine', emoji: '⚖️'),
+    PermissionNode(
+      id: 'lifting',
+      label: 'Lifting',
+      emoji: '🚜',
+      isLeaf: false,
+      hasPermission: true,
+      children: [
+        PermissionNode(
+          id: 'liftingRangeSet',
+          label: 'Range Set Karna',
+          emoji: '⚙️',
+        ),
+        PermissionNode(
+          id: 'liftingListView',
+          label: 'Lifting List Dekhna',
+          emoji: '📋',
+        ),
+      ],
+    ),
+    PermissionNode(
+      id: 'feedConsumptionRule',
+      label: 'Feed Consumption Rule',
+      emoji: '🌿',
+    ),
+    PermissionNode(
+      id: 'weightGrowthRule',
+      label: 'Weight Growth Rule',
+      emoji: '📈',
+    ),
+    PermissionNode(
+      id: 'performanceAlertRule',
+      label: 'Performance Alert Rule',
+      emoji: '🚦',
+    ),
+    PermissionNode(
+      id: 'settingsPermissions',
+      label: 'Settings & Permissions',
+      emoji: '🔐',
+    ),
   ];
 
   /// Sirf leaf modules ki flat list — actual permission isi par store hoti hai.

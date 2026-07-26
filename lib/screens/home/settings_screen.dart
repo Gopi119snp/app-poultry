@@ -207,16 +207,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  children: [
-                    _permissionHeaderRow(),
-                    ..._buildNodes(
-                      PermissionService.tree,
-                      _roleDefaults[role]!,
-                      (id, action, val) =>
-                          _toggleRoleDefault(role, id, action, val),
-                      (id, val) => _setAllRoleDefaultForModule(role, id, val),
-                    ),
-                  ],
+                  children: _buildNodes(
+                    PermissionService.tree,
+                    _roleDefaults[role]!,
+                    (id, action, val) =>
+                        _toggleRoleDefault(role, id, action, val),
+                    (id, val) => _setAllRoleDefaultForModule(role, id, val),
+                  ),
                 ),
               ),
             ),
@@ -275,7 +272,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: Padding(
-                padding: const EdgeInsets.only(right: 10),
+                padding: const EdgeInsets.only(right: 10, top: 6),
                 child: TextButton.icon(
                   onPressed: () =>
                       _resetPersonToDefault(person.phone, person.role),
@@ -290,7 +287,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
-            _permissionHeaderRow(),
             ..._buildNodes(
               PermissionService.tree,
               matrix,
@@ -304,7 +300,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// ⭐ Recursive builder — tree ke har node ko render karta hai.
-  /// Leaf → View/Add/Edit/Delete row. Group → nested ExpansionTile.
+  /// Leaf → detailed permission card. Group → nested ExpansionTile.
   List<Widget> _buildNodes(
     List<PermissionNode> nodes,
     Map<String, Map<String, bool>> matrix,
@@ -317,8 +313,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (node.isLeaf) {
         widgets.add(
           Padding(
-            padding: EdgeInsets.only(left: depth * 14.0),
-            child: _permissionModuleRow(
+            padding: EdgeInsets.only(
+              left: depth * 10.0,
+              right: 4,
+              bottom: 10,
+              top: 2,
+            ),
+            child: _permissionModuleCard(
               node: node,
               perms:
                   matrix[node.id] ??
@@ -332,16 +333,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } else {
         final List<Widget> childWidgets = [];
 
-        // ⭐ Group ka khud ka "Overall" permission row (agar hasPermission true hai)
         if (node.hasPermission) {
           childWidgets.add(
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: _permissionModuleRow(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10, top: 2),
+              child: _permissionModuleCard(
                 node: PermissionNode(
                   id: node.id,
                   label: 'Overall Access (Sabhi)',
@@ -353,6 +349,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onAllOn: () => onSetAll(node.id, true),
                 onAllOff: () => onSetAll(node.id, false),
                 onToggle: (action, val) => onToggle(node.id, action, val),
+                highlight: true,
               ),
             ),
           );
@@ -370,11 +367,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         widgets.add(
           Padding(
-            padding: EdgeInsets.only(left: depth * 10.0, bottom: 6, top: 2),
+            padding: EdgeInsets.only(left: depth * 10.0, bottom: 8, top: 2),
             child: Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.black12),
               ),
               child: Theme(
@@ -382,20 +379,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context,
                 ).copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+                  tilePadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 2,
+                  ),
                   leading: Text(
                     node.emoji,
-                    style: const TextStyle(fontSize: 15),
+                    style: const TextStyle(fontSize: 17),
                   ),
                   title: Text(
                     node.label,
                     style: TextStyle(
-                      fontSize: depth == 0 ? 12.5 : 12,
+                      fontSize: depth == 0 ? 13.5 : 13,
                       fontWeight: FontWeight.bold,
                       color: Colors.black87,
                     ),
                   ),
-                  childrenPadding: const EdgeInsets.only(bottom: 6),
+                  childrenPadding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
                   children: childWidgets,
                 ),
               ),
@@ -407,128 +407,156 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return widgets;
   }
 
-  Widget _permissionHeaderRow() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-      child: Row(
-        children: [
-          const Expanded(flex: 3, child: SizedBox()),
-          ...['V', 'A', 'E', 'D'].map(
-            (l) => Container(
-              width: 30,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              alignment: Alignment.center,
-              child: Text(
-                l,
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _permissionModuleRow({
+  /// ⭐ Design 1 — detailed card: emoji+label header, phir har action apni
+  /// row me label + ON/OFF pill ke saath.
+  Widget _permissionModuleCard({
     required PermissionNode node,
     required Map<String, bool> perms,
     required VoidCallback onAllOn,
     required VoidCallback onAllOff,
     required void Function(String action, bool value) onToggle,
+    bool highlight = false,
   }) {
-    final bool allOn = PermissionService.actions.every((a) => perms[a] == true);
-    final bool allOff = PermissionService.actions.every(
-      (a) => perms[a] != true,
-    );
-
-    return InkWell(
-      onTap: () => allOn ? onAllOff() : onAllOn(),
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        margin: const EdgeInsets.only(bottom: 2),
-        decoration: BoxDecoration(
-          color: allOn
-              ? primaryGreen.withOpacity(0.06)
-              : (allOff ? Colors.transparent : Colors.orange.withOpacity(0.05)),
-          borderRadius: BorderRadius.circular(8),
+    return Container(
+      decoration: BoxDecoration(
+        color: highlight ? Colors.blue.shade50 : const Color(0xFFFAFAFA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: highlight ? Colors.blue.shade200 : Colors.black12,
         ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header: emoji + label + All ON/OFF ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+            child: Row(
+              children: [
+                Text(node.emoji, style: const TextStyle(fontSize: 16)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    node.label,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: onAllOn,
+                  child: const Text('All ON', style: TextStyle(fontSize: 10)),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: onAllOff,
+                  child: const Text('All OFF', style: TextStyle(fontSize: 10)),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Colors.black12),
+          // ── Action rows ──
+          ...PermissionService.actions.map((action) {
+            final val = perms[action] ?? false;
+            final isLast = action == PermissionService.actions.last;
+            return Column(
+              children: [
+                _actionRow(
+                  icon: _actionIcon(action),
+                  label: _actionLabel(action),
+                  value: val,
+                  onTap: () => onToggle(action, !val),
+                ),
+                if (!isLast) const Divider(height: 1, color: Color(0xFFF0F0F0)),
+              ],
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _actionRow({
+    required IconData icon,
+    required String label,
+    required bool value,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         child: Row(
           children: [
-            Text(node.emoji, style: const TextStyle(fontSize: 14)),
-            const SizedBox(width: 6),
+            Icon(icon, size: 16, color: Colors.grey.shade600),
+            const SizedBox(width: 8),
             Expanded(
-              flex: 3,
               child: Text(
-                node.label,
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                ),
-                overflow: TextOverflow.ellipsis,
+                label,
+                style: const TextStyle(fontSize: 12.5, color: Colors.black87),
               ),
             ),
-            ...PermissionService.actions.map((action) {
-              final val = perms[action] ?? false;
-              return _miniActionToggle(
-                letter: _actionLetter(action),
-                active: val,
-                onTap: () => onToggle(action, !val),
-              );
-            }),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: value ? primaryGreen : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                value ? 'ON' : 'OFF',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
+                  color: value ? Colors.white : Colors.grey.shade600,
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _miniActionToggle({
-    required String letter,
-    required bool active,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 30,
-        height: 30,
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: active ? primaryGreen : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: active ? primaryGreen : Colors.grey.shade300,
-          ),
-        ),
-        child: Text(
-          letter,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            color: active ? Colors.white : Colors.grey.shade500,
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _actionLetter(String action) {
+  IconData _actionIcon(String action) {
     switch (action) {
       case 'view':
-        return 'V';
+        return Icons.visibility_rounded;
       case 'add':
-        return 'A';
+        return Icons.add_circle_outline_rounded;
       case 'edit':
-        return 'E';
+        return Icons.edit_rounded;
       case 'delete':
-        return 'D';
+        return Icons.delete_outline_rounded;
       default:
-        return '?';
+        return Icons.help_outline_rounded;
+    }
+  }
+
+  String _actionLabel(String action) {
+    switch (action) {
+      case 'view':
+        return 'View';
+      case 'add':
+        return 'Add';
+      case 'edit':
+        return 'Edit';
+      case 'delete':
+        return 'Delete';
+      default:
+        return action;
     }
   }
 }
