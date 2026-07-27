@@ -1,3 +1,4 @@
+import 'dart:async'; // ✅ FIX — naya import, StreamController ke liye
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -20,6 +21,15 @@ class CompanyStore {
   static final CompanyStore instance = CompanyStore._();
 
   static const _dataDocPath = 'data/main';
+  // ✅ FIX — real-time change notification stream. Jab bhi cloud se naya
+  // data aaye (kisi bhi device se), ye event fire karega taaki saari open
+  // screens turant apna data refresh kar sakein.
+  final StreamController<void> _changeController =
+      StreamController<void>.broadcast();
+  Stream<void> get onDataChanged => _changeController.stream;
+
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _dataSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
 
   /// String keys jo Firestore data/main document mein sync hote hain.
   static const stringKeys = {
@@ -73,10 +83,14 @@ class CompanyStore {
 
   // ── PUBLIC API ────────────────────────────────────────────────────────────
 
+  // ✅ FIX — pehle yahan is method ka ek purana duplicate version bhi tha
+  // (bina _startRealtimeListeners call ke). Wo duplicate hata diya gaya hai,
+  // ab sirf ye ek hi (updated) version hai jo realtime listener bhi start karta hai.
   Future<void> activateCompany(String companyId) async {
     _activeCompanyId = companyId;
     _hydrated = false;
     await hydrateFromCloud(companyId);
+    _startRealtimeListeners(companyId); // ✅ FIX
   }
 
   Future<void> hydrateFromCloud(String companyId) async {
@@ -102,11 +116,59 @@ class CompanyStore {
       }
 
       _hydrated = true;
+      _startRealtimeListeners(companyId); // ✅ FIX — pehli baar hydrate
+      // hote hi bhi listener start ho jaye
       debugPrint('[CompanyStore] Hydrated company $companyId from Firestore.');
     } catch (e, st) {
       debugPrint('[CompanyStore] hydrate failed: $e\n$st');
       _hydrated = true; // local cache use karo
     }
+  }
+
+  // ✅ FIX — naya method: Firestore ka real-time listener. Jab bhi is
+  // company ka data/main document kahi se bhi update hota hai, Firestore
+  // khud turant is listener ko naya snapshot bhej deta hai.
+  void _startRealtimeListeners(String companyId) {
+    if (!FirebaseBootstrap.isReady) return;
+
+    _dataSub?.cancel();
+    _profileSub?.cancel();
+
+    _dataSub = _dataRef(companyId).snapshots().listen(
+      (snap) async {
+        if (!snap.exists) return;
+        final data = snap.data() ?? {};
+        final prefs = await SharedPreferences.getInstance();
+        await _writeDataDocToPrefs(prefs, data);
+        _changeController.add(null);
+      },
+      onError: (e) {
+        debugPrint('[CompanyStore] realtime data listener error: $e');
+      },
+    );
+
+    _profileSub = _companyRef(companyId).snapshots().listen(
+      (snap) async {
+        if (!snap.exists) return;
+        final profile = snap.data() ?? {};
+        final prefs = await SharedPreferences.getInstance();
+        await _writeProfileToPrefs(prefs, profile);
+        _changeController.add(null);
+      },
+      onError: (e) {
+        debugPrint('[CompanyStore] realtime profile listener error: $e');
+      },
+    );
+  }
+
+  // ✅ FIX — logout/company-switch ke waqt listener band karo
+  void stopRealtimeListeners() {
+    _dataSub?.cancel();
+    _profileSub?.cancel();
+    _dataSub = null;
+    _profileSub = null;
+    _hydrated = false;
+    _activeCompanyId = null;
   }
 
   /// Nayi company registration — empty data doc + profile.

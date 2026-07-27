@@ -66,6 +66,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   List<Map<String, dynamic>> _recentActivitiesList = [];
   Timer? _instantRefreshTimer;
+  StreamSubscription<void>?
+  _dataChangeSub; // ✅ FIX — real-time cloud sync listener
   String _selectedActivityFilter = 'Default';
 
   // ── 🚜 SAAS SELECTION STATE TRACKING VARIABLES ─────────────────────────────
@@ -111,13 +113,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _loadAppliedRuleState();
     _loadPermissionFlags(); // ✅ EDIT 3
 
-    _instantRefreshTimer = Timer.periodic(
-      const Duration(seconds: 15), // ⬅️ increased interval for performance
-      (timer) {
-        _loadKpiData();
-        _loadStockData();
-      },
-    );
+    // ✅ FIX — Real-time cloud listener: jaise hi kisi bhi device se
+    // (Owner, Office Manager, Field Manager) koi bhi data Firestore mein
+    // change hota hai, ye turant fire hota hai — 15-second polling ka
+    // wait nahi karna padta.
+    _dataChangeSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadKpiData();
+      _loadStockData();
+      _loadAppliedRuleState();
+    });
+
+    // Backup/fallback polling — real-time listener fail ho ya network
+    // reconnect ke baad catch-up ke liye rakha hai. Interval badha diya
+    // hai kyunki ab primary sync real-time listener se ho raha hai.
+    _instantRefreshTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      _loadKpiData();
+      _loadStockData();
+    });
 
     _chickBounceController = AnimationController(
       vsync: this,
@@ -165,6 +178,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _instantRefreshTimer?.cancel();
+    _dataChangeSub?.cancel(); // ✅ FIX
     _chickBounceController.dispose();
     _dustController.dispose();
     super.dispose();
