@@ -117,7 +117,9 @@ class FarmerProfitLossScreen extends StatefulWidget {
   State<FarmerProfitLossScreen> createState() => _FarmerProfitLossScreenState();
 }
 
-class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
+// ✅ FIX 1: Added CloudSyncMixin
+class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
+    with CloudSyncMixin {
   bool _isLoading = true;
   String _granularity = 'Weekly';
 
@@ -153,6 +155,19 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
   @override
   void initState() {
     super.initState();
+    _loadData();
+    startCloudSync(); // ✅ FIX 2
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX 4
+    super.dispose();
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX 3
     _loadData();
   }
 
@@ -456,7 +471,7 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen> {
           entries,
           fallback: latestAvgWeight,
         );
-        final isBigSize = sizeClassificationWeight > 1.2;
+        final bool isBigSize = sizeClassificationWeight > 1.2;
 
         final chicksRateFallback = isBigSize
             ? _r1BigChicksRate

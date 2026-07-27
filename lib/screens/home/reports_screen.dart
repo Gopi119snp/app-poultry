@@ -270,8 +270,10 @@ class OperationalExpenseReportScreen extends StatefulWidget {
       _OperationalExpenseReportScreenState();
 }
 
+// ✅ FIX 1: Added CloudSyncMixin
 class _OperationalExpenseReportScreenState
-    extends State<OperationalExpenseReportScreen> {
+    extends State<OperationalExpenseReportScreen>
+    with CloudSyncMixin {
   bool _isLoading = true;
 
   int? _appliedRuleId;
@@ -295,6 +297,19 @@ class _OperationalExpenseReportScreenState
       start: DateTime(now.year, now.month, 1),
       end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
     );
+    _loadData();
+    startCloudSync(); // ✅ FIX 2
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX 4
+    super.dispose();
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX 3
     _loadData();
   }
 

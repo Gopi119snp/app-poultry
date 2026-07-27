@@ -19,7 +19,8 @@ class FarmerDashboard extends StatefulWidget {
   State<FarmerDashboard> createState() => _FarmerDashboardState();
 }
 
-class _FarmerDashboardState extends State<FarmerDashboard> {
+// ✅ FIX 1: Added CloudSyncMixin
+class _FarmerDashboardState extends State<FarmerDashboard> with CloudSyncMixin {
   int _currentIndex = 0;
   Map<String, dynamic>? _myFarmerData;
   bool _loading = true;
@@ -27,6 +28,19 @@ class _FarmerDashboardState extends State<FarmerDashboard> {
   @override
   void initState() {
     super.initState();
+    _loadMyData();
+    startCloudSync(); // ✅ FIX 2
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX 4
+    super.dispose();
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX 3
     _loadMyData();
   }
 

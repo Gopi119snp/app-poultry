@@ -75,7 +75,9 @@ class _DayRow {
   });
 }
 
-class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
+// ✅ FIX: Added CloudSyncMixin
+class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
+    with CloudSyncMixin {
   static const Color primaryGreen = Color(0xFF1B5E20);
   static const Color accentGreen = Color(0xFF43A047);
   static const Color lightGreen = Color(0xFFE8F5E9);
@@ -110,6 +112,49 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen> {
     super.initState();
     _localDailyEntries = List<dynamic>.from(widget.dailyEntries);
     _loadAndCompute();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
+  }
+
+  // ✅ FIX — is screen ko dailyEntries widget-parameter se milte hain, isliye
+  // sirf _loadAndCompute() dobara call karne se naya data nahi aayega. Pehle
+  // is batch ka latest dailyEntries cloud se refresh karo, phir rows recompute
+  // karo.
+  @override
+  Future<void> onCloudDataChanged() async {
+    try {
+      final farmersJson = await CompanyStore.instance.getString(
+        'companyFarmers',
+      );
+      if (farmersJson == null) return;
+      final List<dynamic> farmersList = jsonDecode(farmersJson);
+      for (final farmerItem in farmersList) {
+        if (farmerItem is! Map) continue;
+        if (farmerItem['id'] != widget.farmerId) continue;
+        final batches = farmerItem['batches'];
+        if (batches is! List) continue;
+        for (final batchItem in batches) {
+          if (batchItem is! Map) continue;
+          if (batchItem['id'] != widget.batchData['id']) continue;
+          final freshEntries = batchItem['dailyEntries'];
+          if (freshEntries is List && mounted) {
+            setState(() {
+              _localDailyEntries = List<dynamic>.from(freshEntries);
+            });
+            _computeRows();
+            if (mounted) setState(() {});
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('DailyUpdateList: cloud refresh failed: $e');
+    }
   }
 
   Future<void> _loadAndCompute() async {
