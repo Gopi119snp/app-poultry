@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_bootstrap.dart';
@@ -457,5 +458,24 @@ class CompanyStore {
   }) {
     final p = _normalizePhone(phone);
     return '$companyId.$p@poultrypro.app'.toLowerCase();
+  }
+}
+
+// ✅ FIX — Reusable mixin: koi bhi State class jo real-time cloud sync
+// chahti hai, wo baar-baar StreamSubscription boilerplate likhne ke bajaye
+// sirf ye mixin use kare aur "onCloudDataChanged()" override kare.
+mixin CloudSyncMixin<T extends StatefulWidget> on State<T> {
+  StreamSubscription<void>? _cloudSyncSub;
+
+  void onCloudDataChanged();
+
+  void startCloudSync() {
+    _cloudSyncSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (mounted) onCloudDataChanged();
+    });
+  }
+
+  void stopCloudSync() {
+    _cloudSyncSub?.cancel();
   }
 }

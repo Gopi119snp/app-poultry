@@ -2378,7 +2378,8 @@ class ChicksHistoryScreen extends StatefulWidget {
   State<ChicksHistoryScreen> createState() => _ChicksHistoryScreenState();
 }
 
-class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
+class _ChicksHistoryScreenState extends State<ChicksHistoryScreen>
+    with CloudSyncMixin {
   List<ChicksPurchase> _entries = [];
   bool _isLoading = true;
   // ✅ EDIT 4: permission flags
@@ -2390,6 +2391,19 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen> {
     super.initState();
     _loadHistory();
     _loadPermissions();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   // ✅ EDIT 4: load permissions
@@ -3213,7 +3227,8 @@ class FeedHistoryScreen extends StatefulWidget {
   State<FeedHistoryScreen> createState() => _FeedHistoryScreenState();
 }
 
-class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
+class _FeedHistoryScreenState extends State<FeedHistoryScreen>
+    with CloudSyncMixin {
   List<Map<String, dynamic>> _feedStock = [];
   bool _isLoading = true;
   bool _changed = false;
@@ -3226,6 +3241,19 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen> {
     super.initState();
     _load();
     _loadPermissions();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _loadPermissions() async {
@@ -4267,7 +4295,8 @@ class FeedPurchaseHistoryScreen extends StatefulWidget {
       _FeedPurchaseHistoryScreenState();
 }
 
-class _FeedPurchaseHistoryScreenState extends State<FeedPurchaseHistoryScreen> {
+class _FeedPurchaseHistoryScreenState extends State<FeedPurchaseHistoryScreen>
+    with CloudSyncMixin {
   List<Map<String, dynamic>> _history = [];
   String _name = '';
   bool _isLoading = true;
@@ -4276,6 +4305,19 @@ class _FeedPurchaseHistoryScreenState extends State<FeedPurchaseHistoryScreen> {
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -4416,7 +4458,8 @@ class FeedFarmerAllocationsListScreen extends StatefulWidget {
 }
 
 class _FeedFarmerAllocationsListScreenState
-    extends State<FeedFarmerAllocationsListScreen> {
+    extends State<FeedFarmerAllocationsListScreen>
+    with CloudSyncMixin {
   List<Map<String, dynamic>> _allocs = [];
   String _name = '';
   bool _isLoading = true;
@@ -4426,6 +4469,19 @@ class _FeedFarmerAllocationsListScreenState
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -4596,7 +4652,8 @@ class FeedPrivateBuyersListScreen extends StatefulWidget {
 }
 
 class _FeedPrivateBuyersListScreenState
-    extends State<FeedPrivateBuyersListScreen> {
+    extends State<FeedPrivateBuyersListScreen>
+    with CloudSyncMixin {
   List<Map<String, dynamic>> _sales = [];
   String _name = '';
   bool _isLoading = true;
@@ -4605,6 +4662,19 @@ class _FeedPrivateBuyersListScreenState
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -5213,7 +5283,8 @@ class CategoryHistoryScreen extends StatefulWidget {
   State<CategoryHistoryScreen> createState() => _CategoryHistoryScreenState();
 }
 
-class _CategoryHistoryScreenState extends State<CategoryHistoryScreen> {
+class _CategoryHistoryScreenState extends State<CategoryHistoryScreen>
+    with CloudSyncMixin {
   List<dynamic> _entries = [];
   bool _isLoading = true;
 
@@ -5221,6 +5292,19 @@ class _CategoryHistoryScreenState extends State<CategoryHistoryScreen> {
   void initState() {
     super.initState();
     _loadHistory();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _loadHistory() async {
@@ -5703,7 +5787,8 @@ class MedicineHistoryScreen extends StatefulWidget {
   State<MedicineHistoryScreen> createState() => _MedicineHistoryScreenState();
 }
 
-class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
+class _MedicineHistoryScreenState extends State<MedicineHistoryScreen>
+    with CloudSyncMixin {
   List<Map<String, dynamic>> _medicines = [];
   Map<String, double> _soldBaseQty = {};
   Map<String, double> _availBaseQty = {}; // mId → available base qty
@@ -5719,6 +5804,19 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen> {
     super.initState();
     _loadData();
     _loadPermissions();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _loadPermissions() async {
@@ -6422,7 +6520,8 @@ class MedicineFarmerAllocationsListScreen extends StatefulWidget {
 }
 
 class _MedicineFarmerAllocationsListScreenState
-    extends State<MedicineFarmerAllocationsListScreen> {
+    extends State<MedicineFarmerAllocationsListScreen>
+    with CloudSyncMixin {
   List<Map<String, dynamic>> _allocs = [];
   bool _isLoading = true;
   bool _changed = false; // detail screen se koi edit/delete hua ho to
@@ -6431,6 +6530,19 @@ class _MedicineFarmerAllocationsListScreenState
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -6620,7 +6732,8 @@ class MedicinePrivateBuyersListScreen extends StatefulWidget {
 }
 
 class _MedicinePrivateBuyersListScreenState
-    extends State<MedicinePrivateBuyersListScreen> {
+    extends State<MedicinePrivateBuyersListScreen>
+    with CloudSyncMixin {
   List<Map<String, dynamic>> _rows =
       []; // {saleId, buyerName, mobile, date, qty, unit, rate}
   bool _isLoading = true;
@@ -6629,6 +6742,19 @@ class _MedicinePrivateBuyersListScreenState
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -6790,7 +6916,8 @@ class MedicinePrivateSaleDetailScreen extends StatefulWidget {
 }
 
 class _MedicinePrivateSaleDetailScreenState
-    extends State<MedicinePrivateSaleDetailScreen> {
+    extends State<MedicinePrivateSaleDetailScreen>
+    with CloudSyncMixin {
   Map<String, dynamic>? _sale;
   Map<String, dynamic>? _item;
   bool _isLoading = true;
@@ -6799,6 +6926,19 @@ class _MedicinePrivateSaleDetailScreenState
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -7464,7 +7604,8 @@ class MedicinePurchaseHistoryScreen extends StatefulWidget {
 }
 
 class _MedicinePurchaseHistoryScreenState
-    extends State<MedicinePurchaseHistoryScreen> {
+    extends State<MedicinePurchaseHistoryScreen>
+    with CloudSyncMixin {
   List<Map<String, dynamic>> _history = [];
   bool _isLoading = true;
 
@@ -7472,6 +7613,19 @@ class _MedicinePurchaseHistoryScreenState
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {

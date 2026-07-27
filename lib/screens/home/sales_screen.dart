@@ -267,7 +267,7 @@ class ChicksSalesView extends StatefulWidget {
   State<ChicksSalesView> createState() => _ChicksSalesViewState();
 }
 
-class _ChicksSalesViewState extends State<ChicksSalesView> {
+class _ChicksSalesViewState extends State<ChicksSalesView> with CloudSyncMixin {
   List<Map<String, dynamic>> _purchaseEntries = [];
   bool _isLoading = true;
 
@@ -275,6 +275,19 @@ class _ChicksSalesViewState extends State<ChicksSalesView> {
   void initState() {
     super.initState();
     _loadData();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -1209,7 +1222,8 @@ class FeedSalesHistoryScreen extends StatefulWidget {
   State<FeedSalesHistoryScreen> createState() => _FeedSalesHistoryScreenState();
 }
 
-class _FeedSalesHistoryScreenState extends State<FeedSalesHistoryScreen> {
+class _FeedSalesHistoryScreenState extends State<FeedSalesHistoryScreen>
+    with CloudSyncMixin {
   List<Map<String, dynamic>> _feedSales = [];
   bool _isLoading = true;
   bool _canAdd = false; // ✏️ EDIT 4
@@ -1219,6 +1233,19 @@ class _FeedSalesHistoryScreenState extends State<FeedSalesHistoryScreen> {
     super.initState();
     _loadSales();
     _loadPermission(); // ✏️ EDIT 4
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _loadSales();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _loadPermission() async {
@@ -2817,8 +2844,8 @@ class MedicineSalesHistoryScreen extends StatefulWidget {
       _MedicineSalesHistoryScreenState();
 }
 
-class _MedicineSalesHistoryScreenState
-    extends State<MedicineSalesHistoryScreen> {
+class _MedicineSalesHistoryScreenState extends State<MedicineSalesHistoryScreen>
+    with CloudSyncMixin {
   List<Map<String, dynamic>> _sales = [];
   bool _loading = true;
   bool _canAdd = false; // ✏️ EDIT 5
@@ -2828,6 +2855,19 @@ class _MedicineSalesHistoryScreenState
     super.initState();
     _load();
     _loadPermission(); // ✏️ EDIT 5
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _loadPermission() async {

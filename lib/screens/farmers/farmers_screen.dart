@@ -5,6 +5,7 @@ import 'add_farmer_screen.dart';
 import 'farmer_profile_screen.dart';
 import '../../services/company_store.dart';
 import '../../services/permission_service.dart'; // ✏️ EDIT 1
+import 'dart:async'; // ✅ FIX — StreamSubscription ke liye
 
 class FarmersScreen extends StatefulWidget {
   final VoidCallback? onFarmerAdded;
@@ -18,6 +19,8 @@ class FarmersScreen extends StatefulWidget {
 class _FarmersScreenState extends State<FarmersScreen> {
   static const Color primaryGreen = Color(0xFF1B5E20);
   List<Map<String, dynamic>> _farmers = [];
+  StreamSubscription<void>?
+  _dataChangeSub; // ✅ FIX — real-time cloud sync listener
 
   // ── 🔐 PERMISSION FLAGS ─────────────────────────────────────────────────  // ✏️ EDIT 2
   bool _canAddFarmer = false;
@@ -26,8 +29,22 @@ class _FarmersScreenState extends State<FarmersScreen> {
   @override
   void initState() {
     super.initState();
-    _loadFarmers();
-    _loadPermissionFlags(); // ✏️ EDIT 2
+    _loadFarmers(); // ← ye jo bhi actual method-name hai tumhari file mein
+
+    // ✅ FIX — Real-time cloud listener: jaise hi kisi bhi device se
+    // (naya farmer add hua, edit hua, ya delete hua) Firestore mein
+    // change hota hai, ye turant fire hoga.
+    _dataChangeSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadFarmers(); // ← same method yahan bhi call karo
+      _loadPermissionFlags();
+    });
+  }
+
+  @override
+  void dispose() {
+    _dataChangeSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadPermissionFlags() async {

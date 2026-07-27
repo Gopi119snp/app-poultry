@@ -110,6 +110,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   int _minLiftingDays = 23;
   int _maxLiftingDays = 60;
   DateTime _selectedDate = DateTime.now();
+  StreamSubscription<void>? _dataChangeSub;
 
   // ── 🔐 PERMISSION FLAGS ─────────────────────────────────────────────────
   bool _canAddFeedEntry = false;
@@ -199,7 +200,18 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     _dateController.text = _formatDate(DateTime.now());
     _loadFreshBatchData();
     _initDownloadNotifications();
-    _loadPermissionFlags();
+
+    // ✅ FIX — Real-time cloud listener: jaise hi kisi bhi device se
+    // (Owner, Office Manager, Field Manager) is batch ka koi bhi data
+    // Firestore mein change hota hai, ye turant fire hota hai — koi
+    // manual refresh/wait nahi karna padta. Ye batch_detail_screen mein
+    // sabse zaroori hai kyunki yahi screen hai jaha managers Flock/Sale/
+    // Medicine entries karte hain.
+    _dataChangeSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadFreshBatchData();
+      _loadPermissionFlags();
+    });
   }
 
   Future<void> _loadPermissionFlags() async {
@@ -586,6 +598,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
   @override
   void dispose() {
+    _dataChangeSub?.cancel();
     _weightController.dispose();
     _mortalityController.dispose();
     _feedStarterBagsController.dispose();
