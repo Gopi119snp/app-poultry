@@ -72,7 +72,8 @@ class _OMHomeTab extends StatefulWidget {
   State<_OMHomeTab> createState() => _OMHomeTabState();
 }
 
-class _OMHomeTabState extends State<_OMHomeTab> {
+// ✅ FIXED: Added CloudSyncMixin and lifecycle methods
+class _OMHomeTabState extends State<_OMHomeTab> with CloudSyncMixin {
   List<Map<String, dynamic>> _farmers = [];
   Map<String, double> _feedStock = {};
   List<Map<String, dynamic>> _medicines = [];
@@ -82,6 +83,18 @@ class _OMHomeTabState extends State<_OMHomeTab> {
   void initState() {
     super.initState();
     _loadData();
+    startCloudSync(); // ✅ Real‑time sync started
+  }
+
+  @override
+  void onCloudDataChanged() {
+    _loadData(); // ✅ Refresh data when cloud updates
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ Clean up
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -267,7 +280,8 @@ class _OMFarmersTab extends StatefulWidget {
   State<_OMFarmersTab> createState() => _OMFarmersTabState();
 }
 
-class _OMFarmersTabState extends State<_OMFarmersTab> {
+// ✅ FIXED: Added CloudSyncMixin and lifecycle methods
+class _OMFarmersTabState extends State<_OMFarmersTab> with CloudSyncMixin {
   List<Map<String, dynamic>> _farmers = [];
   bool _loading = true;
 
@@ -275,6 +289,18 @@ class _OMFarmersTabState extends State<_OMFarmersTab> {
   void initState() {
     super.initState();
     _loadData();
+    startCloudSync(); // ✅ Real‑time sync started
+  }
+
+  @override
+  void onCloudDataChanged() {
+    _loadData(); // ✅ Refresh data when cloud updates
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ Clean up
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -364,7 +390,8 @@ class _OMStockTab extends StatefulWidget {
   State<_OMStockTab> createState() => _OMStockTabState();
 }
 
-class _OMStockTabState extends State<_OMStockTab> {
+// ✅ FIXED: Added CloudSyncMixin and lifecycle methods
+class _OMStockTabState extends State<_OMStockTab> with CloudSyncMixin {
   Map<String, double> _feedStock = {};
   List<Map<String, dynamic>> _medicines = [];
   bool _loading = true;
@@ -373,6 +400,18 @@ class _OMStockTabState extends State<_OMStockTab> {
   void initState() {
     super.initState();
     _loadData();
+    startCloudSync(); // ✅ Real‑time sync started
+  }
+
+  @override
+  void onCloudDataChanged() {
+    _loadData(); // ✅ Refresh data when cloud updates
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ Clean up
+    super.dispose();
   }
 
   Future<void> _loadData() async {

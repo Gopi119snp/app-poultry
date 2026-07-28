@@ -103,6 +103,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _canViewWeightRule = false;
   bool _canViewPerfRule = false;
   bool _canEditLiftingRange = false;
+  // ✏️ EDIT 1 (permission flags)
+  bool _canViewFeedAllocationHistory = false;
+  bool _canViewMedicineAllocationHistory = false;
 
   @override
   void initState() {
@@ -216,6 +219,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       'view',
     );
     final liftingEdit = await PermissionService.can('liftingRangeSet', 'edit');
+    // ✏️ EDIT 2: new permission checks
+    final feedAllocHistory = await PermissionService.can(
+      'feedAllocation',
+      'view',
+    );
+    final medAllocHistory = await PermissionService.can(
+      'medicineAllocation2',
+      'view',
+    );
 
     if (!mounted) return;
     setState(() {
@@ -229,6 +241,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _canViewWeightRule = weightRule;
       _canViewPerfRule = perfRule;
       _canEditLiftingRange = liftingEdit;
+      // ✏️ EDIT 2 continued
+      _canViewFeedAllocationHistory = feedAllocHistory;
+      _canViewMedicineAllocationHistory = medAllocHistory;
     });
   }
 
@@ -6506,40 +6521,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ],
                         ),
                       ),
-                      // ── The old "Allocate / Details" button is removed ──
-                      // Only the history button remains:
-                      Divider(height: 1, color: c.shade50),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () async {
-                              await Get.to(
-                                () => FeedStockHistoryHubScreen(feedTypeId: id),
-                              );
-                              _loadStockData();
-                            },
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: c.shade800,
-                              side: BorderSide(color: c.shade200, width: 1.4),
-                              padding: const EdgeInsets.symmetric(vertical: 11),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                      // ── History button — sirf permission ke saath ──
+                      if (_canViewFeedAllocationHistory) ...[
+                        Divider(height: 1, color: c.shade50),
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                await Get.to(
+                                  () =>
+                                      FeedStockHistoryHubScreen(feedTypeId: id),
+                                );
+                                _loadStockData();
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: c.shade800,
+                                side: BorderSide(color: c.shade200, width: 1.4),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 11,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
-                            ),
-                            icon: const Icon(Icons.history_rounded, size: 18),
-                            label: const Text(
-                              'Farmers Allocation / Private Sales History',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
+                              icon: const Icon(Icons.history_rounded, size: 18),
+                              label: const Text(
+                                'Farmers Allocation / Private Sales History',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 );
@@ -6739,36 +6758,37 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          // ── ✅ New history button (replaces "Allocate to Farmer") ──
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                Get.to(
-                  () => MedicineStockHistoryHubScreen(
-                    medicineId: mId,
-                    medicineName: medicine['name']?.toString() ?? '-',
-                    unit: unit,
+          if (_canViewMedicineAllocationHistory) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Get.to(
+                    () => MedicineStockHistoryHubScreen(
+                      medicineId: mId,
+                      medicineName: medicine['name']?.toString() ?? '-',
+                      unit: unit,
+                    ),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.teal.shade800,
+                  side: BorderSide(color: Colors.teal.shade200, width: 1.4),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                );
-              },
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.teal.shade800,
-                side: BorderSide(color: Colors.teal.shade200, width: 1.4),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                ),
+                icon: const Icon(Icons.history_rounded, size: 16),
+                label: const Text(
+                  'Farmers Allocation / Private Sales History',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               ),
-              icon: const Icon(Icons.history_rounded, size: 16),
-              label: const Text(
-                'Farmers Allocation / Private Sales History',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-              ),
             ),
-          ),
+          ],
         ],
       ),
     );

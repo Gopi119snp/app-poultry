@@ -414,7 +414,9 @@ class FeedStockFarmerAllocationsScreen extends StatefulWidget {
 }
 
 class _FeedStockFarmerAllocationsScreenState
-    extends State<FeedStockFarmerAllocationsScreen> {
+    extends State<FeedStockFarmerAllocationsScreen>
+    with CloudSyncMixin {
+  // ✅ FIX: added with CloudSyncMixin
   List<Map<String, dynamic>> _allocs = [];
   String _name = '';
   bool _isLoading = true;
@@ -423,6 +425,19 @@ class _FeedStockFarmerAllocationsScreenState
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -576,7 +591,9 @@ class FeedStockPrivateBuyersScreen extends StatefulWidget {
 }
 
 class _FeedStockPrivateBuyersScreenState
-    extends State<FeedStockPrivateBuyersScreen> {
+    extends State<FeedStockPrivateBuyersScreen>
+    with CloudSyncMixin {
+  // ✅ FIX: added with CloudSyncMixin
   List<Map<String, dynamic>> _sales = [];
   String _name = '';
   bool _isLoading = true;
@@ -585,6 +602,19 @@ class _FeedStockPrivateBuyersScreenState
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -955,7 +985,9 @@ class MedicineStockFarmerAllocationsScreen extends StatefulWidget {
 }
 
 class _MedicineStockFarmerAllocationsScreenState
-    extends State<MedicineStockFarmerAllocationsScreen> {
+    extends State<MedicineStockFarmerAllocationsScreen>
+    with CloudSyncMixin {
+  // ✅ FIX: added with CloudSyncMixin
   List<Map<String, dynamic>> _allocs = [];
   bool _isLoading = true;
 
@@ -963,6 +995,19 @@ class _MedicineStockFarmerAllocationsScreenState
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -1122,7 +1167,9 @@ class MedicineStockPrivateBuyersScreen extends StatefulWidget {
 }
 
 class _MedicineStockPrivateBuyersScreenState
-    extends State<MedicineStockPrivateBuyersScreen> {
+    extends State<MedicineStockPrivateBuyersScreen>
+    with CloudSyncMixin {
+  // ✅ FIX: added with CloudSyncMixin
   List<Map<String, dynamic>> _rows = [];
   bool _isLoading = true;
 
@@ -1130,6 +1177,19 @@ class _MedicineStockPrivateBuyersScreenState
   void initState() {
     super.initState();
     _load();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _load();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _load() async {

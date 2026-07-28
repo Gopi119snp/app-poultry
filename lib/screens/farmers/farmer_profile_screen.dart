@@ -18,7 +18,9 @@ class FarmerProfileScreen extends StatefulWidget {
   State<FarmerProfileScreen> createState() => _FarmerProfileScreenState();
 }
 
-class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
+class _FarmerProfileScreenState extends State<FarmerProfileScreen>
+    with CloudSyncMixin {
+  // ✅ FIX: added with CloudSyncMixin
   static const Color primaryGreen = Color(0xFF1B5E20);
   int _currentTab = 0;
   bool _hasActiveBatch = false;
@@ -78,6 +80,13 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
     _checkActiveBatchStatus();
     _loadUploadedChequeNumbers();
     _loadPermissionFlags();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _checkActiveBatchStatus();
   }
 
   Future<void> _loadPermissionFlags() async {
@@ -116,6 +125,7 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen> {
 
   @override
   void dispose() {
+    stopCloudSync(); // ✅ FIX — ye ek line add karo, baaki sab waisa hi rahega
     _chicksCountController.dispose();
     _startDateController.dispose();
     _editNameController.dispose();

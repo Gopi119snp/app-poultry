@@ -5492,9 +5492,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           'feedGrowerKgPerBag': growerKgPerBag,
           'feedFinisherKgPerBag': finisherKgPerBag,
           'feedTotalKg': totalFeedKg,
-          'remainingFeed': remainingFeedInput.isEmpty
-              ? '0'
-              : remainingFeedInput,
+          // ✅ FIX — empty ("nahi bhara") ko '0' ("0 bags bache hain" ka
+          // genuine report) ke barabar mat maano. Isse pehle khali field
+          // bhi silently '0' ban jaati thi, aur Daily Update List mein
+          // "farmer ne 0 report kiya" samajh ke poora Feed Stock overwrite
+          // ho jaata tha. Ab empty string hi save hogi jab kuch nahi bhara.
+          'remainingFeed': remainingFeedInput,
           'enteredBy': widget.userRole,
           'timestamp': DateTime.now().toIso8601String(),
           if (_mortalityPhotoBytes != null)
@@ -6209,8 +6212,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         totalFeedKgSum += (entry['feedTotalKg'] is num)
             ? (entry['feedTotalKg'] as num).toDouble()
             : entryFeedBags * 50.0;
-        if (entry['remainingFeed'] != null && entry['remainingFeed'] != '0') {
-          actualRemainingBags = entry['remainingFeed'].toString();
+        // ✅ FIX — ab remainingFeed empty string ho sakti hai (jab kuch bhara
+        // hi nahi gaya). Sirf non-empty string ko hi "reported" maano —
+        // explicit '0' abhi bhi genuine report count hota hai (farmer ne
+        // sach mein 0 bags report kiya), sirf empty string "kuch nahi bhara"
+        // ka matlab hai.
+        final String remainingFeedRaw = (entry['remainingFeed'] ?? '')
+            .toString()
+            .trim();
+        if (remainingFeedRaw.isNotEmpty) {
+          actualRemainingBags = remainingFeedRaw;
           hasRemainingFeedLogged = true;
         }
       } else if (currentType == 'medicine') {
@@ -7233,8 +7244,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                                     ),
                                   ],
                                 ),
-                                if (logRow['remainingFeed'] != null &&
-                                    logRow['remainingFeed'] != '0') ...[
+                                if ((logRow['remainingFeed'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .isNotEmpty) ...[
                                   const SizedBox(height: 6),
                                   Row(
                                     children: [

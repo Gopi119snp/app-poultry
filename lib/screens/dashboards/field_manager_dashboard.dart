@@ -72,7 +72,8 @@ class _FMHomeTab extends StatefulWidget {
   State<_FMHomeTab> createState() => _FMHomeTabState();
 }
 
-class _FMHomeTabState extends State<_FMHomeTab> {
+// ✅ FIXED: Added CloudSyncMixin
+class _FMHomeTabState extends State<_FMHomeTab> with CloudSyncMixin {
   List<Map<String, dynamic>> _farmers = [];
   bool _loading = true;
 
@@ -80,6 +81,18 @@ class _FMHomeTabState extends State<_FMHomeTab> {
   void initState() {
     super.initState();
     _loadData();
+    startCloudSync(); // ✅ Real‑time sync started
+  }
+
+  @override
+  void onCloudDataChanged() {
+    _loadData(); // ✅ Refresh data when cloud updates
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ Clean up
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -249,7 +262,8 @@ class _FMFarmersTab extends StatefulWidget {
   State<_FMFarmersTab> createState() => _FMFarmersTabState();
 }
 
-class _FMFarmersTabState extends State<_FMFarmersTab> {
+// ✅ FIXED: Added CloudSyncMixin
+class _FMFarmersTabState extends State<_FMFarmersTab> with CloudSyncMixin {
   List<Map<String, dynamic>> _farmers = [];
   bool _loading = true;
 
@@ -257,6 +271,18 @@ class _FMFarmersTabState extends State<_FMFarmersTab> {
   void initState() {
     super.initState();
     _loadData();
+    startCloudSync(); // ✅ Real‑time sync started
+  }
+
+  @override
+  void onCloudDataChanged() {
+    _loadData(); // ✅ Refresh data when cloud updates
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ Clean up
+    super.dispose();
   }
 
   Future<void> _loadData() async {

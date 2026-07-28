@@ -42,6 +42,14 @@ class _DayRow {
   final double totalFeedKg;
   final double feedStockKg;
   final bool isShortfall; // true if feedStockKg is negative
+  // ✅ NEW — "Feed Stock (Manual)" column data. This is SEPARATE from
+  // feedStockKg (auto) and never overwrites it. Only populated on the exact
+  // day the farmer reported "Actual Remaining Feed"; other days show
+  // "Not Reported Yet".
+  final bool manualStockReportedToday;
+  final double? manualStockReportedKg;
+  final double? manualStockDiffKg; // reported - auto (+ve = surplus vs auto)
+  final double? manualStockDiffPercent; // diff as % of the REPORTED value
   final double returnFeedKgToday;
   final double autoWeightKg;
   final double? manualWeightKg;
@@ -63,6 +71,10 @@ class _DayRow {
     required this.totalFeedKg,
     required this.feedStockKg,
     required this.isShortfall,
+    required this.manualStockReportedToday,
+    this.manualStockReportedKg,
+    this.manualStockDiffKg,
+    this.manualStockDiffPercent,
     required this.returnFeedKgToday,
     required this.autoWeightKg,
     required this.manualWeightKg,
@@ -357,13 +369,13 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
     int cumulativeSold = 0;
     double cumulativeFeedConsumedKg = 0.0;
 
-    // #3/#4 fix: delivered / returned feed are now kept as immutable
-    // running totals. Reconciliation variance is tracked SEPARATELY instead
-    // of being folded back into "delivered", so it can no longer fabricate
-    // fake deliveries or corrupt what the Fraud Risk Engine sees.
+    // ✅ FIX — delivered / returned feed are immutable running totals.
+    // Feed Stock (auto) is PURELY calculated from these + consumption —
+    // it is never overwritten by a farmer's "Actual Remaining Feed"
+    // report anymore. That report now only feeds the separate
+    // "Feed Stock (Manual)" column below, and the Fraud Risk Engine.
     double grossDeliveredKg = 0.0;
     double cumulativeReturnedKg = 0.0;
-    double reconciliationVarianceKg = 0.0;
 
     // #9/#10 fix: chick cost is locked once (purchase-time snapshot) and
     // feed cost accrues incrementally at each day's own rate, so a later
@@ -481,23 +493,34 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
 
       final double netAvailableFeedKg =
           grossDeliveredKg - cumulativeReturnedKg - cumulativeFeedConsumedKg;
-      double feedStockKg = netAvailableFeedKg + reconciliationVarianceKg;
+      // ✅ FIX — Feed Stock (auto) is now ALWAYS this pure calculation.
+      // It accumulates day over day and is never reset/overwritten by a
+      // farmer's remaining-feed report.
+      final double feedStockKg = netAvailableFeedKg;
+      final bool isShortfall = feedStockKg < 0;
 
-      // #3/#4 fix: when the farmer reports actual remaining stock, we
-      // record the gap as a separate "variance" instead of mutating the
-      // immutable delivered total. Delivered/returned history is never
-      // rewritten, and the Fraud Risk Engine below is fed the real net
-      // delivered figure, not a drift-adjusted one.
+      // ✅ NEW — "Feed Stock (Manual)" column: only set on the exact day a
+      // report came in. Shows the reported figure and how it compares to
+      // the auto figure (KG diff + % diff, % calculated on the reported
+      // value as the base — a division by zero only if farmer literally
+      // reported 0 bags, handled below).
+      double? manualStockReportedKg;
+      double? manualStockDiffKg;
+      double? manualStockDiffPercent;
       if (remainingFeedReportedToday) {
         final double reportedStockKg =
             (remainingFeedBagsToday ?? 0) * ratesToday.kgPerBag;
-        reconciliationVarianceKg = reportedStockKg - netAvailableFeedKg;
-        feedStockKg = reportedStockKg;
+        manualStockReportedKg = reportedStockKg;
+        manualStockDiffKg = reportedStockKg - feedStockKg;
+        manualStockDiffPercent = reportedStockKg != 0
+            ? (manualStockDiffKg / reportedStockKg) * 100
+            : null; // reported 0 bags — % vs itself is undefined
+        // Fraud Risk Engine still needs to know the latest reported actual
+        // (unchanged) — this is how we catch feed that's gone missing
+        // (e.g. sold off) even though the auto column no longer resets.
         lastActualRemainingFeedKg = reportedStockKg;
         remainingFeedEverReported = true;
       }
-
-      final bool isShortfall = feedStockKg < 0;
 
       // ---- FCR ----
       // NOTE (#26/#27): these still use liveChicks/cumulative feed as-is.
@@ -554,6 +577,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
           totalFeedKg: cumulativeFeedConsumedKg,
           feedStockKg: feedStockKg,
           isShortfall: isShortfall,
+          manualStockReportedToday: remainingFeedReportedToday,
+          manualStockReportedKg: manualStockReportedKg,
+          manualStockDiffKg: manualStockDiffKg,
+          manualStockDiffPercent: manualStockDiffPercent,
           returnFeedKgToday: returnFeedKgToday,
           autoWeightKg: autoWeightKg,
           manualWeightKg: manualWeightKg,
@@ -1557,6 +1584,9 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                                       DataColumn(
                                         label: Text('Feed Stock (kg)'),
                                       ),
+                                      DataColumn(
+                                        label: Text('Feed Stock (Manual)'),
+                                      ),
                                       DataColumn(label: Text('Wt Auto (kg)')),
                                       DataColumn(label: Text('Wt Manual (kg)')),
                                       DataColumn(label: Text('FCR Auto')),
@@ -1719,6 +1749,54 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                                                   ),
                                               ],
                                             ),
+                                          ),
+                                          // ── FEED STOCK (MANUAL) — farmer-reported vs auto comparison ──
+                                          DataCell(
+                                            r.manualStockReportedToday
+                                                ? Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Text(
+                                                        '${r.manualStockReportedKg!.toStringAsFixed(2)} KG',
+                                                        style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color:
+                                                              Colors.blueGrey,
+                                                        ),
+                                                      ),
+                                                      Text(
+                                                        '${r.manualStockDiffKg! >= 0 ? '+' : ''}'
+                                                        '${r.manualStockDiffKg!.toStringAsFixed(2)} KG'
+                                                        '${r.manualStockDiffPercent != null ? ' (${r.manualStockDiffPercent! >= 0 ? '+' : ''}${r.manualStockDiffPercent!.toStringAsFixed(1)}%)' : ''}',
+                                                        style: TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color:
+                                                              r.manualStockDiffKg! <
+                                                                  0
+                                                              ? Colors.red
+                                                              : Colors
+                                                                    .green
+                                                                    .shade700,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  )
+                                                : const Text(
+                                                    'Not Reported Yet',
+                                                    style: TextStyle(
+                                                      fontSize: 10.5,
+                                                      color: Colors.grey,
+                                                      fontStyle:
+                                                          FontStyle.italic,
+                                                    ),
+                                                  ),
                                           ),
                                           DataCell(
                                             Text(
