@@ -23,6 +23,7 @@ import '../../../utils/fraud_risk_engine.dart';
 import '../../../utils/performance_alert_engine.dart';
 import 'daily_update_list_screen.dart';
 import '../../../services/permission_service.dart';
+import '../../../services/session_service.dart';
 
 // =============================================================================
 // BATCH DETAIL & DAILY DATA ENTRY SCREEN
@@ -198,6 +199,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     _dailyEntries = widget.batchData['dailyEntries'] ?? [];
     _liveBatchData = Map<String, dynamic>.from(widget.batchData);
     _dateController.text = _formatDate(DateTime.now());
+    _loadPermissionFlags();
     _loadFreshBatchData();
     _initDownloadNotifications();
 
@@ -215,6 +217,18 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   }
 
   Future<void> _loadPermissionFlags() async {
+    final rawRole = await SessionService.currentRole;
+    final isOwnerCheck = await SessionService.isOwner;
+    debugPrint(
+      'DEBUG_ROLE_CHECK: currentRole = "$rawRole" | isOwner = $isOwnerCheck',
+    );
+    Get.snackbar(
+      'DEBUG ROLE',
+      'role="$rawRole" isOwner=$isOwnerCheck',
+      backgroundColor: Colors.purple,
+      colorText: Colors.white,
+      duration: const Duration(seconds: 10),
+    );
     final feedEntry = await PermissionService.can('feedEntry', 'add');
     final weight = await PermissionService.can('averageWeight', 'add');
     final mortality = await PermissionService.can('mortality', 'add');
@@ -6357,7 +6371,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Batch Tracking Details',
+              'TEST123 CHANGED',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,

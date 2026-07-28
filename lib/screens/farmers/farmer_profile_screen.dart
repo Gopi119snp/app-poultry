@@ -10,6 +10,7 @@ import 'batch_detail_screen.dart';
 import 'batch_create_screen.dart';
 import 'farmer_report_screen.dart';
 import '../../services/permission_service.dart';
+import '../../services/session_service.dart';
 
 class FarmerProfileScreen extends StatefulWidget {
   final Map<String, dynamic> farmer;
@@ -111,6 +112,17 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
       _canViewReportTab = viewReport;
       _permissionsLoaded = true;
     });
+  }
+
+  // ✅ FIX — is farmer_profile_screen mein har jagah BatchDetailScreen ko
+  // call karte waqt userRole: 'Owner' hardcoded tha, chahe actual logged-in
+  // session kuch bhi ho. Ab yeh asli session role (SessionService) se aata
+  // hai, taaki BatchDetailScreen ke andar PermissionService.can() calls
+  // (jo SessionService.currentRole dekhte hain) UI label se match karein
+  // aur "By: Owner" dikhne ke bawajood buttons galti se na chupein.
+  Future<String> _resolveUserRoleForNavigation() async {
+    final role = await SessionService.normalizedRole;
+    return role ?? 'Owner';
   }
 
   List<MapEntry<String, Widget Function()>> _buildVisibleTabs() {
@@ -2675,11 +2687,15 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: () async {
+                        // ✅ FIX — hardcoded 'Owner' hata ke asli session
+                        // role use kar rahe hain, taaki BatchDetailScreen
+                        // ke andar permission checks UI role se match karein.
+                        final role = await _resolveUserRoleForNavigation();
                         await Get.to(
                           () => BatchDetailScreen(
                             farmerId: _currentFarmer['id'] ?? '',
                             batchData: _activeBatchData!,
-                            userRole: 'Owner',
+                            userRole: role,
                           ),
                         );
                         // Hamesha refresh karo — chahe result kuch bhi ho
@@ -2733,11 +2749,15 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
                                 await _checkActiveBatchStatus();
                                 if (_hasActiveBatch &&
                                     _activeBatchData != null) {
+                                  // ✅ FIX — yahan bhi hardcoded 'Owner' ki
+                                  // jagah asli session role use karo.
+                                  final role =
+                                      await _resolveUserRoleForNavigation();
                                   Get.to(
                                     () => BatchDetailScreen(
                                       farmerId: _currentFarmer['id'] ?? '',
                                       batchData: _activeBatchData!,
-                                      userRole: 'Owner',
+                                      userRole: role,
                                     ),
                                   );
                                 }
@@ -2838,12 +2858,14 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
 
   Widget _closedBatchCard(Map<String, dynamic> batch) {
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
+        // ✅ FIX — hardcoded 'Owner' ki jagah asli session role.
+        final role = await _resolveUserRoleForNavigation();
         Get.to(
           () => BatchDetailScreen(
             farmerId: _currentFarmer['id'] ?? '',
             batchData: batch,
-            userRole: 'Owner',
+            userRole: role,
           ),
         );
       },
@@ -2909,12 +2931,14 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () {
+                onPressed: () async {
+                  // ✅ FIX — hardcoded 'Owner' ki jagah asli session role.
+                  final role = await _resolveUserRoleForNavigation();
                   Get.to(
                     () => BatchDetailScreen(
                       farmerId: _currentFarmer['id'] ?? '',
                       batchData: batch,
-                      userRole: 'Owner',
+                      userRole: role,
                     ),
                   );
                 },

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/permission_service.dart';
+import '../../services/company_store.dart'; // ✅ FIX — CloudSyncMixin ke liye
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -8,7 +9,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
+  // ✅ FIX
   static const Color primaryGreen = Color(0xFF1B5E20);
 
   bool _isLoading = true;
@@ -21,6 +23,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadAll();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _loadAll();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _loadAll() async {

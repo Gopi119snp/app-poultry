@@ -25,8 +25,9 @@ class FeedConsumptionRuleScreen extends StatefulWidget {
       _FeedConsumptionRuleScreenState();
 }
 
-class _FeedConsumptionRuleScreenState
-    extends State<FeedConsumptionRuleScreen> {
+class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
+    with CloudSyncMixin {
+  // ✅ FIX
   static const Color primaryGreen = Color(0xFF1B5E20);
 
   bool _loading = true;
@@ -40,8 +41,19 @@ class _FeedConsumptionRuleScreenState
   List<SeasonalMultiplier> _seasons = [];
 
   static const List<String> _monthNames = [
-    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    '',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   /// Konse mahine kisi bhi season se cover nahi hain — inhi mahino mein
@@ -66,10 +78,18 @@ class _FeedConsumptionRuleScreenState
   void initState() {
     super.initState();
     _loadExistingConfig();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _loadExistingConfig();
   }
 
   @override
   void dispose() {
+    stopCloudSync(); // ✅ FIX
     _multiplierCtrl.dispose();
     super.dispose();
   }
@@ -172,7 +192,9 @@ class _FeedConsumptionRuleScreenState
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Text(
             'Season Add Karo',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -239,8 +261,9 @@ class _FeedConsumptionRuleScreenState
                 const SizedBox(height: 14),
                 TextField(
                   controller: multCtrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                   decoration: InputDecoration(
                     labelText: 'Multiplier is season ke liye (e.g. 5.0)',
                     border: OutlineInputBorder(
@@ -287,7 +310,10 @@ class _FeedConsumptionRuleScreenState
               },
               child: const Text(
                 'Add Karo',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
@@ -328,8 +354,11 @@ class _FeedConsumptionRuleScreenState
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.check_circle_rounded,
-                            color: primaryGreen, size: 20),
+                        Icon(
+                          Icons.check_circle_rounded,
+                          color: primaryGreen,
+                          size: 20,
+                        ),
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -360,8 +389,11 @@ class _FeedConsumptionRuleScreenState
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.info_outline_rounded,
-                            color: Colors.orange, size: 20),
+                        Icon(
+                          Icons.info_outline_rounded,
+                          color: Colors.orange,
+                          size: 20,
+                        ),
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -436,7 +468,10 @@ class _FeedConsumptionRuleScreenState
                           onChanged: (_) =>
                               setState(() => _showSavedBanner = false),
                           decoration: InputDecoration(
-                            prefixIcon: const Icon(Icons.tune_rounded, size: 20),
+                            prefixIcon: const Icon(
+                              Icons.tune_rounded,
+                              size: 20,
+                            ),
                             labelText: 'Multiplier (e.g. 4.5)',
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
@@ -452,13 +487,18 @@ class _FeedConsumptionRuleScreenState
                     children: [
                       const Text(
                         'Seasonal Overrides',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                       TextButton.icon(
                         onPressed: _showAddSeasonDialog,
                         icon: const Icon(Icons.add_circle_rounded, size: 18),
                         label: const Text('Season Add Karo'),
-                        style: TextButton.styleFrom(foregroundColor: primaryGreen),
+                        style: TextButton.styleFrom(
+                          foregroundColor: primaryGreen,
+                        ),
                       ),
                     ],
                   ),
@@ -490,8 +530,11 @@ class _FeedConsumptionRuleScreenState
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.wb_sunny_rounded,
-                                color: Colors.orange, size: 20),
+                            const Icon(
+                              Icons.wb_sunny_rounded,
+                              color: Colors.orange,
+                              size: 20,
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
@@ -515,8 +558,11 @@ class _FeedConsumptionRuleScreenState
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete_outline_rounded,
-                                  color: Colors.redAccent, size: 20),
+                              icon: const Icon(
+                                Icons.delete_outline_rounded,
+                                color: Colors.redAccent,
+                                size: 20,
+                              ),
                               onPressed: () => setState(() {
                                 _seasons.removeAt(i);
                                 _showSavedBanner = false;
@@ -528,55 +574,57 @@ class _FeedConsumptionRuleScreenState
                     }),
 
                   const SizedBox(height: 12),
-                  Builder(builder: (context) {
-                    final uncovered = _uncoveredMonthNames();
-                    final bool allCovered = uncovered.isEmpty;
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: allCovered
-                            ? Colors.blue.shade50
-                            : Colors.amber.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
+                  Builder(
+                    builder: (context) {
+                      final uncovered = _uncoveredMonthNames();
+                      final bool allCovered = uncovered.isEmpty;
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
                           color: allCovered
-                              ? Colors.blue.shade100
-                              : Colors.amber.shade200,
-                        ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            allCovered
-                                ? Icons.info_rounded
-                                : Icons.warning_amber_rounded,
-                            size: 18,
+                              ? Colors.blue.shade50
+                              : Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
                             color: allCovered
-                                ? Colors.blue.shade700
-                                : Colors.amber.shade800,
+                                ? Colors.blue.shade100
+                                : Colors.amber.shade200,
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
                               allCovered
-                                  ? 'Saare 12 mahine seasons se covered hain — '
-                                    'isliye Default Multiplier (${_multiplierCtrl.text}) '
-                                    'kabhi use nahi hoga.'
-                                  : 'Default Multiplier (${_multiplierCtrl.text}) '
-                                    'in mahino mein use hoga: ${uncovered.join(", ")}',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: allCovered
-                                    ? Colors.blue.shade900
-                                    : Colors.amber.shade900,
+                                  ? Icons.info_rounded
+                                  : Icons.warning_amber_rounded,
+                              size: 18,
+                              color: allCovered
+                                  ? Colors.blue.shade700
+                                  : Colors.amber.shade800,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                allCovered
+                                    ? 'Saare 12 mahine seasons se covered hain — '
+                                          'isliye Default Multiplier (${_multiplierCtrl.text}) '
+                                          'kabhi use nahi hoga.'
+                                    : 'Default Multiplier (${_multiplierCtrl.text}) '
+                                          'in mahino mein use hoga: ${uncovered.join(", ")}',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: allCovered
+                                      ? Colors.blue.shade900
+                                      : Colors.amber.shade900,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ],
 
                 const SizedBox(height: 28),

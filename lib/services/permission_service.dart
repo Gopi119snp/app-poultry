@@ -517,10 +517,22 @@ class PermissionService {
 
   // ── RUNTIME CHECK ──────────────────────────────────────────────────────────
 
-  /// Priority: Person override > Role default > false. Owner ko hamesha sab.
+  /// Priority: Person override > Role default > false. Owner ko hamesha sab
+  /// permission milti hai — bina kisi setting/matrix ke, chahe woh setting
+  /// screen se kabhi touch bhi na ki gayi ho. Manager/Labour jaise roles
+  /// hamesha yahi role/person matrix se check hote hain jo Owner khud
+  /// Settings & Permissions se set karta hai.
   static Future<bool> can(String moduleId, String action) async {
-    final role = await SessionService.currentRole;
-    if (role == null || role == 'Owner') return true;
+    // ✅ FIX — ab Owner-check SessionService.isOwner se hota hai, jo trim +
+    // case-insensitive hai. Isse pehle raw "role == 'Owner'" string-match
+    // tha — agar session mein role kisi wajah se 'Owner ' (extra space) ya
+    // 'owner' (lowercase) save ho jaata, to Owner ko bhi Manager jaisa
+    // treat kar diya jaata tha aur uske saare buttons/features chup-chaap
+    // gayab ho jaate the (jaisa Daily Update List button ke saath hua).
+    if (await SessionService.isOwner) return true;
+
+    final role = await SessionService.normalizedRole;
+    if (role == null) return false;
 
     final phone = await SessionService.phone;
     if (phone == null || phone.isEmpty) return false;

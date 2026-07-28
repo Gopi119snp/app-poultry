@@ -21,8 +21,9 @@ class PerformanceAlertRuleScreen extends StatefulWidget {
       _PerformanceAlertRuleScreenState();
 }
 
-class _PerformanceAlertRuleScreenState
-    extends State<PerformanceAlertRuleScreen> {
+class _PerformanceAlertRuleScreenState extends State<PerformanceAlertRuleScreen>
+    with CloudSyncMixin {
+  // ✅ FIX
   static const Color primaryGreen = Color(0xFF1B5E20);
 
   bool _loading = true;
@@ -42,10 +43,18 @@ class _PerformanceAlertRuleScreenState
   void initState() {
     super.initState();
     _loadExistingConfig();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _loadExistingConfig();
   }
 
   @override
   void dispose() {
+    stopCloudSync(); // ✅ FIX
     _fcrRedCtrl.dispose();
     _fcrYellowCtrl.dispose();
     _mortRedCtrl.dispose();
@@ -64,7 +73,8 @@ class _PerformanceAlertRuleScreenState
           _fcrRedCtrl.text = config.fcrRedAboveThreshold.toString();
           _fcrYellowCtrl.text = config.fcrYellowBelowThreshold.toString();
           _mortRedCtrl.text = config.mortalityRedAboveThreshold.toString();
-          _mortYellowCtrl.text = config.mortalityYellowBelowThreshold.toString();
+          _mortYellowCtrl.text = config.mortalityYellowBelowThreshold
+              .toString();
           _overrides = config.overrides;
           _showSavedBanner = true;
         });
@@ -79,7 +89,10 @@ class _PerformanceAlertRuleScreenState
     final mortRed = double.tryParse(_mortRedCtrl.text.trim());
     final mortYellow = double.tryParse(_mortYellowCtrl.text.trim());
 
-    if (fcrRed == null || fcrYellow == null || mortRed == null || mortYellow == null) {
+    if (fcrRed == null ||
+        fcrYellow == null ||
+        mortRed == null ||
+        mortYellow == null) {
       Get.snackbar(
         'Invalid Input',
         'Sahi numbers daalein',
@@ -142,7 +155,9 @@ class _PerformanceAlertRuleScreenState
 
     final encoded = jsonEncode(config.toJson());
     await CompanyStore.instance.setString('performanceAlertConfig', encoded);
-    final verifyRaw = await CompanyStore.instance.getString('performanceAlertConfig');
+    final verifyRaw = await CompanyStore.instance.getString(
+      'performanceAlertConfig',
+    );
     final bool ok = verifyRaw == encoded;
 
     if (!mounted) return;
@@ -188,44 +203,64 @@ class _PerformanceAlertRuleScreenState
                 controller: periodCtrl,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
-                  labelText: isDaily ? 'Din Number (e.g. 7)' : 'Hafta Number (e.g. 2)',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  labelText: isDaily
+                      ? 'Din Number (e.g. 7)'
+                      : 'Hafta Number (e.g. 2)',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: fcrRedCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   labelText: '🔴 FCR Red — ispar/upar',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: fcrYellowCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   labelText: '🟡 FCR Yellow — iske neeche',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: mortRedCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   labelText: '🔴 Mortality% Red — ispar/upar',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: mortYellowCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   labelText: '🟡 Mortality% Yellow — iske neeche',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
             ],
@@ -245,8 +280,12 @@ class _PerformanceAlertRuleScreenState
               final mr = double.tryParse(mortRedCtrl.text.trim());
               final my = double.tryParse(mortYellowCtrl.text.trim());
 
-              if (period == null || period <= 0 || fr == null || fy == null ||
-                  mr == null || my == null) {
+              if (period == null ||
+                  period <= 0 ||
+                  fr == null ||
+                  fy == null ||
+                  mr == null ||
+                  my == null) {
                 Get.snackbar(
                   'Invalid Input',
                   'Sahi values daalein',
@@ -271,20 +310,27 @@ class _PerformanceAlertRuleScreenState
 
               setState(() {
                 _overrides.removeWhere((o) => o.periodKey == period);
-                _overrides.add(ThresholdOverride(
-                  periodKey: period,
-                  fcrRedAboveThreshold: fr,
-                  fcrYellowBelowThreshold: fy,
-                  mortalityRedAboveThreshold: mr,
-                  mortalityYellowBelowThreshold: my,
-                ));
+                _overrides.add(
+                  ThresholdOverride(
+                    periodKey: period,
+                    fcrRedAboveThreshold: fr,
+                    fcrYellowBelowThreshold: fy,
+                    mortalityRedAboveThreshold: mr,
+                    mortalityYellowBelowThreshold: my,
+                  ),
+                );
                 _overrides.sort((a, b) => a.periodKey.compareTo(b.periodKey));
                 _showSavedBanner = false;
               });
               Navigator.pop(context);
             },
-            child: const Text('Add Karo',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Add Karo',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -339,12 +385,18 @@ class _PerformanceAlertRuleScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: selected ? primaryGreen : Colors.black87)),
-                  Text(subtitle, style: const TextStyle(fontSize: 10.5, color: Colors.grey)),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: selected ? primaryGreen : Colors.black87,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 10.5, color: Colors.grey),
+                  ),
                 ],
               ),
             ),
@@ -386,7 +438,10 @@ class _PerformanceAlertRuleScreenState
                 if (_showSavedBanner) ...[
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFE8F5E9),
                       borderRadius: BorderRadius.circular(12),
@@ -394,7 +449,11 @@ class _PerformanceAlertRuleScreenState
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.check_circle_rounded, color: primaryGreen, size: 20),
+                        Icon(
+                          Icons.check_circle_rounded,
+                          color: primaryGreen,
+                          size: 20,
+                        ),
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -414,7 +473,10 @@ class _PerformanceAlertRuleScreenState
                 ] else if (!_loading) ...[
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.amber.shade50,
                       borderRadius: BorderRadius.circular(12),
@@ -422,7 +484,11 @@ class _PerformanceAlertRuleScreenState
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.info_outline_rounded, color: Colors.orange, size: 20),
+                        Icon(
+                          Icons.info_outline_rounded,
+                          color: Colors.orange,
+                          size: 20,
+                        ),
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -487,15 +553,23 @@ class _PerformanceAlertRuleScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isFlat ? '🎯 FCR Thresholds' : '🎯 FCR Thresholds (Default/Fallback)',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        isFlat
+                            ? '🎯 FCR Thresholds'
+                            : '🎯 FCR Thresholds (Default/Fallback)',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         isFlat
                             ? 'Kam FCR accha hota hai (kam feed mein zyada weight)'
                             : 'Jis din/hafte ka specific override na ho, wahan yeh values use hongi',
-                        style: const TextStyle(fontSize: 11.5, color: Colors.grey),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Colors.grey,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       _thresholdField(
@@ -535,7 +609,10 @@ class _PerformanceAlertRuleScreenState
                         isFlat
                             ? '💀 Mortality % Thresholds'
                             : '💀 Mortality % Thresholds (Default/Fallback)',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       const Text(
@@ -573,7 +650,10 @@ class _PerformanceAlertRuleScreenState
                         _granularity == AlertGranularity.daily
                             ? 'Din-Wise Overrides'
                             : 'Hafta-Wise Overrides',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                       TextButton.icon(
                         onPressed: _showAddOverrideDialog,
@@ -583,7 +663,9 @@ class _PerformanceAlertRuleScreenState
                               ? 'Din Add Karo'
                               : 'Hafta Add Karo',
                         ),
-                        style: TextButton.styleFrom(foregroundColor: primaryGreen),
+                        style: TextButton.styleFrom(
+                          foregroundColor: primaryGreen,
+                        ),
                       ),
                     ],
                   ),
@@ -599,52 +681,69 @@ class _PerformanceAlertRuleScreenState
                         _granularity == AlertGranularity.daily
                             ? 'Koi din add nahi hua — sabhi din Default values se chalenge.'
                             : 'Koi hafta add nahi hua — sabhi hafte Default values se chalenge.',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
                       ),
                     )
                   else
-                    ..._overrides.map((o) => Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.orange.shade100),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  _granularity == AlertGranularity.daily
-                                      ? 'Din ${o.periodKey}'
-                                      : 'Week ${o.periodKey}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                                ),
+                    ..._overrides.map(
+                      (o) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.orange.shade100),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'FCR: 🔴>${o.fcrRedAboveThreshold} 🟡<${o.fcrYellowBelowThreshold}  •  '
-                                  'Mort: 🔴>${o.mortalityRedAboveThreshold}% 🟡<${o.mortalityYellowBelowThreshold}%',
-                                  style: const TextStyle(fontSize: 10.5, color: Colors.black87),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                _granularity == AlertGranularity.daily
+                                    ? 'Din ${o.periodKey}'
+                                    : 'Week ${o.periodKey}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
                                 ),
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline_rounded,
-                                    color: Colors.redAccent, size: 20),
-                                onPressed: () => setState(() {
-                                  _overrides.remove(o);
-                                  _showSavedBanner = false;
-                                }),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'FCR: 🔴>${o.fcrRedAboveThreshold} 🟡<${o.fcrYellowBelowThreshold}  •  '
+                                'Mort: 🔴>${o.mortalityRedAboveThreshold}% 🟡<${o.mortalityYellowBelowThreshold}%',
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: Colors.black87,
+                                ),
                               ),
-                            ],
-                          ),
-                        )),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline_rounded,
+                                color: Colors.redAccent,
+                                size: 20,
+                              ),
+                              onPressed: () => setState(() {
+                                _overrides.remove(o);
+                                _showSavedBanner = false;
+                              }),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
 
                 const SizedBox(height: 28),
@@ -655,18 +754,26 @@ class _PerformanceAlertRuleScreenState
                     onPressed: _saving ? null : _saveConfig,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryGreen,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     icon: _saving
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Icon(Icons.save_rounded, color: Colors.white),
                     label: Text(
                       _saving ? 'Saving...' : 'Rule Save Karo',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),

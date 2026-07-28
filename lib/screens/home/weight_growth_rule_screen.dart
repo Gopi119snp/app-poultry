@@ -16,11 +16,12 @@ class WeightGrowthRuleScreen extends StatefulWidget {
   const WeightGrowthRuleScreen({super.key});
 
   @override
-  State<WeightGrowthRuleScreen> createState() =>
-      _WeightGrowthRuleScreenState();
+  State<WeightGrowthRuleScreen> createState() => _WeightGrowthRuleScreenState();
 }
 
-class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
+class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
+    with CloudSyncMixin {
+  // ✅ FIX
   static const Color primaryGreen = Color(0xFF1B5E20);
 
   bool _loading = true;
@@ -34,6 +35,19 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
   void initState() {
     super.initState();
     _loadExistingConfig();
+    startCloudSync(); // ✅ FIX
+  }
+
+  @override
+  void onCloudDataChanged() {
+    // ✅ FIX
+    _loadExistingConfig();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync(); // ✅ FIX
+    super.dispose();
   }
 
   Future<void> _loadExistingConfig() async {
@@ -76,8 +90,9 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
 
     final config = WeightGrowthRuleConfig(
       ruleType: _ruleType,
-      customBodyWeightGramPerDay:
-          _customChart.isEmpty ? null : Map<int, double>.from(_customChart),
+      customBodyWeightGramPerDay: _customChart.isEmpty
+          ? null
+          : Map<int, double>.from(_customChart),
     );
 
     final encoded = jsonEncode(config.toJson());
@@ -126,16 +141,22 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: 'Din Number (e.g. 7)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
             const SizedBox(height: 14),
             TextField(
               controller: weightCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 labelText: 'Body Weight (gram, e.g. 182)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ],
@@ -167,8 +188,13 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
               });
               Navigator.pop(context);
             },
-            child: const Text('Add Karo',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Add Karo',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -198,7 +224,10 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
                 if (_showSavedBanner) ...[
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFE8F5E9),
                       borderRadius: BorderRadius.circular(12),
@@ -206,15 +235,19 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.check_circle_rounded, color: primaryGreen, size: 20),
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          color: primaryGreen,
+                          size: 20,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             _ruleType == WeightRuleType.standardFormula
                                 ? 'Abhi ACTIVE hai: Standard (App Default) — yeh rule save ho '
-                                  'chuka hai aur "Automatic Body Weight" isi se calculate ho raha hai.'
+                                      'chuka hai aur "Automatic Body Weight" isi se calculate ho raha hai.'
                                 : 'Abhi ACTIVE hai: Custom Chart (${_customChart.length} din diye '
-                                  'gaye) — yeh rule save ho chuka hai.',
+                                      'gaye) — yeh rule save ho chuka hai.',
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
@@ -229,7 +262,10 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
                 ] else if (!_loading) ...[
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.amber.shade50,
                       borderRadius: BorderRadius.circular(12),
@@ -237,7 +273,11 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.info_outline_rounded, color: Colors.orange, size: 20),
+                        Icon(
+                          Icons.info_outline_rounded,
+                          color: Colors.orange,
+                          size: 20,
+                        ),
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -264,14 +304,16 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
                 _ruleTypeCard(
                   type: WeightRuleType.standardFormula,
                   title: 'Standard (App Default)',
-                  subtitle: 'Wahi growth formula jo abhi "Target Weight" mein use hoti hai',
+                  subtitle:
+                      'Wahi growth formula jo abhi "Target Weight" mein use hoti hai',
                   icon: Icons.auto_graph_rounded,
                 ),
                 const SizedBox(height: 12),
                 _ruleTypeCard(
                   type: WeightRuleType.customChart,
                   title: 'Custom Chart',
-                  subtitle: 'Apna khud ka Day → Gram table dijiye (register jaisa)',
+                  subtitle:
+                      'Apna khud ka Day → Gram table dijiye (register jaisa)',
                   icon: Icons.edit_note_rounded,
                 ),
                 if (_ruleType == WeightRuleType.customChart) ...[
@@ -279,13 +321,20 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Custom Weight Chart',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      const Text(
+                        'Custom Weight Chart',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
                       TextButton.icon(
                         onPressed: _showAddDayDialog,
                         icon: const Icon(Icons.add_circle_rounded, size: 18),
                         label: const Text('Din Add Karo'),
-                        style: TextButton.styleFrom(foregroundColor: primaryGreen),
+                        style: TextButton.styleFrom(
+                          foregroundColor: primaryGreen,
+                        ),
                       ),
                     ],
                   ),
@@ -304,41 +353,59 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
                       ),
                     )
                   else
-                    ...sortedDays.map((d) => Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.blue.shade100),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.shade50,
-                                  borderRadius: BorderRadius.circular(6),
+                    ...sortedDays.map(
+                      (d) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.shade100),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'Din $d',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
                                 ),
-                                child: Text('Din $d',
-                                    style: const TextStyle(
-                                        fontSize: 11.5, fontWeight: FontWeight.bold)),
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                  child: Text('${_customChart[d]} gram',
-                                      style: const TextStyle(fontSize: 13))),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline_rounded,
-                                    color: Colors.redAccent, size: 20),
-                                onPressed: () => setState(() {
-                                  _customChart.remove(d);
-                                  _showSavedBanner = false;
-                                }),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                '${_customChart[d]} gram',
+                                style: const TextStyle(fontSize: 13),
                               ),
-                            ],
-                          ),
-                        )),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline_rounded,
+                                color: Colors.redAccent,
+                                size: 20,
+                              ),
+                              onPressed: () => setState(() {
+                                _customChart.remove(d);
+                                _showSavedBanner = false;
+                              }),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
                 const SizedBox(height: 28),
                 SizedBox(
@@ -348,18 +415,26 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
                     onPressed: _saving ? null : _saveConfig,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryGreen,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     icon: _saving
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Icon(Icons.save_rounded, color: Colors.white),
                     label: Text(
                       _saving ? 'Saving...' : 'Rule Save Karo',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -399,13 +474,19 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: selected ? primaryGreen : Colors.black87)),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: selected ? primaryGreen : Colors.black87,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(subtitle, style: const TextStyle(fontSize: 11.5, color: Colors.grey)),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 11.5, color: Colors.grey),
+                  ),
                 ],
               ),
             ),

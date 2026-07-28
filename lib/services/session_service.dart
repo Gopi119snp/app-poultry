@@ -14,7 +14,8 @@ class SessionService {
   static const _kIndustry = 'industry';
   static const _kAuthEmail = 'authEmail';
 
-  static Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
+  static Future<SharedPreferences> get _prefs =>
+      SharedPreferences.getInstance();
 
   static Future<bool> get isLoggedIn async {
     final p = await _prefs;
@@ -29,6 +30,28 @@ class SessionService {
   static Future<String?> get currentRole async {
     final p = await _prefs;
     return p.getString(_kCurrentRole);
+  }
+
+  // ✅ NEW — "Owner hai ya nahi" check ab yahi ek jagah se hoga. Trim +
+  // case-insensitive, taaki kahin bhi extra space ya 'owner'/'OWNER' jaisi
+  // mismatch se Owner ko galti se Manager jaisa treat na kiya jaaye.
+  // PermissionService.can() aur baaki app isi getter ko use karega instead
+  // of raw string comparison "role == 'Owner'" ke.
+  static Future<bool> get isOwner async {
+    final role = await currentRole;
+    if (role == null) return false;
+    return role.trim().toLowerCase() == 'owner';
+  }
+
+  // ✅ NEW — poore app mein "role kya hai" ko clean/normalized form mein
+  // dikhane ke liye (e.g. UI labels, "By: $normalizedRole"). Raw storage
+  // string ko kabhi trim karke overwrite nahi karta — sirf reading ke waqt
+  // safe banata hai.
+  static Future<String?> get normalizedRole async {
+    final role = await currentRole;
+    if (role == null) return null;
+    final trimmed = role.trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   static Future<String?> get currentName async {
@@ -74,7 +97,10 @@ class SessionService {
     final p = await _prefs;
     await p.setBool(_kLoggedIn, true);
     await p.setString(_kCompanyId, companyId);
-    await p.setString(_kCurrentRole, role);
+    // ✅ FIX — role ko trim karke save karo taaki login form/autofill se
+    // aayi hui trailing/leading space kabhi bhi 'Owner' ko silently
+    // 'Owner ' ban ke Manager jaisa treat na kar de.
+    await p.setString(_kCurrentRole, role.trim());
     await p.setString(_kCurrentName, displayName);
     await p.setString(_kOwnerName, ownerName);
     await p.setString(_kCompanyName, companyName);

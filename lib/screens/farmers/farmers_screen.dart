@@ -30,6 +30,7 @@ class _FarmersScreenState extends State<FarmersScreen> {
   void initState() {
     super.initState();
     _loadFarmers(); // ← ye jo bhi actual method-name hai tumhari file mein
+    _loadPermissionFlags();
 
     // ✅ FIX — Real-time cloud listener: jaise hi kisi bhi device se
     // (naya farmer add hua, edit hua, ya delete hua) Firestore mein
