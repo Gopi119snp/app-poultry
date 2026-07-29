@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../../services/company_store.dart';
+import '../../services/activity_logger.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
@@ -411,6 +412,16 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
         return;
       }
       await CompanyStore.instance.saveJsonList('companyFarmers', list);
+
+      // 🛑 NAYA CODE: Activity Logger
+      ActivityLogger.log(
+        actionType: 'UPDATE',
+        module: 'Farmer',
+        message:
+            'Farmer "${_currentFarmer['name']}" ki profile photo update ki gayi.',
+      );
+      // 🛑 END NAYA CODE
+
       await _checkActiveBatchStatus();
       if (!mounted) return;
       Get.snackbar(
@@ -458,6 +469,16 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
         return;
       }
       await CompanyStore.instance.saveJsonList('companyFarmers', list);
+
+      // 🛑 NAYA CODE: Activity Logger
+      ActivityLogger.log(
+        actionType: 'UPDATE',
+        module: 'Farmer',
+        message:
+            'Farmer "${_currentFarmer['name']}" ka signature update kiya gaya.',
+      );
+      // 🛑 END NAYA CODE
+
       await _checkActiveBatchStatus();
       if (!mounted) return;
       Get.snackbar(
@@ -695,6 +716,16 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
     }
 
     await CompanyStore.instance.saveJsonList('companyFarmers', farmersList);
+
+    // 🛑 NAYA CODE: Activity Logger
+    ActivityLogger.log(
+      actionType: 'EDIT',
+      module: 'Batch',
+      message:
+          'Farmer "${_currentFarmer['name']}" ka batch details update kiya gaya: $parsedChicks birds, Start: $startDate.',
+    );
+    // 🛑 END NAYA CODE
+
     _chicksCountController.clear();
     if (!mounted) return;
     Navigator.pop(context);
@@ -817,6 +848,16 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
     }
 
     await CompanyStore.instance.saveJsonList('companyFarmers', farmersList);
+
+    // 🛑 NAYA CODE: Activity Logger
+    ActivityLogger.log(
+      actionType: 'ADD',
+      module: 'Batch',
+      message:
+          'Farmer "${_currentFarmer['name']}" ke liye naya batch shuru kiya gaya: $parsedChicks birds.',
+    );
+    // 🛑 END NAYA CODE
+
     _chicksCountController.clear();
     if (!mounted) return;
     Navigator.pop(context);
@@ -1163,6 +1204,15 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
       }
 
       await CompanyStore.instance.saveJsonList('companyFarmers', farmersList);
+
+      // 🛑 NAYA CODE: Activity Logger
+      ActivityLogger.log(
+        actionType: 'EDIT',
+        module: 'Farmer',
+        message: 'Farmer "$name" ki personal details update ki gayin.',
+      );
+      // 🛑 END NAYA CODE
+
       if (!mounted) return;
       Navigator.pop(context);
       await _checkActiveBatchStatus();
@@ -1363,6 +1413,16 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
       }
 
       await CompanyStore.instance.saveJsonList('companyFarmers', farmersList);
+
+      // 🛑 NAYA CODE: Activity Logger
+      ActivityLogger.log(
+        actionType: 'EDIT',
+        module: 'Farmer',
+        message:
+            'Farmer "${_currentFarmer['name']}" ki bank details update ki gayin: Bank "$bankName".',
+      );
+      // 🛑 END NAYA CODE
+
       if (!mounted) return;
       Navigator.pop(context);
       await _checkActiveBatchStatus();
@@ -1973,6 +2033,15 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
     }
 
     await CompanyStore.instance.saveJsonList('companyFarmers', list);
+
+    // 🛑 NAYA CODE: Activity Logger
+    ActivityLogger.log(
+      actionType: 'UPDATE',
+      module: 'Farmer',
+      message:
+          'Farmer "${_currentFarmer['name']}" ka document ($statusKey) verify aur upload kiya gaya.',
+    );
+    // 🛑 END NAYA CODE
 
     // ✅ FIX: cheque number is only written to the duplicate-tracking list
     // here — i.e. only after the document itself has been successfully

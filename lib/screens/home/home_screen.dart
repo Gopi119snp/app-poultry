@@ -715,6 +715,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               await CompanyStore.instance.setInt('minLiftingDays', minD);
               await CompanyStore.instance.setInt('maxLiftingDays', maxD);
 
+              // 🛑 NAYA CODE: Activity Logger
+              ActivityLogger.log(
+                actionType: 'EDIT',
+                module: 'Settings',
+                message:
+                    'Lifting range update ki gayi: $minD se $maxD din set kiya.',
+              );
+              // 🛑 END NAYA CODE
+
               if (!mounted) return;
               Navigator.pop(context);
               await _loadKpiData();
@@ -5984,6 +5993,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () {
+                  // 🛑 NAYA CODE: Activity Logger
+                  ActivityLogger.log(
+                    actionType: 'UPDATE',
+                    module: 'Batch',
+                    message:
+                        'Farmer "${farmer['name']}" ka lifting process shuru kiya gaya.',
+                  );
+                  // 🛑 END NAYA CODE
+
                   Get.snackbar(
                     'Lifting Confirm',
                     '${farmer['name']} ka lifting process shuru ho gaya',
