@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../services/company_store.dart';
-import '../profile/farmer_profile_screen.dart'; // Apna path check kar lena
+import '../farmers/farmer_profile_screen.dart';
 
 class GlobalSearchScreen extends StatefulWidget {
   const GlobalSearchScreen({super.key});

@@ -28,9 +28,10 @@ import 'reports_screen.dart'; // Agar reports_screen usi folder mein hai jahan h
 import 'settings_screen.dart';
 import '../../services/permission_service.dart';
 import 'global_search_screen.dart'; // Apna path adjust kar lijiye
-
+import 'notifications_screen.dart'; // Apna sahi path check kar lena
 // ── ✅ Imports for stock history screens
 import 'feed_stock_history_screen.dart';
+import 'all_recent_activity_screen.dart'; // Apna path check kar lena
 // ── Assuming these helpers are defined elsewhere – you must have them.
 // Future<List<Map<String, dynamic>>> ensureFeedStockMigrated() async { ... }
 // double computeFeedRemaining(Map<String, dynamic> feedEntry) { ... }
@@ -5515,7 +5516,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ],
               ),
-              onPressed: () {},
+              onPressed: () {
+                Get.to(() => const NotificationsScreen());
+              },
             ),
             IconButton(
               icon: const Icon(
