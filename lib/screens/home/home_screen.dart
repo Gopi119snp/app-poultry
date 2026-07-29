@@ -5542,7 +5542,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         floatingActionButton: _currentIndex == 0 ? _buildChickFab() : null,
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
+          onTap: (index) {
+            if (index == 3) {
+              // 🛑 NAYA CODE: Reports par tap karte hi wahi screen khulegi jo Quick Actions se khulti hai!
+              Get.to(() => const ReportsScreen());
+            } else {
+              setState(() => _currentIndex = index);
+            }
+          },
           type: BottomNavigationBarType.fixed,
           selectedItemColor: primaryGreen,
           unselectedItemColor: Colors.grey,
