@@ -5579,6 +5579,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         return 'Stock';
       case 3:
         return 'Reports';
+      case 4:
+        return 'Lifting';
       default:
         return '';
     }

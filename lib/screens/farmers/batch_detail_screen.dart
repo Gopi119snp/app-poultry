@@ -24,7 +24,7 @@ import '../../../utils/performance_alert_engine.dart';
 import 'daily_update_list_screen.dart';
 import '../../../services/permission_service.dart';
 import '../../../services/session_service.dart';
-import '../../../services/activity_logger.dart'; // 🛑 NAYA IMPORT
+import '../../../services/activity_logger.dart';
 
 // =============================================================================
 // BATCH DETAIL & DAILY DATA ENTRY SCREEN
@@ -1051,7 +1051,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double avgSaleRate,
     required double latestAvgWeight,
     required int totalFeedBags,
-    required double totalFeedKg, // ✅ FIX: new param
+    required double totalFeedKg,
     required double totalChickCost,
     required double totalFeedCost,
     required double totalAdminCost,
@@ -2082,7 +2082,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required int liveChicks,
     required double latestAvgWeight,
     required int totalFeedBags,
-    required double totalFeedKg, // ✅ FIX: new param
+    required double totalFeedKg,
     required int totalMortality,
     required int totalChicksSold,
     required double totalWeightSoldKg,
@@ -2102,7 +2102,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     }
 
     // ✅ FIX #9 — Reconciliation check before allowing batch close.
-    // initial = mortality + sold + live(adjustment) honा chahiye.
+    // initial = mortality + sold + live(adjustment) hona chahiye.
     final int initialChicks = _liveBatchData['chicksCount'] ?? 0;
     final int reconciledTotal = totalMortality + totalChicksSold + liveChicks;
     if (initialChicks > 0 && reconciledTotal != initialChicks) {
@@ -2177,7 +2177,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
               Navigator.pop(ctx);
               _generateAndShowSettlementRasid(
                 totalFeedBags: totalFeedBags,
-                totalFeedKg: totalFeedKg, // ✅ FIX: pass new param
+                totalFeedKg: totalFeedKg,
                 totalMortality: totalMortality,
                 totalChicksSold: totalChicksSold,
                 totalWeightSoldKg: totalWeightSoldKg,
@@ -2201,7 +2201,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
   void _generateAndShowSettlementRasid({
     required int totalFeedBags,
-    required double totalFeedKg, // ✅ FIX: new param
+    required double totalFeedKg,
     required int totalMortality,
     required int totalChicksSold,
     required double totalWeightSoldKg,
@@ -2230,7 +2230,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         isBigSize: isBigSize,
         initialChicks: initialChicks,
         totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg, // ✅ FIX
+        totalFeedKg: totalFeedKg,
         totalMortality: totalMortality,
         totalChicksSold: totalChicksSold,
         totalWeightSoldKg: totalWeightSoldKg,
@@ -2242,7 +2242,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       _showRule2SettlementRasid(
         initialChicks: initialChicks,
         totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg, // ✅ FIX
+        totalFeedKg: totalFeedKg,
         totalMortality: totalMortality,
         totalChicksSold: totalChicksSold,
         totalWeightSoldKg: totalWeightSoldKg,
@@ -2311,7 +2311,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required bool isBigSize,
     required int initialChicks,
     required int totalFeedBags,
-    required double totalFeedKg, // ✅ FIX: new param
+    required double totalFeedKg,
     required int totalMortality,
     required int totalChicksSold,
     required double totalWeightSoldKg,
@@ -2440,7 +2440,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       avgSaleRate: avgSaleRate,
       latestAvgWeight: latestAvgWeight,
       totalFeedBags: totalFeedBags,
-      totalFeedKg: totalFeedKg, // ✅ FIX
+      totalFeedKg: totalFeedKg,
       totalChickCost: totalChickCost,
       totalFeedCost: totalFeedCost,
       totalAdminCost: totalAdminCost,
@@ -2467,7 +2467,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   void _showRule2SettlementRasid({
     required int initialChicks,
     required int totalFeedBags,
-    required double totalFeedKg, // ✅ FIX: new param
+    required double totalFeedKg,
     required int totalMortality,
     required int totalChicksSold,
     required double totalWeightSoldKg,
@@ -2507,7 +2507,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       avgSaleRate: avgSaleRate,
       latestAvgWeight: latestAvgWeight,
       totalFeedBags: totalFeedBags,
-      totalFeedKg: totalFeedKg, // ✅ FIX
+      totalFeedKg: totalFeedKg,
       totalChickCost: 0,
       totalFeedCost: 0,
       totalAdminCost: 0,
@@ -2685,7 +2685,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double avgSaleRate,
     required double latestAvgWeight,
     required int totalFeedBags,
-    required double totalFeedKg, // ✅ FIX: new param
+    required double totalFeedKg,
     required double totalChickCost,
     required double totalFeedCost,
     required double totalAdminCost,
@@ -3183,7 +3183,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                           avgSaleRate: avgSaleRate,
                           latestAvgWeight: latestAvgWeight,
                           totalFeedBags: totalFeedBags,
-                          totalFeedKg: totalFeedKg, // ✅ FIX
+                          totalFeedKg: totalFeedKg,
                           totalChickCost: totalChickCost,
                           totalFeedCost: totalFeedCost,
                           totalAdminCost: totalAdminCost,
@@ -3239,7 +3239,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                           avgSaleRate: avgSaleRate,
                           latestAvgWeight: latestAvgWeight,
                           totalFeedBags: totalFeedBags,
-                          totalFeedKg: totalFeedKg, // ✅ FIX
+                          totalFeedKg: totalFeedKg,
                           totalChickCost: totalChickCost,
                           totalFeedCost: totalFeedCost,
                           totalAdminCost: totalAdminCost,
@@ -3446,7 +3446,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double avgSaleRate,
     required double latestAvgWeight,
     required int totalFeedBags,
-    required double totalFeedKg, // ✅ FIX: new param
+    required double totalFeedKg,
     required double totalChickCost,
     required double totalFeedCost,
     required double totalAdminCost,
@@ -3484,7 +3484,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         avgSaleRate: avgSaleRate,
         latestAvgWeight: latestAvgWeight,
         totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg, // ✅ FIX
+        totalFeedKg: totalFeedKg,
         totalChickCost: totalChickCost,
         totalFeedCost: totalFeedCost,
         totalAdminCost: totalAdminCost,
@@ -3531,7 +3531,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         avgSaleRate: avgSaleRate,
         latestAvgWeight: latestAvgWeight,
         totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg, // ✅ FIX
+        totalFeedKg: totalFeedKg,
         totalChickCost: totalChickCost,
         totalFeedCost: totalFeedCost,
         totalAdminCost: totalAdminCost,
@@ -3609,7 +3609,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     required double avgSaleRate,
     required double latestAvgWeight,
     required int totalFeedBags,
-    required double totalFeedKg, // ✅ FIX: new param
+    required double totalFeedKg,
     required double totalChickCost,
     required double totalFeedCost,
     required double totalAdminCost,
@@ -3659,7 +3659,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         avgSaleRate: avgSaleRate,
         latestAvgWeight: latestAvgWeight,
         totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg, // ✅ FIX
+        totalFeedKg: totalFeedKg,
         totalChickCost: totalChickCost,
         totalFeedCost: totalFeedCost,
         totalAdminCost: totalAdminCost,
@@ -6458,7 +6458,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     liveChicks: liveChicks,
                     latestAvgWeight: latestAvgWeight,
                     totalFeedBags: netTotalFeedBags,
-                    totalFeedKg: netTotalFeedKgSum, // ✅ FIX: pass KG
+                    totalFeedKg: netTotalFeedKgSum,
                     totalMortality: totalMortality,
                     totalChicksSold: totalChicksSold,
                     totalWeightSoldKg: totalWeightSoldKg,
@@ -6734,7 +6734,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       liveChicks: liveChicks,
                       latestAvgWeight: latestAvgWeight,
                       totalFeedBags: netTotalFeedBags,
-                      totalFeedKg: netTotalFeedKgSum, // ✅ FIX: pass KG
+                      totalFeedKg: netTotalFeedKgSum,
                       totalMortality: totalMortality,
                       totalChicksSold: totalChicksSold,
                       totalWeightSoldKg: totalWeightSoldKg,
@@ -6811,7 +6811,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 child: GestureDetector(
                   onTap: () => _generateAndShowSettlementRasid(
                     totalFeedBags: netTotalFeedBags,
-                    totalFeedKg: netTotalFeedKgSum, // ✅ FIX: pass KG
+                    totalFeedKg: netTotalFeedKgSum,
                     totalMortality: totalMortality,
                     totalChicksSold: totalChicksSold,
                     totalWeightSoldKg: totalWeightSoldKg,
@@ -7236,142 +7236,155 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
                       // ── COST ENTRY CARD ─────────────────────────────
                       if (rowType == 'cost') {
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            side: BorderSide(color: Colors.grey.shade200),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      '📅 Din ki Entry: ${logRow['date']}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                        color: Colors.black87,
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.grey.shade100,
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        'By: ${logRow['enteredBy'] ?? 'Staff'}',
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.black54,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const Divider(
-                                  color: Color(0xFFF5F5F5),
-                                  height: 16,
-                                ),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    _buildLogMetricRow(
-                                      '⚖️ Avg Weight',
-                                      '${logRow['weight']} kg',
-                                    ),
-                                    _buildLogMetricRow(
-                                      '💀 Mortality',
-                                      '${logRow['mortality']}',
-                                    ),
-                                    _buildLogMetricRow(
-                                      (int.tryParse(
-                                                    logRow['feed'].toString(),
-                                                  ) ??
-                                                  0) <
-                                              0
-                                          ? '📦 Feed Correction ❌'
-                                          : '📦 Feed Bags Arrived',
-                                      '${logRow['feed']} Bag'
-                                      '${logRow['feedTotalKg'] is num ? ' (${(logRow['feedTotalKg'] as num).toStringAsFixed(1)} KG)' : ''}',
-                                    ),
-                                  ],
-                                ),
-                                if ((logRow['remainingFeed'] ?? '')
-                                    .toString()
-                                    .trim()
-                                    .isNotEmpty) ...[
-                                  const SizedBox(height: 6),
+                        // 🛑 NAYA CODE: GestureDetector add kiya gaya
+                        return GestureDetector(
+                          onTap: () => _showCostEntryDetailsDialog(logRow),
+                          child: Card(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              side: BorderSide(color: Colors.grey.shade200),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                   Row(
                                     children: [
-                                      const Icon(
-                                        Icons.inventory_2_outlined,
-                                        size: 14,
-                                        color: Colors.blueGrey,
-                                      ),
-                                      const SizedBox(width: 6),
                                       Text(
-                                        'Farm Stock Balance Checked: ${logRow['remainingFeed']} Bags bache hain',
+                                        '📅 Din ki Entry: ${logRow['date']}',
                                         style: const TextStyle(
-                                          fontSize: 11,
                                           fontWeight: FontWeight.bold,
-                                          color: Colors.blueGrey,
+                                          fontSize: 14,
+                                          color: Colors.black87,
                                         ),
+                                      ),
+                                      const Spacer(),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade100,
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'By: ${logRow['enteredBy'] ?? 'Staff'}',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.black54,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      // 🛑 NAYA CODE: Ek chhota arrow taaki pata chale ye clickable hai
+                                      const SizedBox(width: 8),
+                                      Icon(
+                                        Icons.arrow_forward_ios_rounded,
+                                        size: 12,
+                                        color: Colors.grey.shade400,
                                       ),
                                     ],
                                   ),
-                                ],
-                                if (logRow['hasMismatch'] == true) ...[
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade50,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: Colors.red.shade300,
+                                  const Divider(
+                                    color: Color(0xFFF5F5F5),
+                                    height: 16,
+                                  ),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      _buildLogMetricRow(
+                                        '⚖️ Avg Weight',
+                                        '${logRow['weight']} kg',
                                       ),
-                                    ),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                      _buildLogMetricRow(
+                                        '💀 Mortality',
+                                        '${logRow['mortality']}',
+                                      ),
+                                      _buildLogMetricRow(
+                                        (int.tryParse(
+                                                      logRow['feed'].toString(),
+                                                    ) ??
+                                                    0) <
+                                                0
+                                            ? '📦 Feed Correction ❌'
+                                            : '📦 Feed Bags Arrived',
+                                        '${logRow['feed']} Bag'
+                                        '${logRow['feedTotalKg'] is num ? ' (${(logRow['feedTotalKg'] as num).toStringAsFixed(1)} KG)' : ''}',
+                                      ),
+                                    ],
+                                  ),
+                                  if ((logRow['remainingFeed'] ?? '')
+                                      .toString()
+                                      .trim()
+                                      .isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Row(
                                       children: [
                                         const Icon(
-                                          Icons.error_outline,
+                                          Icons.inventory_2_outlined,
                                           size: 14,
-                                          color: Colors.red,
+                                          color: Colors.blueGrey,
                                         ),
                                         const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            '⚠️ Photo Mismatch: '
-                                            '${logRow['mismatchReason'] ?? 'Entered value photo se match nahi hua'}',
-                                            style: TextStyle(
-                                              fontSize: 10.5,
-                                              color: Colors.red.shade800,
-                                              fontWeight: FontWeight.w600,
-                                            ),
+                                        Text(
+                                          'Farm Stock Balance Checked: ${logRow['remainingFeed']} Bags bache hain',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blueGrey,
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ),
+                                  ],
+                                  if (logRow['hasMismatch'] == true) ...[
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.shade50,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.red.shade300,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Icon(
+                                            Icons.error_outline,
+                                            size: 14,
+                                            color: Colors.red,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              '⚠️ Photo Mismatch: '
+                                              '${logRow['mismatchReason'] ?? 'Entered value photo se match nahi hua'}',
+                                              style: TextStyle(
+                                                fontSize: 10.5,
+                                                color: Colors.red.shade800,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
                         );
@@ -7515,6 +7528,232 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           metricDataValue,
           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
         ),
+      ],
+    );
+  }
+
+  // ── 🛑 NAYA CODE: Photo viewer & details popup ──────────────────────────
+
+  void _showPhotoFullscreen(String base64Str, String title) {
+    try {
+      final bytes = base64Decode(base64Str);
+      showDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.black,
+          insetPadding: EdgeInsets.zero,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: InteractiveViewer(
+                  panEnabled: true,
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Image.memory(bytes, fit: BoxFit.contain),
+                ),
+              ),
+              Positioned(
+                top: 40,
+                left: 16,
+                right: 16,
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      Get.snackbar(
+        'Error',
+        'Photo open nahi ho saki.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    }
+  }
+
+  void _showCostEntryDetailsDialog(Map<String, dynamic> logRow) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        contentPadding: EdgeInsets.zero,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: primaryGreen,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Entry: ${logRow['date']}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => Navigator.pop(ctx),
+                    child: const Icon(Icons.close, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDetailPhotoRow(
+                    '⚖️ Avg Weight',
+                    '${logRow['weight']} KG',
+                    logRow['weightPhotoBase64'],
+                  ),
+                  const Divider(),
+                  _buildDetailPhotoRow(
+                    '💀 Mortality',
+                    '${logRow['mortality']} Birds',
+                    logRow['mortalityPhotoBase64'],
+                  ),
+                  const Divider(),
+                  _buildDetailPhotoRow(
+                    '📦 Feed Bags Arrived',
+                    '${logRow['feed']} Bag',
+                    null,
+                  ),
+                  const Divider(),
+                  _buildDetailPhotoRow(
+                    '🧾 Actual Remaining Feed',
+                    '${logRow['remainingFeed']} Bags',
+                    logRow['remainingFeedPhotoBase64'],
+                  ),
+                  if (logRow['hasMismatch'] == true) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '⚠️ ${logRow['mismatchReason'] ?? "Photo mismatch found"}',
+                        style: TextStyle(
+                          color: Colors.red.shade800,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailPhotoRow(String title, String value, String? photoBase64) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(color: Colors.black54, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value.trim().isEmpty ? 'Not Reported' : value,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (photoBase64 != null)
+          GestureDetector(
+            onTap: () => _showPhotoFullscreen(photoBase64, title),
+            child: Container(
+              height: 50,
+              width: 50,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: primaryGreen.withOpacity(0.3),
+                  width: 1.5,
+                ),
+                image: DecorationImage(
+                  image: MemoryImage(base64Decode(photoBase64)),
+                  fit: BoxFit.cover,
+                ),
+              ),
+              child: Align(
+                alignment: Alignment.bottomRight,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(
+                    Icons.zoom_in,
+                    color: Colors.white,
+                    size: 12,
+                  ),
+                ),
+              ),
+            ),
+          )
+        else
+          Container(
+            height: 50,
+            width: 50,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.image_not_supported_outlined,
+              color: Colors.grey,
+            ),
+          ),
       ],
     );
   }
