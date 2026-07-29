@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:poultrypro/services/company_store.dart';
 import 'package:poultrypro/services/session_service.dart';
 import '../../services/permission_service.dart'; // ✅ EDIT 1
+import '../../services/activity_logger.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔗 SHARED HELPERS — Farmer ka batch dhoondhna / naya batch ID banana
@@ -2018,6 +2019,13 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                 'chicksPurchaseHistory',
                                 json.encode(allEntries),
                               );
+                              // NAYA CODE: Activity Logger
+                              ActivityLogger.log(
+                                actionType: 'ALLOCATE',
+                                module: 'Batch',
+                                message:
+                                    'Chicks lot "$company" me se total $totalAllocated chicks allocate hue',
+                              );
 
                               // ✅ NEW: agar naya batch bana ho to farmers list
                               // bhi persist karo.
@@ -3214,6 +3222,13 @@ Future<void> addOrUpdateFeedPurchase({
   entry['purchaseHistory'] = hist;
   stock[idx] = entry;
   await CompanyStore.instance.saveJsonList('feedStockList', stock);
+  // NAYA CODE: Activity Logger
+  ActivityLogger.log(
+    actionType: 'ADD',
+    module: 'Feed',
+    message:
+        'Naya $feedTypeId feed kharida gaya: $bags Bags @ ₹$perBagPrice/bag company "$company" se',
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4091,6 +4106,13 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                         await CompanyStore.instance.saveJsonList(
                           'feedStockList',
                           stock,
+                        );
+                        // NAYA CODE: Activity Logger
+                        ActivityLogger.log(
+                          actionType: 'ALLOCATE',
+                          module: 'Feed',
+                          message:
+                              'Farmer "$farmerName" ko feed allocate hua: Starter($sQty), Grower($gQty), Finisher($fQty)',
                         );
 
                         if (!context.mounted) return;
@@ -5774,6 +5796,12 @@ Future<void> addOrUpdateMedicinePurchase({
   }
 
   await CompanyStore.instance.setString('medicineStockList', json.encode(all));
+  // NAYA CODE: Activity Logger
+  ActivityLogger.log(
+    actionType: 'ADD',
+    module: 'Medicine',
+    message: 'Medicine "$name" kharidi gayi: $qty $unit @ ₹$actualPrice',
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -8572,6 +8600,13 @@ Future<void> _showMedicineAllocationDialog(
                           'medicineStockList',
                           json.encode(all),
                         );
+                        // NAYA CODE: Activity Logger
+                        ActivityLogger.log(
+                          actionType: 'ALLOCATE',
+                          module: 'Medicine',
+                          message:
+                              'Farmer "$farmerName" ko ${med['name']} allocate hua: $qty2 $selectedUnit @ ₹$rate',
+                        );
 
                         Navigator.pop(ctx);
                         Get.snackbar(
@@ -9567,6 +9602,12 @@ class _AllocateMedicineToFarmerScreenState
     await CompanyStore.instance.setString(
       'medicineStockList',
       json.encode(all),
+    );
+    // Multiple medicine allocation save ke baad
+    ActivityLogger.log(
+      actionType: 'ALLOCATE',
+      module: 'Medicine',
+      message: 'Farmer "$farmerName" ko multiple medicines allocate ki gayin.',
     );
     Get.back(result: true);
     Get.snackbar(

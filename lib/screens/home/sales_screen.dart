@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'dart:convert';
 import 'package:poultrypro/services/company_store.dart';
 import 'package:poultrypro/services/session_service.dart';
+import 'package:poultrypro/services/activity_logger.dart';
 import '../../services/permission_service.dart'; // ✏️ EDIT 1
 
 import 'purchase_expense_screen.dart'
@@ -1881,6 +1882,15 @@ class _AddPrivateFeedSaleScreenState extends State<AddPrivateFeedSaleScreen> {
       json.encode(salesList),
     );
 
+    // 🛑 NAYA CODE: Activity Logger for Feed Sale Save
+    ActivityLogger.log(
+      actionType: _isEditMode ? 'EDIT' : 'ADD',
+      module: 'Sale',
+      message:
+          'Private Feed Sale ${_isEditMode ? 'update' : 'darj'} hua: Buyer "${_buyerNameCtrl.text.trim()}" ko ₹${fin['totalSale']!.toStringAsFixed(2)} ka feed becha.',
+    );
+    // 🛑 END NAYA CODE
+
     if (!mounted) return;
     Get.back(result: true);
     Get.snackbar(
@@ -2658,6 +2668,15 @@ Future<void> _confirmDeleteSale(
       json.encode(salesList),
     );
 
+    // 🛑 NAYA CODE: Activity Logger for Feed Sale Delete
+    ActivityLogger.log(
+      actionType: 'DELETE',
+      module: 'Sale',
+      message:
+          'Private Feed Sale record delete kiya gaya: Buyer "${sale['buyerName']}"',
+    );
+    // 🛑 END NAYA CODE
+
     Get.back(
       result: true,
     ); // Detail screen band karo aur history list refresh karo
@@ -3433,6 +3452,16 @@ class _AddPrivateMedicineSaleScreenState
       'medicineSalesHistory',
       json.encode(list),
     );
+
+    // 🛑 NAYA CODE: Activity Logger for Medicine Sale Save
+    ActivityLogger.log(
+      actionType: _isEdit ? 'EDIT' : 'ADD',
+      module: 'Sale',
+      message:
+          'Private Medicine Sale ${_isEdit ? 'update' : 'darj'} hua: Buyer "${_buyerCtrl.text.trim()}" ko ₹${fin['sale']!.toStringAsFixed(2)} ki dawai bechi.',
+    );
+    // 🛑 END NAYA CODE
+
     Get.back(result: true);
     Get.snackbar(
       _isEdit ? 'Updated ✅' : 'Saved ✅',
@@ -4434,6 +4463,16 @@ Future<void> _delMedSale(
     'medicineSalesHistory',
     json.encode(list),
   );
+
+  // 🛑 NAYA CODE: Activity Logger for Medicine Sale Delete
+  ActivityLogger.log(
+    actionType: 'DELETE',
+    module: 'Sale',
+    message:
+        'Private Medicine Sale record delete kiya gaya: Buyer "${sale['buyerName']}"',
+  );
+  // 🛑 END NAYA CODE
+
   Get.back(result: true);
   Get.snackbar(
     'Deleted 🗑️',
