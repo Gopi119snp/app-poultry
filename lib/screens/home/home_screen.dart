@@ -12,7 +12,7 @@ import '../../utils/simple_settlement_engine.dart';
 import '../../services/company_store.dart';
 import '../../services/session_service.dart';
 import '../../services/auth_service.dart';
-import '../../services/activity_logger.dart'; // ✅ NEW IMPORT for ActivityLogger
+import '../../services/activity_logger.dart';
 import 'purchase_expense_screen.dart';
 import 'sales_screen.dart';
 import 'feed_consumption_rule_screen.dart';
@@ -24,21 +24,15 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
-import 'reports_screen.dart'; // Agar reports_screen usi folder mein hai jahan home_screen hai
+import 'reports_screen.dart';
 import 'settings_screen.dart';
 import '../../services/permission_service.dart';
-import 'global_search_screen.dart'; // Apna path adjust kar lijiye
-import 'notifications_screen.dart'; // Apna sahi path check kar lena
-// ── ✅ Imports for stock history screens
+import 'global_search_screen.dart';
+import 'notifications_screen.dart';
 import 'feed_stock_history_screen.dart';
-import 'all_recent_activity_screen.dart'; // Apna path check kar lena
-// ── Assuming these helpers are defined elsewhere – you must have them.
-// Future<List<Map<String, dynamic>>> ensureFeedStockMigrated() async { ... }
-// double computeFeedRemaining(Map<String, dynamic> feedEntry) { ... }
-// Future<double> computeMedicineRemainingBaseQty(Map<String, dynamic> med) async { ... }
-// const List<String> kFeedTypeIds = ['starter', 'grower', 'finisher'];
-// const Map<String, String> kFeedTypeNames = {'starter':'Starter', 'grower':'Grower', 'finisher':'Finisher'};
-// import 'allocate_medicine_to_farmer_screen.dart'; // etc.
+import 'all_recent_activity_screen.dart';
+// ✅ NEW IMPORT for income engine
+import 'income_engine.dart';
 
 class HomeScreen extends StatefulWidget {
   final String ownerName;
@@ -64,13 +58,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _activeBatchCount = 0;
   final List<Map<String, dynamic>> _liftingFarmers = [];
 
+  // 🛑 NAYA CODE: Home screen income ke liye
+  double _currentMonthIncome = 0.0;
+  String _currentMonthName = '';
+
+  String _formatMoney(double v) {
+    if (v >= 100000) return '${(v / 100000).toStringAsFixed(2)}L';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
   int _minLiftingDays = 23;
   int _maxLiftingDays = 60;
 
   List<Map<String, dynamic>> _recentActivitiesList = [];
   Timer? _instantRefreshTimer;
-  StreamSubscription<void>?
-  _dataChangeSub; // ✅ FIX — real-time cloud sync listener
+  StreamSubscription<void>? _dataChangeSub;
   String _selectedActivityFilter = 'Default';
 
   // ── 🚜 SAAS SELECTION STATE TRACKING VARIABLES ─────────────────────────────
@@ -81,7 +84,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ── 📦 STOCK MANAGEMENT STATE (FEED + MEDICINE) ────────────────────────────
   int _stockSubTab = 0; // 0 = Feed, 1 = Medicine
 
-  // ✅ STEP 1: REPLACED feed stock map with list, and added remaining base map
   List<Map<String, dynamic>> _feedStockList = [];
   Map<String, double> _medicineRemainingBase = {};
 
@@ -95,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _dustScaleAnim;
   bool _showDust = false;
 
-  // ── 🔐 PERMISSION FLAGS (Home screen ke liye) ──────────────────────────────
+  // ── 🔐 PERMISSION FLAGS ──────────────────────────────
   bool _canViewPurchase = false;
   bool _canViewSales = false;
   bool _canViewReportsQuick = false;
@@ -106,7 +108,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _canViewWeightRule = false;
   bool _canViewPerfRule = false;
   bool _canEditLiftingRange = false;
-  // ✏️ EDIT 1 (permission flags)
   bool _canViewFeedAllocationHistory = false;
   bool _canViewMedicineAllocationHistory = false;
 
@@ -117,12 +118,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _loadKpiData();
     _loadStockData();
     _loadAppliedRuleState();
-    _loadPermissionFlags(); // ✅ EDIT 3
+    _loadPermissionFlags();
 
-    // ✅ FIX — Real-time cloud listener: jaise hi kisi bhi device se
-    // (Owner, Office Manager, Field Manager) koi bhi data Firestore mein
-    // change hota hai, ye turant fire hota hai — 15-second polling ka
-    // wait nahi karna padta.
     _dataChangeSub = CompanyStore.instance.onDataChanged.listen((_) {
       if (!mounted) return;
       _loadKpiData();
@@ -130,9 +127,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _loadAppliedRuleState();
     });
 
-    // Backup/fallback polling — real-time listener fail ho ya network
-    // reconnect ke baad catch-up ke liye rakha hai. Interval badha diya
-    // hai kyunki ab primary sync real-time listener se ho raha hai.
     _instantRefreshTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
       _loadKpiData();
       _loadStockData();
@@ -184,7 +178,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _instantRefreshTimer?.cancel();
-    _dataChangeSub?.cancel(); // ✅ FIX
+    _dataChangeSub?.cancel();
     _chickBounceController.dispose();
     _dustController.dispose();
     super.dispose();
@@ -204,7 +198,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  // ✅ EDIT 3: Permissions load karne wala method
   Future<void> _loadPermissionFlags() async {
     final purchase = await PermissionService.can('purchaseExpense', 'view');
     final sales = await PermissionService.can('sales', 'view');
@@ -222,7 +215,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       'view',
     );
     final liftingEdit = await PermissionService.can('liftingRangeSet', 'edit');
-    // ✏️ EDIT 2: new permission checks
     final feedAllocHistory = await PermissionService.can(
       'feedAllocation',
       'view',
@@ -244,14 +236,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _canViewWeightRule = weightRule;
       _canViewPerfRule = perfRule;
       _canEditLiftingRange = liftingEdit;
-      // ✏️ EDIT 2 continued
       _canViewFeedAllocationHistory = feedAllocHistory;
       _canViewMedicineAllocationHistory = medAllocHistory;
     });
   }
 
   // =============================================================================
-  // ⚙️ AUTO-SALARY GENERATOR (Runs in background)
+  // ⚙️ AUTO-SALARY GENERATOR
   // =============================================================================
   Future<void> _autoProcessMonthlySalaries() async {
     String? historyJson = await CompanyStore.instance.getString(
@@ -333,7 +324,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // =============================================================================
-  // ✅ CORRECTED _loadKpiData() — All awaits outside setState
+  // ✅ CORRECTED _loadKpiData() — with income calculation
   // =============================================================================
   Future<void> _loadKpiData() async {
     if (!mounted) return;
@@ -344,6 +335,41 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         await CompanyStore.instance.getInt('minLiftingDays') ?? 23;
     final maxLifting =
         await CompanyStore.instance.getInt('maxLiftingDays') ?? 60;
+
+    // 🛑 NAYA CODE START: Live Income Calculation for Current Month
+    final now = DateTime.now();
+    final currentMonthFilter = AppDateFilter(
+      label: 'Current Month',
+      start: DateTime(now.year, now.month, 1),
+      end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
+    );
+
+    double calculatedIncome = 0.0;
+    try {
+      final compIncome = await computeCompanyFarmerIncome(currentMonthFilter);
+      final privIncome = await computePrivateSalesIncome(currentMonthFilter);
+      calculatedIncome = compIncome.total + privIncome.total;
+    } catch (e) {
+      debugPrint("Income calculation error: $e");
+    }
+
+    const monthNames = [
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    String monthLabel = '${monthNames[now.month]} ${now.year}';
+    // 🛑 NAYA CODE END
 
     // Fetch activity logs
     String? logsJson = await CompanyStore.instance.getString(
@@ -390,6 +416,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     // ── Now update UI inside setState ──
     setState(() {
+      _currentMonthIncome = calculatedIncome; // 🛑 NAYA CODE
+      _currentMonthName = monthLabel; // 🛑 NAYA CODE
       _minLiftingDays = minLifting;
       _maxLiftingDays = maxLifting;
       _liftingFarmers.clear();
@@ -410,7 +438,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   batchStatus == 'LIFTING READY' ||
                   batchStatus == 'PARTIAL LIFTED') {
                 activeBatchesSum++;
-                // (The lifting logic is kept as it was; not detailed here)
               }
             }
           }
@@ -442,13 +469,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // 📦 STOCK DATA — LOAD / SAVE / ADD / USE (FEED + MEDICINE)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // ✅ STEP 2: REPLACED _loadStockData() with new version using feedStockList and medicineRemainingBase
   Future<void> _loadStockData() async {
     if (!mounted) return;
 
-    // ✅ FIX: Feed ka asli data 'feedStockList' mein hai (Purchase Expense
-    // screen isi ko use karta hai) — purana getFeedStockMap() alag/stale
-    // jagah tha isliye numbers match nahi hote the.
     final loadedFeed = await ensureFeedStockMigrated();
     final loadedMedicineRaw = await CompanyStore.instance.getJsonList(
       'medicineStockList',
@@ -457,9 +480,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
 
-    // ✅ FIX: har medicine ka asli "bacha hua" stock (total − allocations −
-    // sales) nikalo — purana code 'remainingQuantity' field expect karta
-    // tha jo exist hi nahi karta, isi wajah se crash hota tha.
     final Map<String, double> remainingMap = {};
     for (final med in loadedMedicine) {
       final String mId = med['id']?.toString() ?? '';
@@ -474,8 +494,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _medicineRemainingBase = remainingMap;
     });
   }
-
-  // ❌ STEP 3: DELETED _saveFeedStock, _addFeedStock, _useFeedStock, _showUseFeedStockDialog
 
   Future<void> _saveMedicineStock() async {
     await CompanyStore.instance.saveJsonList(
@@ -569,7 +587,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
     await _saveMedicineStock();
 
-    // ✅ Refresh remaining base map after use
     await _loadStockData();
 
     return {
@@ -717,14 +734,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               await CompanyStore.instance.setInt('minLiftingDays', minD);
               await CompanyStore.instance.setInt('maxLiftingDays', maxD);
 
-              // 🛑 NAYA CODE: Activity Logger
               ActivityLogger.log(
                 actionType: 'EDIT',
                 module: 'Settings',
                 message:
                     'Lifting range update ki gayi: $minD se $maxD din set kiya.',
               );
-              // 🛑 END NAYA CODE
 
               if (!mounted) return;
               Navigator.pop(context);
@@ -1130,7 +1145,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         json.encode(history),
                       );
 
-                      // NAYA CODE: Activity Logger
                       ActivityLogger.log(
                         actionType: 'ADD',
                         module: 'Purchase',
@@ -1384,11 +1398,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       final addedByRole = await _getSessionRole();
                       final addedByName = await _getSessionName();
 
-                      // ✅ STEP 4: DELETED the three _addFeedStock lines from here
-                      // if (sBags > 0) await _addFeedStock('Starter', sBags);
-                      // if (gBags > 0) await _addFeedStock('Grower', gBags);
-                      // if (fBags > 0) await _addFeedStock('Finisher', fBags);
-
                       double sPerBag =
                           double.tryParse(starterPerBagCtrl.text.trim()) ?? 0;
                       double gPerBag =
@@ -1427,7 +1436,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         );
                       }
 
-                      await _loadStockData(); // ✅ refresh feed stock list
+                      await _loadStockData();
 
                       if (!mounted) return;
                       Navigator.pop(context);
@@ -2543,7 +2552,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         json.encode(history),
                       );
 
-                      // NAYA CODE: Activity Logger
                       ActivityLogger.log(
                         actionType: 'ADD',
                         module: 'Expense',
@@ -2800,7 +2808,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         json.encode(history),
                       );
 
-                      // NAYA CODE: Activity Logger
                       ActivityLogger.log(
                         actionType: 'ADD',
                         module: 'Expense',
@@ -3053,11 +3060,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         return;
                       }
 
-                      // ✅ STEP 4: DELETED the three _addFeedStock lines from here too
-                      // if (sBags > 0) await _addFeedStock('Starter', sBags);
-                      // if (gBags > 0) await _addFeedStock('Grower', gBags);
-                      // if (fBags > 0) await _addFeedStock('Finisher', fBags);
-
                       double sPerBag =
                           double.tryParse(starterPerBagCtrl.text.trim()) ?? 0;
                       double gPerBag =
@@ -3265,8 +3267,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ═══════════════════════════════════════════════════════════════════════════
   // 📦 STOCK DIALOGS — USE FEED, ADD/USE/DELETE MEDICINE
   // ═══════════════════════════════════════════════════════════════════════════
-
-  // ❌ STEP 3: REMOVED _showUseFeedStockDialog (no longer needed)
 
   void _showAddMedicineDialog() {
     final nameCtrl = TextEditingController();
@@ -5130,7 +5130,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const Divider(height: 1, color: Color(0xFFF0F0F0)),
               const SizedBox(height: 20),
 
-              // ✅ EDIT 5: Conditional tiles
               if (_canViewSettlement) ...[
                 _premiumSheetTile(
                   icon: Icons.receipt_long_rounded,
@@ -5544,7 +5543,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           currentIndex: _currentIndex,
           onTap: (index) {
             if (index == 3) {
-              // 🛑 NAYA CODE: Reports par tap karte hi wahi screen khulegi jo Quick Actions se khulti hai!
               Get.to(() => const ReportsScreen());
             } else {
               setState(() => _currentIndex = index);
@@ -5640,7 +5638,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    _kpiCard('💰', 'Income', '₹0', Colors.white),
+                    // 🛑 NAYA CODE: Dynamic Profit/Loss Card
+                    _kpiCard(
+                      _currentMonthIncome >= 0 ? '💰' : '📉',
+                      _currentMonthIncome >= 0
+                          ? 'Profit\n($_currentMonthName)'
+                          : 'Loss\n($_currentMonthName)',
+                      '${_currentMonthIncome >= 0 ? "+" : "-"}₹${_formatMoney(_currentMonthIncome.abs())}',
+                      Colors.white,
+                    ),
                     const SizedBox(width: 12),
                     _kpiCard(
                       '🚜',
@@ -5668,7 +5674,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(height: 12),
-                // ✅ EDIT 4: Conditional Quick Actions
                 Row(
                   children: [
                     if (_canViewPurchase) ...[
@@ -5750,7 +5755,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         color: Colors.black87,
                       ),
                     ),
-                    // 🛑 NAYA CODE: View All Button
                     GestureDetector(
                       onTap: () {
                         Get.to(() => const AllRecentActivityScreen());
@@ -5858,7 +5862,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  // ✅ EDIT 6: Conditionally show settings icon
                   if (_canEditLiftingRange)
                     IconButton(
                       icon: const Icon(
@@ -5992,14 +5995,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () {
-                  // 🛑 NAYA CODE: Activity Logger
                   ActivityLogger.log(
                     actionType: 'UPDATE',
                     module: 'Batch',
                     message:
                         'Farmer "${farmer['name']}" ka lifting process shuru kiya gaya.',
                   );
-                  // 🛑 END NAYA CODE
 
                   Get.snackbar(
                     'Lifting Confirm',
@@ -6256,8 +6257,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // ─────────────────── FEED STOCK TAB ───────────────────────────────────────
-  // ✅ STEP 5: REPLACED _buildFeedStockTab() with new version using _feedStockList
-  // Also removed the old "Allocate / Details" button — only the new history button remains.
   Widget _buildFeedStockTab() {
     final Map<String, MaterialColor> colors = {
       'starter': Colors.blue,
@@ -6282,7 +6281,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── ✅ Only title remains (no Add Stock button) ──
           const Text(
             'Feed Bags Inventory',
             style: TextStyle(
@@ -6435,7 +6433,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ],
                         ),
                       ),
-                      // ── History button — sirf permission ke saath ──
                       if (_canViewFeedAllocationHistory) ...[
                         Divider(height: 1, color: c.shade50),
                         Padding(
@@ -6485,14 +6482,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // ─────────────────── MEDICINE STOCK TAB ───────────────────────────────────
-  // ✅ "Add Medicine" button removed as requested
   Widget _buildMedicineStockTab() {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── ✅ Only title, no Add Medicine button ──
           const Text(
             'Medicine Inventory',
             style: TextStyle(
@@ -6531,8 +6526,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ✅ STEP 6: REPLACED _medicineStockCard() with new version using _medicineRemainingBase
-  // Also replaced "Allocate to Farmer" button with "Farmers Allocation / Private Sales History"
   Widget _medicineStockCard(Map<String, dynamic> medicine) {
     final String mId = medicine['id']?.toString() ?? '';
     final String unit = medicine['unit']?.toString() ?? '';
