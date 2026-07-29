@@ -7,6 +7,7 @@ import '../../../utils/feed_consumption_rule_engine.dart';
 import '../../../utils/weight_growth_rule_engine.dart';
 import '../../../utils/fraud_risk_engine.dart';
 import '../../../utils/performance_alert_engine.dart';
+import '../../../services/activity_logger.dart'; // 🛑 NAYA IMPORT
 
 // =============================================================================
 // 📅 DAILY UPDATE LIST SCREEN
@@ -719,6 +720,15 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                     }),
                   );
 
+                  // 🛑 NAYA CODE: Activity Logger
+                  ActivityLogger.log(
+                    actionType: 'EDIT',
+                    module: 'Settings',
+                    message:
+                        'Running Cost Settings update ki gayi: Chick ₹$chick, Feed ₹$feed/kg, Admin ₹$admin/kg.',
+                  );
+                  // 🛑 END NAYA CODE
+
                   setState(() {
                     _fallbackChickPrice = chick;
                     _fallbackFeedRate = feed;
@@ -1206,6 +1216,15 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
         'companyFarmers',
         jsonEncode(farmersList),
       );
+
+      // 🛑 NAYA CODE: Activity Logger
+      ActivityLogger.log(
+        actionType: 'EDIT',
+        module: 'Batch',
+        message:
+            'Batch ${widget.batchData['batchId']} ki $dateStr ki entry update ki gayi.',
+      );
+      // 🛑 END NAYA CODE
 
       setState(() {
         _localDailyEntries = List<dynamic>.from(updatedDailyEntries!);

@@ -26,7 +26,8 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'reports_screen.dart'; // Agar reports_screen usi folder mein hai jahan home_screen hai
 import 'settings_screen.dart';
-import '../../services/permission_service.dart'; // ✅ EDIT 1
+import '../../services/permission_service.dart';
+import 'global_search_screen.dart'; // Apna path adjust kar lijiye
 
 // ── ✅ Imports for stock history screens
 import 'feed_stock_history_screen.dart';
@@ -5488,7 +5489,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             IconButton(
               icon: const Icon(Icons.search, color: Colors.white, size: 26),
-              onPressed: () {},
+              onPressed: () {
+                Get.to(() => const GlobalSearchScreen());
+              },
             ),
             IconButton(
               icon: Stack(

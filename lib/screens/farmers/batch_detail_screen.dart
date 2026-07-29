@@ -24,6 +24,7 @@ import '../../../utils/performance_alert_engine.dart';
 import 'daily_update_list_screen.dart';
 import '../../../services/permission_service.dart';
 import '../../../services/session_service.dart';
+import '../../../services/activity_logger.dart'; // 🛑 NAYA IMPORT
 
 // =============================================================================
 // BATCH DETAIL & DAILY DATA ENTRY SCREEN
@@ -3880,6 +3881,15 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         margin: const EdgeInsets.all(15),
       );
     } else if (success) {
+      // 🛑 NAYA CODE: Activity Logger for Batch Close
+      ActivityLogger.log(
+        actionType: 'UPDATE',
+        module: 'Batch',
+        message:
+            'Batch ${_liveBatchData['batchId']} permanently close kar diya gaya aur settlement complete hua.',
+      );
+      // 🛑 END NAYA CODE
+
       Get.snackbar(
         'Batch Closed ✅',
         'Batch successfully close ho gaya. Settlement complete!',
@@ -4454,6 +4464,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       return;
     }
     await _loadFreshBatchData();
+
+    // 🛑 NAYA CODE: Activity Logger for Return Feed
+    ActivityLogger.log(
+      actionType: 'RETURN',
+      module: 'Batch',
+      message:
+          'Batch ${_liveBatchData['batchId']} se ${kg.toStringAsFixed(1)} KG feed waapas aaya (Return Feed).',
+    );
+    // 🛑 END NAYA CODE
+
     Get.snackbar(
       'Return Feed Saved ✅',
       '${kg.toStringAsFixed(1)} KG return feed record ho gaya.',
@@ -5610,6 +5630,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     await _loadFreshBatchData();
 
     Navigator.pop(dialogContext);
+
+    // 🛑 NAYA CODE: Activity Logger for Flock Record
+    ActivityLogger.log(
+      actionType: 'ADD',
+      module: 'Batch',
+      message:
+          'Batch ${_liveBatchData['batchId']} mein flock record (Weight/Mortality/Feed) darj kiya gaya.',
+    );
+    // 🛑 END NAYA CODE
+
     Get.snackbar(
       'Saved ✅',
       'Rozana ka cost data save ho gaya!',
@@ -5858,6 +5888,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     await _loadFreshBatchData();
 
     Navigator.pop(dialogContext);
+
+    // 🛑 NAYA CODE: Activity Logger for Sales Entry
+    ActivityLogger.log(
+      actionType: 'SALE',
+      module: 'Batch',
+      message:
+          'Batch ${_liveBatchData['batchId']} se sale hui: $soldChicksStr chicks ($totalWeight kg) buyer "$buyerName" ko.',
+    );
+    // 🛑 END NAYA CODE
+
     Get.snackbar(
       'Sold Success 🎉',
       'Sales record permanently save ho gaya!',
@@ -6057,6 +6097,16 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     await _loadFreshBatchData();
 
     Navigator.pop(dialogContext);
+
+    // 🛑 NAYA CODE: Activity Logger for Medicine Entry
+    ActivityLogger.log(
+      actionType: 'ADD',
+      module: 'Batch',
+      message:
+          'Batch ${_liveBatchData['batchId']} mein medicine di gayi: $medName ($qty $_selectedMedicineUnit).',
+    );
+    // 🛑 END NAYA CODE
+
     Get.snackbar(
       stockMedicine != null ? 'Stock Updated ✅' : 'Saved ✅',
       stockMedicine != null

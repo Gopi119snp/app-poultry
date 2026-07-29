@@ -5,6 +5,7 @@ import 'dart:io';
 import '../../services/company_store.dart';
 import '../../services/session_service.dart';
 import '../../widgets/permission_gate.dart';
+import '../../services/activity_logger.dart'; // 🛑 NAYA IMPORT
 
 class AddFarmerScreenStep2 extends StatefulWidget {
   final Map<String, dynamic> step1Data;
@@ -203,6 +204,15 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
 
     farmers.add(farmerData);
     await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
+
+    // 🛑 NAYA CODE: Activity Logger for Add Farmer
+    ActivityLogger.log(
+      actionType: 'ADD',
+      module: 'Farmer',
+      message:
+          'Naya farmer "${widget.step1Data['name']}" system mein register kiya gaya.',
+    );
+    // 🛑 END NAYA CODE
 
     final companyId = await SessionService.companyId;
     if (companyId != null) {
