@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../../services/company_store.dart';
 import 'batch_performance_screen.dart';
 import 'farmer_profit_loss_screen.dart';
+import 'total_income_report_screen.dart';
 import 'accounts_screen.dart' show AppDateFilter, isDateInFilter;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -118,6 +119,15 @@ class ReportsScreen extends StatelessWidget {
                         'Har farmer ka Chicks+Feed+Medicine+Admin margin minus Operational Expense',
                     color: Colors.indigo,
                     onTap: () => Get.to(() => const FarmerProfitLossScreen()),
+                  ),
+                  const SizedBox(height: 12),
+                  _ReportCard(
+                    emoji: '💰',
+                    title: 'Total Income',
+                    subtitle:
+                        'Company-Farmer aur Private Sales dono ka profit/loss, category-wise',
+                    color: Colors.indigo,
+                    onTap: () => Get.to(() => const TotalIncomeReportScreen()),
                   ),
                   const SizedBox(height: 30),
                 ],

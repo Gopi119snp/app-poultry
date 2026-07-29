@@ -18,9 +18,18 @@ class _AllRecentActivityScreenState extends State<AllRecentActivityScreen> {
   List<Map<String, dynamic>> _filteredLogs = [];
   bool _isLoading = true;
 
+  // Date Filters
   DateTime? _startDate;
   DateTime? _endDate;
-  DateTime? _oldestDataDate; // App mein pehla data kab save hua tha
+  DateTime? _oldestDataDate;
+
+  // Role & Person Filters
+  String? _selectedRole;
+  String? _selectedPerson;
+
+  List<String> _availableRoles = [];
+  List<String> _allAvailablePersons = [];
+  List<String> _currentAvailablePersons = [];
 
   @override
   void initState() {
@@ -40,14 +49,24 @@ class _AllRecentActivityScreenState extends State<AllRecentActivityScreen> {
             .toList();
 
         if (logs.isNotEmpty) {
-          // Aakhiri log ka time sabse purana data hoga
           _oldestDataDate = DateTime.tryParse(logs.last['timestamp'] ?? '');
+        }
+
+        // Dynamically saare Roles aur Names nikalna
+        Set<String> roles = {};
+        Set<String> persons = {};
+        for (var log in logs) {
+          roles.add(log['performedByRole']?.toString() ?? 'Unknown');
+          persons.add(log['performedByName']?.toString() ?? 'Unknown');
         }
 
         if (mounted) {
           setState(() {
             _allLogs = logs;
             _filteredLogs = logs;
+            _availableRoles = roles.toList()..sort();
+            _allAvailablePersons = persons.toList()..sort();
+            _currentAvailablePersons = List.from(_allAvailablePersons);
             _isLoading = false;
           });
         }
@@ -63,14 +82,11 @@ class _AllRecentActivityScreenState extends State<AllRecentActivityScreen> {
     if (_allLogs.isEmpty) return;
 
     DateTime now = DateTime.now();
-    // Max 6 months (180 days) peeche ja sakte hain
     DateTime sixMonthsAgo = now.subtract(const Duration(days: 180));
 
-    // Agar data 6 mahine se naya hai (jaise aaj account bana), to firstDate utna hi hoga
     DateTime earliestAllowedDate = sixMonthsAgo;
     if (_oldestDataDate != null && _oldestDataDate!.isAfter(sixMonthsAgo)) {
-      earliestAllowedDate =
-          _oldestDataDate!; // Data creation date par bound kar diya
+      earliestAllowedDate = _oldestDataDate!;
     }
 
     final DateTimeRange? picked = await showDateRangePicker(
@@ -93,7 +109,6 @@ class _AllRecentActivityScreenState extends State<AllRecentActivityScreen> {
     if (picked != null) {
       setState(() {
         _startDate = picked.start;
-        // End date ko din ke end tak set karte hain taaki us din ka saara data aaye
         _endDate = DateTime(
           picked.end.year,
           picked.end.month,
@@ -102,28 +117,243 @@ class _AllRecentActivityScreenState extends State<AllRecentActivityScreen> {
           59,
           59,
         );
-        _applyDateFilter();
+        _applyFilters();
       });
     }
   }
 
-  void _applyDateFilter() {
-    if (_startDate == null || _endDate == null) return;
+  // Smart Filter Bottom Sheet
+  void _showFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Filter by Role & Person',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                  const SizedBox(height: 16),
 
+                  // Role Dropdown
+                  const Text(
+                    'Select Role:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        hint: const Text('All Roles'),
+                        value: _selectedRole,
+                        items: [
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('All Roles'),
+                          ),
+                          ..._availableRoles.map(
+                            (r) => DropdownMenuItem(value: r, child: Text(r)),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          setModalState(() {
+                            _selectedRole = val;
+                            _selectedPerson =
+                                null; // Role badalne par person reset karein
+
+                            // Naye role ke hisaab se names filter karein
+                            if (val == null) {
+                              _currentAvailablePersons = List.from(
+                                _allAvailablePersons,
+                              );
+                            } else {
+                              Set<String> filteredPersons = {};
+                              for (var log in _allLogs) {
+                                if (log['performedByRole'] == val) {
+                                  filteredPersons.add(
+                                    log['performedByName'] ?? 'Unknown',
+                                  );
+                                }
+                              }
+                              _currentAvailablePersons =
+                                  filteredPersons.toList()..sort();
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Person Name Dropdown
+                  const Text(
+                    'Select Person:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        hint: const Text('All Persons'),
+                        value: _selectedPerson,
+                        items: [
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('All Persons'),
+                          ),
+                          ..._currentAvailablePersons.map(
+                            (p) => DropdownMenuItem(value: p, child: Text(p)),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          setModalState(() => _selectedPerson = val);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            setModalState(() {
+                              _selectedRole = null;
+                              _selectedPerson = null;
+                              _currentAvailablePersons = List.from(
+                                _allAvailablePersons,
+                              );
+                            });
+                            setState(() => _applyFilters());
+                            Navigator.pop(ctx);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text(
+                            'Clear',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            setState(() => _applyFilters());
+                            Navigator.pop(ctx);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryGreen,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text(
+                            'Apply Filter',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _applyFilters() {
     setState(() {
       _filteredLogs = _allLogs.where((log) {
-        DateTime logDate =
-            DateTime.tryParse(log['timestamp'] ?? '') ?? DateTime.now();
-        return logDate.isAfter(_startDate!) && logDate.isBefore(_endDate!);
+        // 1. Date Check
+        bool dateMatch = true;
+        if (_startDate != null && _endDate != null) {
+          DateTime logDate =
+              DateTime.tryParse(log['timestamp'] ?? '') ?? DateTime.now();
+          dateMatch =
+              logDate.isAfter(_startDate!) && logDate.isBefore(_endDate!);
+        }
+
+        // 2. Role Check
+        bool roleMatch = true;
+        if (_selectedRole != null) {
+          roleMatch = (log['performedByRole'] ?? 'Unknown') == _selectedRole;
+        }
+
+        // 3. Person Check
+        bool personMatch = true;
+        if (_selectedPerson != null) {
+          personMatch =
+              (log['performedByName'] ?? 'Unknown') == _selectedPerson;
+        }
+
+        return dateMatch && roleMatch && personMatch;
       }).toList();
     });
   }
 
-  void _clearFilter() {
+  void _clearDateFilter() {
     setState(() {
       _startDate = null;
       _endDate = null;
-      _filteredLogs = _allLogs;
+      _applyFilters();
+    });
+  }
+
+  void _clearRolePersonFilter() {
+    setState(() {
+      _selectedRole = null;
+      _selectedPerson = null;
+      _currentAvailablePersons = List.from(_allAvailablePersons);
+      _applyFilters();
     });
   }
 
@@ -165,43 +395,85 @@ class _AllRecentActivityScreenState extends State<AllRecentActivityScreen> {
             tooltip: 'Filter by Date',
             onPressed: _selectDateRange,
           ),
+          IconButton(
+            icon: const Icon(Icons.filter_alt_rounded, color: Colors.white),
+            tooltip: 'Filter by Role/Person',
+            onPressed: _showFilterSheet,
+          ),
         ],
       ),
       body: Column(
         children: [
+          // Active Date Filter Chip
           if (_startDate != null && _endDate != null)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: Colors.green.shade50,
               child: Row(
                 children: [
                   const Icon(
-                    Icons.filter_alt_rounded,
-                    size: 18,
+                    Icons.date_range_rounded,
+                    size: 16,
                     color: primaryGreen,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '${_startDate!.day}/${_startDate!.month}/${_startDate!.year} se ${_endDate!.day}/${_endDate!.month}/${_endDate!.year} tak',
+                      '${_startDate!.day}/${_startDate!.month}/${_startDate!.year} se ${_endDate!.day}/${_endDate!.month}/${_endDate!.year}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         color: primaryGreen,
-                        fontSize: 13,
+                        fontSize: 12,
                       ),
                     ),
                   ),
                   InkWell(
-                    onTap: _clearFilter,
+                    onTap: _clearDateFilter,
                     child: const Icon(
                       Icons.close_rounded,
-                      size: 20,
+                      size: 18,
                       color: Colors.red,
                     ),
                   ),
                 ],
               ),
             ),
+
+          // Active Role/Person Filter Chip
+          if (_selectedRole != null || _selectedPerson != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.blue.shade50,
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.person_search_rounded,
+                    size: 16,
+                    color: Colors.blue,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${_selectedRole ?? "All Roles"}  →  ${_selectedPerson ?? "All Persons"}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: _clearRolePersonFilter,
+                    child: const Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: Colors.red,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           Expanded(
             child: _isLoading
                 ? const Center(
@@ -210,7 +482,7 @@ class _AllRecentActivityScreenState extends State<AllRecentActivityScreen> {
                 : _filteredLogs.isEmpty
                 ? Center(
                     child: Text(
-                      'Is date range mein koi activity nahi hai.',
+                      'Is filter ke hisaab se koi activity nahi mili.',
                       style: TextStyle(color: Colors.grey.shade600),
                     ),
                   )
@@ -249,6 +521,13 @@ class _AllRecentActivityScreenState extends State<AllRecentActivityScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
