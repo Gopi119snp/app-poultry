@@ -5741,12 +5741,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         color: Colors.black87,
                       ),
                     ),
-                    PopupMenuButton<String>(
-                      onSelected: (String criteria) {
-                        setState(() => _selectedActivityFilter = criteria);
-                        _loadKpiData();
+                    // 🛑 NAYA CODE: View All Button
+                    GestureDetector(
+                      onTap: () {
+                        Get.to(() => const AllRecentActivityScreen());
                       },
-                      icon: Container(
+                      child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
                           vertical: 4,
@@ -5758,42 +5758,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             color: primaryGreen.withOpacity(0.3),
                           ),
                         ),
-                        child: Row(
+                        child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              _selectedActivityFilter == 'Default'
-                                  ? 'View All'
-                                  : _selectedActivityFilter,
-                              style: const TextStyle(
+                              'View All',
+                              style: TextStyle(
                                 color: primaryGreen,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 11,
                               ),
                             ),
-                            const Icon(
-                              Icons.arrow_drop_down_rounded,
+                            SizedBox(width: 4),
+                            Icon(
+                              Icons.arrow_forward_ios_rounded,
                               color: primaryGreen,
-                              size: 18,
+                              size: 10,
                             ),
                           ],
                         ),
                       ),
-                      itemBuilder: (BuildContext context) =>
-                          <PopupMenuEntry<String>>[
-                            const PopupMenuItem<String>(
-                              value: 'Default',
-                              child: Text('Default (All Feeds)'),
-                            ),
-                            const PopupMenuItem<String>(
-                              value: 'Field Manager',
-                              child: Text('Field Manager Logs'),
-                            ),
-                            const PopupMenuItem<String>(
-                              value: 'Office Manager',
-                              child: Text('Office Manager Logs'),
-                            ),
-                          ],
                     ),
                   ],
                 ),
