@@ -324,7 +324,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   // =============================================================================
-  // ✅ CORRECTED _loadKpiData() — with income calculation
+  // ✅ CORRECTED _loadKpiData() — with income calculation and activity filter
   // =============================================================================
   Future<void> _loadKpiData() async {
     if (!mounted) return;
@@ -377,10 +377,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
     List<dynamic> rawLogs = logsJson != null ? json.decode(logsJson) : [];
 
+    // ✅ NAYA CODE: Current logged-in user ki details pata karein
+    final currentRole = await SessionService.currentRole ?? 'Owner';
+    final currentName = await SessionService.currentName ?? '';
+
     // Build the temporary activity list
     List<Map<String, dynamic>> tempActivitiesCompiled = [];
 
     for (var log in rawLogs) {
+      // ✅ Agar user Owner nahi hai, toh doosro ke logs seedha skip kar do
+      if (currentRole.toLowerCase() != 'owner') {
+        String logName = log['performedByName']?.toString() ?? '';
+        if (currentName.isNotEmpty && logName != currentName) {
+          continue; // Doosre ka log hai, skip karo
+        }
+      }
+
       DateTime parsedTime =
           DateTime.tryParse(log['timestamp'] ?? '') ?? DateTime.now();
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'dart:convert';
 import '../../services/company_store.dart';
+import '../../services/session_service.dart'; // ✅ Import added
 
 class AllRecentActivityScreen extends StatefulWidget {
   const AllRecentActivityScreen({super.key});
@@ -47,6 +48,19 @@ class _AllRecentActivityScreenState extends State<AllRecentActivityScreen> {
         List<Map<String, dynamic>> logs = rawLogs
             .map((e) => Map<String, dynamic>.from(e))
             .toList();
+
+        // ✅ FILTER BY CURRENT USER (if not Owner)
+        final currentRole = await SessionService.currentRole ?? 'Owner';
+        final currentName = await SessionService.currentName ?? '';
+
+        if (currentRole.toLowerCase() != 'owner') {
+          // Manager – only show logs performed by this manager
+          logs = logs.where((log) {
+            String logName = log['performedByName']?.toString() ?? '';
+            return logName == currentName;
+          }).toList();
+        }
+        // Owner – sees everything
 
         if (logs.isNotEmpty) {
           _oldestDataDate = DateTime.tryParse(logs.last['timestamp'] ?? '');
