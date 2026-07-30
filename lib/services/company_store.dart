@@ -42,6 +42,18 @@ class CompanyStore {
     'feedPurchaseHistory',
     'labourExpenseHistory',
     'otherExpenseHistory',
+
+    // ✅ MISSING KEYS ADDED HERE
+    'chicksPurchaseHistory',
+    'globalActivityLogs', // Recent Activity
+    'medicinePurchaseHistory',
+    'chickSalesHistory', // Sales Data
+    'feedSalesHistory',
+    'medicineSalesHistory',
+    'chickenLiftingSaleHistory',
+    'salesHistory', // Common sales key
+
+    // ========================
     'rule1SettlementConfig',
     'rule2SettlementConfig',
     'feedConsumptionRuleConfig',

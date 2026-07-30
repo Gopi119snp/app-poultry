@@ -23,7 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
   void initState() {
     super.initState();
     _loadAll();
-    startCloudSync(); // ✅ FIX
+    // ✅ FIX
   }
 
   @override
@@ -34,7 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
 
   @override
   void dispose() {
-    stopCloudSync(); // ✅ FIX
+    // ✅ FIX
     super.dispose();
   }
 

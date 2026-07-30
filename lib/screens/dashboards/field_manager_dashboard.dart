@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../main.dart';
 import '../../services/session_service.dart';
 import '../../services/company_store.dart';
+import '../../services/permission_service.dart'; // ✅ NEW IMPORT
 import '../welcome_screen.dart';
 
 class FieldManagerDashboard extends StatefulWidget {
@@ -63,6 +64,32 @@ class _FieldManagerDashboardState extends State<FieldManagerDashboard> {
   }
 }
 
+// ── Shared UI For Blocked Access ──
+Widget _buildNoAccess(String featureName) {
+  return Center(
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.lock_outline_rounded, size: 80, color: Colors.grey.shade400),
+        const SizedBox(height: 16),
+        const Text(
+          'Access Denied',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Owner ne "$featureName" ka access band kar diya hai.',
+          style: const TextStyle(color: Colors.grey, fontSize: 14),
+        ),
+      ],
+    ),
+  );
+}
+
 // ── Tab 1: Home ──────────────────────────────────────────────
 class _FMHomeTab extends StatefulWidget {
   final String ownerName;
@@ -72,36 +99,53 @@ class _FMHomeTab extends StatefulWidget {
   State<_FMHomeTab> createState() => _FMHomeTabState();
 }
 
-// ✅ FIXED: Added CloudSyncMixin
 class _FMHomeTabState extends State<_FMHomeTab> with CloudSyncMixin {
   List<Map<String, dynamic>> _farmers = [];
   bool _loading = true;
+
+  // ✅ PERMISSION FLAGS
+  bool _canViewFarmers = false;
+  bool _canAddWeight = false;
+  bool _canAddMortality = false;
+  bool _canViewLifting = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
-    startCloudSync(); // ✅ Real‑time sync started
+    startCloudSync();
   }
 
   @override
   void onCloudDataChanged() {
-    _loadData(); // ✅ Refresh data when cloud updates
+    _loadData(); // ✅ ULTRA-FAST RELOAD: Owner ke update karte hi chalega
   }
 
   @override
   void dispose() {
-    stopCloudSync(); // ✅ Clean up
+    stopCloudSync();
     super.dispose();
   }
 
   Future<void> _loadData() async {
     final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-    if (mounted)
+
+    // ✅ PERMISSIONS CHECK
+    _canViewFarmers = await PermissionService.can('farmerProfile', 'view');
+    _canAddWeight =
+        await PermissionService.can('averageWeight', 'add') ||
+        await PermissionService.can('averageWeight', 'view');
+    _canAddMortality =
+        await PermissionService.can('mortality', 'add') ||
+        await PermissionService.can('mortality', 'view');
+    _canViewLifting = await PermissionService.can('lifting', 'view');
+
+    if (mounted) {
       setState(() {
         _farmers = farmers;
         _loading = false;
       });
+    }
   }
 
   @override
@@ -221,34 +265,43 @@ class _FMHomeTabState extends State<_FMHomeTab> with CloudSyncMixin {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _FMActionTile(
-                    icon: Icons.monitor_weight_rounded,
-                    label: 'Weight Entry',
-                    sub: 'Farmers ka weight darj karein',
-                    color: Colors.blue.shade700,
-                    onTap: () {},
-                  ),
-                  _FMActionTile(
-                    icon: Icons.remove_circle_rounded,
-                    label: 'Mortality Entry',
-                    sub: 'Bird mortality record karein',
-                    color: Colors.red.shade700,
-                    onTap: () {},
-                  ),
-                  _FMActionTile(
-                    icon: Icons.local_shipping_rounded,
-                    label: 'Lifting Record',
-                    sub: 'Bird lifting data darj karein',
-                    color: Colors.orange.shade700,
-                    onTap: () {},
-                  ),
-                  _FMActionTile(
-                    icon: Icons.people_rounded,
-                    label: 'Farmers List',
-                    sub: 'Apne assigned farmers dekhein',
-                    color: AppColors.poultryColor,
-                    onTap: () {},
-                  ),
+
+                  // ✅ LIVE UI TOGGLES
+                  if (_canAddWeight)
+                    _FMActionTile(
+                      icon: Icons.monitor_weight_rounded,
+                      label: 'Weight Entry',
+                      sub: 'Farmers ka weight darj karein',
+                      color: Colors.blue.shade700,
+                      onTap: () {},
+                    ),
+
+                  if (_canAddMortality)
+                    _FMActionTile(
+                      icon: Icons.remove_circle_rounded,
+                      label: 'Mortality Entry',
+                      sub: 'Bird mortality record karein',
+                      color: Colors.red.shade700,
+                      onTap: () {},
+                    ),
+
+                  if (_canViewLifting)
+                    _FMActionTile(
+                      icon: Icons.local_shipping_rounded,
+                      label: 'Lifting Record',
+                      sub: 'Bird lifting data darj karein',
+                      color: Colors.orange.shade700,
+                      onTap: () {},
+                    ),
+
+                  if (_canViewFarmers)
+                    _FMActionTile(
+                      icon: Icons.people_rounded,
+                      label: 'Farmers List',
+                      sub: 'Apne assigned farmers dekhein',
+                      color: AppColors.poultryColor,
+                      onTap: () {},
+                    ),
                 ],
               ),
             ),
@@ -262,40 +315,50 @@ class _FMFarmersTab extends StatefulWidget {
   State<_FMFarmersTab> createState() => _FMFarmersTabState();
 }
 
-// ✅ FIXED: Added CloudSyncMixin
 class _FMFarmersTabState extends State<_FMFarmersTab> with CloudSyncMixin {
   List<Map<String, dynamic>> _farmers = [];
   bool _loading = true;
+  bool _canViewFarmers = false; // ✅ FLAG
 
   @override
   void initState() {
     super.initState();
     _loadData();
-    startCloudSync(); // ✅ Real‑time sync started
+    startCloudSync();
   }
 
   @override
   void onCloudDataChanged() {
-    _loadData(); // ✅ Refresh data when cloud updates
+    _loadData();
   }
 
   @override
   void dispose() {
-    stopCloudSync(); // ✅ Clean up
+    stopCloudSync();
     super.dispose();
   }
 
   Future<void> _loadData() async {
+    _canViewFarmers = await PermissionService.can('farmerProfile', 'view');
     final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-    if (mounted)
+
+    if (mounted) {
       setState(() {
         _farmers = farmers;
         _loading = false;
       });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_loading && !_canViewFarmers) {
+      return Scaffold(
+        backgroundColor: Colors.grey.shade100,
+        body: _buildNoAccess('My Farmers'),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
@@ -361,9 +424,7 @@ class _FMFarmersTabState extends State<_FMFarmersTab> with CloudSyncMixin {
                       ),
                       subtitle: Text(f['phone'] as String? ?? ''),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                      onTap: () {
-                        // TODO: FarmerProfileScreen navigate karo
-                      },
+                      onTap: () {},
                     ),
                   );
                 },
@@ -374,9 +435,70 @@ class _FMFarmersTabState extends State<_FMFarmersTab> with CloudSyncMixin {
 }
 
 // ── Tab 3: Activities ────────────────────────────────────────
-class _FMActivitiesTab extends StatelessWidget {
+class _FMActivitiesTab extends StatefulWidget {
+  @override
+  State<_FMActivitiesTab> createState() => _FMActivitiesTabState();
+}
+
+// ✅ Added CloudSyncMixin for Real-time locking on Activities tab too
+class _FMActivitiesTabState extends State<_FMActivitiesTab>
+    with CloudSyncMixin {
+  bool _loading = true;
+  bool _canAddWeight = false;
+  bool _canAddMortality = false;
+  bool _canViewLifting = false;
+  bool _canDistributeFeed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+    startCloudSync();
+  }
+
+  @override
+  void onCloudDataChanged() {
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    stopCloudSync();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    _canAddWeight =
+        await PermissionService.can('averageWeight', 'add') ||
+        await PermissionService.can('averageWeight', 'view');
+    _canAddMortality =
+        await PermissionService.can('mortality', 'add') ||
+        await PermissionService.can('mortality', 'view');
+    _canViewLifting = await PermissionService.can('lifting', 'view');
+    _canDistributeFeed =
+        await PermissionService.can('feedAllocation', 'add') ||
+        await PermissionService.can('feedAllocation', 'view');
+
+    if (mounted) {
+      setState(() {
+        _loading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!_loading &&
+        !_canAddWeight &&
+        !_canAddMortality &&
+        !_canViewLifting &&
+        !_canDistributeFeed) {
+      return Scaffold(
+        backgroundColor: Colors.grey.shade100,
+        body: _buildNoAccess('Field Activities'),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
@@ -387,48 +509,60 @@ class _FMActivitiesTab extends StatelessWidget {
         ),
         automaticallyImplyLeading: false,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text(
-            'Aaj ki Activities',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: Colors.black87,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const Text(
+                  'Aaj ki Activities',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // ✅ LIVE UI TOGGLES FOR ACTIVITIES
+                if (_canAddWeight)
+                  _ActivityCard(
+                    icon: Icons.monitor_weight_rounded,
+                    title: 'Weight Entry',
+                    description:
+                        'Farmers ke batch ka daily weight record karein',
+                    color: Colors.blue.shade700,
+                    onTap: () {},
+                  ),
+
+                if (_canAddMortality)
+                  _ActivityCard(
+                    icon: Icons.remove_circle_outline_rounded,
+                    title: 'Mortality Entry',
+                    description: 'Mrityu ki sankhya darj karein',
+                    color: Colors.red.shade700,
+                    onTap: () {},
+                  ),
+
+                if (_canViewLifting)
+                  _ActivityCard(
+                    icon: Icons.local_shipping_rounded,
+                    title: 'Lifting Record',
+                    description: 'Bird lifting aur sale data',
+                    color: Colors.orange.shade700,
+                    onTap: () {},
+                  ),
+
+                if (_canDistributeFeed)
+                  _ActivityCard(
+                    icon: Icons.feed_rounded,
+                    title: 'Feed Distribution',
+                    description: 'Feed vitaran record karein',
+                    color: Colors.teal,
+                    onTap: () {},
+                  ),
+              ],
             ),
-          ),
-          const SizedBox(height: 12),
-          _ActivityCard(
-            icon: Icons.monitor_weight_rounded,
-            title: 'Weight Entry',
-            description: 'Farmers ke batch ka daily weight record karein',
-            color: Colors.blue.shade700,
-            onTap: () {},
-          ),
-          _ActivityCard(
-            icon: Icons.remove_circle_outline_rounded,
-            title: 'Mortality Entry',
-            description: 'Mrityu ki sankhya darj karein',
-            color: Colors.red.shade700,
-            onTap: () {},
-          ),
-          _ActivityCard(
-            icon: Icons.local_shipping_rounded,
-            title: 'Lifting Record',
-            description: 'Bird lifting aur sale data',
-            color: Colors.orange.shade700,
-            onTap: () {},
-          ),
-          _ActivityCard(
-            icon: Icons.feed_rounded,
-            title: 'Feed Distribution',
-            description: 'Feed vitaran record karein',
-            color: Colors.teal,
-            onTap: () {},
-          ),
-        ],
-      ),
     );
   }
 }

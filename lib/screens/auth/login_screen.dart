@@ -78,33 +78,38 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    final result = await AuthService.instance.loginWithPhonePassword(
-      phone: phone,
-      password: password,
-    );
+    try {
+      final result = await AuthService.instance.loginWithPhonePassword(
+        phone: phone,
+        password: password,
+      );
 
-    setState(() => _isLoading = false);
+      setState(() => _isLoading = false);
 
-    if (!result.success) {
-      _showError(result.errorMessage ?? 'Login fail');
-      return;
+      if (!result.success) {
+        _showError(result.errorMessage ?? 'Login fail');
+        return;
+      }
+
+      Get.snackbar(
+        '✅ Welcome!',
+        'Namaste, ${result.displayName}! 👋',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      await Future.delayed(const Duration(milliseconds: 800));
+      Get.offAll(
+        () => HomeScreen(
+          ownerName: result.displayName ?? result.ownerName ?? '',
+          companyName: result.companyName ?? '',
+        ),
+      );
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showError('Server Error: ${e.toString()}');
     }
-
-    Get.snackbar(
-      '✅ Welcome!',
-      'Namaste, ${result.displayName}! 👋',
-      backgroundColor: primaryGreen,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
-    );
-    await Future.delayed(const Duration(milliseconds: 800));
-    Get.offAll(
-      () => HomeScreen(
-        ownerName: result.displayName ?? result.ownerName ?? '',
-        companyName: result.companyName ?? '',
-      ),
-    );
   }
 
   // ----------------------------------------------------------------
@@ -117,25 +122,29 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Check karo ki yeh company farmer hai
-    final companyFarmers =
-        await CompanyStore.instance.getJsonList('companyFarmers');
-    final farmerExists = companyFarmers.any((f) => f['phone'] == phone);
+    try {
+      final companyFarmers = await CompanyStore.instance.getJsonList(
+        'companyFarmers',
+      );
+      final farmerExists = companyFarmers.any((f) => f['phone'] == phone);
 
-    if (!farmerExists) {
-      _showError('Yeh number register nahi hai. Owner se contact karo.');
-      return;
+      if (!farmerExists) {
+        _showError('Yeh number register nahi hai. Owner se contact karo.');
+        return;
+      }
+
+      setState(() => _otpSent = true);
+      Get.snackbar(
+        'OTP Bheja Gaya!',
+        '$phone pe OTP bheja gaya (Test Mode — koi bhi 6 digit daalo)',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+    } catch (e) {
+      _showError('Error checking farmer: ${e.toString()}');
     }
-
-    setState(() => _otpSent = true);
-    Get.snackbar(
-      'OTP Bheja Gaya!',
-      '$phone pe OTP bheja gaya (Test Mode — koi bhi 6 digit daalo)',
-      backgroundColor: primaryGreen,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
-    );
   }
 
   Future<void> _verifyFarmerOtp() async {
@@ -145,31 +154,37 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => _isLoading = true);
-    final result = await AuthService.instance.loginCompanyFarmer(
-      phone: _otpPhoneController.text.trim(),
-    );
-    setState(() => _isLoading = false);
 
-    if (!result.success) {
-      _showError(result.errorMessage ?? 'Login fail');
-      return;
+    try {
+      final result = await AuthService.instance.loginCompanyFarmer(
+        phone: _otpPhoneController.text.trim(),
+      );
+      setState(() => _isLoading = false);
+
+      if (!result.success) {
+        _showError(result.errorMessage ?? 'Login fail');
+        return;
+      }
+
+      Get.snackbar(
+        '✅ Welcome!',
+        'Namaste, ${result.displayName}! 👋',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      await Future.delayed(const Duration(milliseconds: 800));
+      Get.offAll(
+        () => HomeScreen(
+          ownerName: result.displayName ?? '',
+          companyName: result.companyName ?? '',
+        ),
+      );
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showError('OTP verification error: ${e.toString()}');
     }
-
-    Get.snackbar(
-      '✅ Welcome!',
-      'Namaste, ${result.displayName}! 👋',
-      backgroundColor: primaryGreen,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
-    );
-    await Future.delayed(const Duration(milliseconds: 800));
-    Get.offAll(
-      () => HomeScreen(
-        ownerName: result.displayName ?? '',
-        companyName: result.companyName ?? '',
-      ),
-    );
   }
 
   // ----------------------------------------------------------------
@@ -182,37 +197,41 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final prefs = await SharedPreferences.getInstance();
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    // Owner check
-    final ownerPhone = prefs.getString('phone') ?? '';
+      // Owner check
+      final ownerPhone = prefs.getString('phone') ?? '';
 
-    // Personal Farmer check
-    final personalFarmersJson = prefs.getString('personalFarmers');
-    bool isPersonalFarmer = false;
-    if (personalFarmersJson != null) {
-      final personalFarmers = List<Map<String, dynamic>>.from(
-        json.decode(personalFarmersJson),
+      // Personal Farmer check
+      final personalFarmersJson = prefs.getString('personalFarmers');
+      bool isPersonalFarmer = false;
+      if (personalFarmersJson != null) {
+        final personalFarmers = List<Map<String, dynamic>>.from(
+          json.decode(personalFarmersJson),
+        );
+        isPersonalFarmer = personalFarmers.any((f) => f['phone'] == phone);
+      }
+
+      if (phone != ownerPhone && !isPersonalFarmer) {
+        _showError(
+          'Yeh number Owner ya Personal Farmer ka nahi hai.\nManager ka password Owner ke paas hota hai — unse puchein.',
+        );
+        return;
+      }
+
+      setState(() => _forgotOtpSent = true);
+      Get.snackbar(
+        'OTP Bheja Gaya!',
+        '$phone pe OTP bheja gaya (Test Mode — koi bhi 6 digit daalo)',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
       );
-      isPersonalFarmer = personalFarmers.any((f) => f['phone'] == phone);
+    } catch (e) {
+      _showError('Error sending OTP: ${e.toString()}');
     }
-
-    if (phone != ownerPhone && !isPersonalFarmer) {
-      _showError(
-        'Yeh number Owner ya Personal Farmer ka nahi hai.\nManager ka password Owner ke paas hota hai — unse puchein.',
-      );
-      return;
-    }
-
-    setState(() => _forgotOtpSent = true);
-    Get.snackbar(
-      'OTP Bheja Gaya!',
-      '$phone pe OTP bheja gaya (Test Mode — koi bhi 6 digit daalo)',
-      backgroundColor: primaryGreen,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
-    );
   }
 
   void _verifyForgotOtp() {
@@ -245,52 +264,56 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    final phone = _forgotPhoneController.text.trim();
-    final ownerPhone = prefs.getString('phone') ?? '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final phone = _forgotPhoneController.text.trim();
+      final ownerPhone = prefs.getString('phone') ?? '';
 
-    if (phone == ownerPhone) {
-      // Owner password update
-      await prefs.setString('password', _forgotNewPassController.text);
-    } else {
-      // Personal Farmer password update
-      final personalFarmersJson = prefs.getString('personalFarmers');
-      if (personalFarmersJson != null) {
-        final personalFarmers = List<Map<String, dynamic>>.from(
-          json.decode(personalFarmersJson),
-        );
-        final index = personalFarmers.indexWhere((f) => f['phone'] == phone);
-        if (index != -1) {
-          personalFarmers[index]['password'] = _forgotNewPassController.text;
-          await prefs.setString(
-            'personalFarmers',
-            json.encode(personalFarmers),
+      if (phone == ownerPhone) {
+        // Owner password update
+        await prefs.setString('password', _forgotNewPassController.text);
+      } else {
+        // Personal Farmer password update
+        final personalFarmersJson = prefs.getString('personalFarmers');
+        if (personalFarmersJson != null) {
+          final personalFarmers = List<Map<String, dynamic>>.from(
+            json.decode(personalFarmersJson),
           );
+          final index = personalFarmers.indexWhere((f) => f['phone'] == phone);
+          if (index != -1) {
+            personalFarmers[index]['password'] = _forgotNewPassController.text;
+            await prefs.setString(
+              'personalFarmers',
+              json.encode(personalFarmers),
+            );
+          }
         }
       }
+
+      Get.snackbar(
+        '✅ Password Updated!',
+        'Naya password set ho gaya. Ab login karo.',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+
+      // Reset forgot password state
+      setState(() {
+        _forgotOtpSent = false;
+        _forgotOtpVerified = false;
+        _showForgotNewPass = false;
+        _forgotPhoneController.clear();
+        _forgotOtpController.clear();
+        _forgotNewPassController.clear();
+        _forgotConfirmPassController.clear();
+      });
+
+      Navigator.pop(context); // Dialog band karo
+    } catch (e) {
+      _showError('Error resetting password: ${e.toString()}');
     }
-
-    Get.snackbar(
-      '✅ Password Updated!',
-      'Naya password set ho gaya. Ab login karo.',
-      backgroundColor: primaryGreen,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
-    );
-
-    // Reset forgot password state
-    setState(() {
-      _forgotOtpSent = false;
-      _forgotOtpVerified = false;
-      _showForgotNewPass = false;
-      _forgotPhoneController.clear();
-      _forgotOtpController.clear();
-      _forgotNewPassController.clear();
-      _forgotConfirmPassController.clear();
-    });
-
-    Navigator.pop(context); // Dialog band karo
   }
 
   void _showForgotPasswordDialog() {

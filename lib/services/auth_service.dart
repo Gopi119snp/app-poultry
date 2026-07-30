@@ -365,12 +365,26 @@ class AuthService {
     }
   }
 
+  // ⬇️ YEH HAI UPDATED signOut FUNCTION ⬇️
   Future<void> signOut() async {
+    // 1. Firebase se logout
     if (FirebaseBootstrap.isReady) {
       await _auth.signOut();
     }
+
+    // 2. Session Service se logout
     await SessionService.logout();
+
+    // 3. YEH HAI MASTER STROKE (Auto Clear Data)
+    // Jaise hi user logout karega, app ki saari local memory khud saaf ho jayegi
+    final prefs = await SharedPreferences.getInstance();
+    await prefs
+        .clear(); // Is line se user ko kabhi phone ki setting me nahi jana padega
+
+    // 4. Memory se purani company ka connection hata do
+    CompanyStore.instance.stopRealtimeListeners();
   }
+  // ⬆️ UPDATED SIGN OUT ENDS ⬆️
 
   Future<void> _finalizeSession({
     required String companyId,

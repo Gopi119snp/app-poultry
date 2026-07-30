@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../main.dart';
 import '../../services/session_service.dart';
 import '../../services/company_store.dart';
+import '../../services/permission_service.dart'; // ✅ NEW IMPORT
 import '../welcome_screen.dart';
 
 class OfficeManagerDashboard extends StatefulWidget {
@@ -63,6 +64,32 @@ class _OfficeManagerDashboardState extends State<OfficeManagerDashboard> {
   }
 }
 
+// ── Shared UI For Blocked Access ──
+Widget _buildNoAccess(String featureName) {
+  return Center(
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.lock_outline_rounded, size: 80, color: Colors.grey.shade400),
+        const SizedBox(height: 16),
+        const Text(
+          'Access Denied',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Owner ne "$featureName" ka access band kar diya hai.',
+          style: const TextStyle(color: Colors.grey, fontSize: 14),
+        ),
+      ],
+    ),
+  );
+}
+
 // ── Tab 1: Home ──────────────────────────────────────────────
 class _OMHomeTab extends StatefulWidget {
   final String ownerName;
@@ -72,28 +99,32 @@ class _OMHomeTab extends StatefulWidget {
   State<_OMHomeTab> createState() => _OMHomeTabState();
 }
 
-// ✅ FIXED: Added CloudSyncMixin and lifecycle methods
 class _OMHomeTabState extends State<_OMHomeTab> with CloudSyncMixin {
   List<Map<String, dynamic>> _farmers = [];
   Map<String, double> _feedStock = {};
   List<Map<String, dynamic>> _medicines = [];
   bool _loading = true;
 
+  // ✅ PERMISSION FLAGS
+  bool _canViewFarmers = false;
+  bool _canViewStock = false;
+  bool _canViewPurchase = false;
+
   @override
   void initState() {
     super.initState();
     _loadData();
-    startCloudSync(); // ✅ Real‑time sync started
+    startCloudSync();
   }
 
   @override
   void onCloudDataChanged() {
-    _loadData(); // ✅ Refresh data when cloud updates
+    _loadData(); // ✅ ULTRA-FAST RELOAD: Jaise hi owner update karega, ye chalega
   }
 
   @override
   void dispose() {
-    stopCloudSync(); // ✅ Clean up
+    stopCloudSync();
     super.dispose();
   }
 
@@ -102,6 +133,12 @@ class _OMHomeTabState extends State<_OMHomeTab> with CloudSyncMixin {
     final farmers = await store.getJsonList('companyFarmers');
     final feedStock = await store.getFeedStockMap();
     final medicines = await store.getJsonList('medicineStockList');
+
+    // ✅ PERMISSIONS CHECK
+    _canViewFarmers = await PermissionService.can('farmerProfile', 'view');
+    _canViewStock = await PermissionService.can('feedStock', 'view');
+    _canViewPurchase = await PermissionService.can('feedPurchase', 'view');
+
     if (mounted) {
       setState(() {
         _farmers = farmers;
@@ -249,24 +286,31 @@ class _OMHomeTabState extends State<_OMHomeTab> with CloudSyncMixin {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  _QuickTile(
-                    icon: Icons.people_rounded,
-                    label: 'Farmers List',
-                    sub: 'Farmer details dekhein',
-                    onTap: () {},
-                  ),
-                  _QuickTile(
-                    icon: Icons.inventory_2_rounded,
-                    label: 'Stock Entry',
-                    sub: 'Feed / Medicine stock update',
-                    onTap: () {},
-                  ),
-                  _QuickTile(
-                    icon: Icons.shopping_cart_rounded,
-                    label: 'Feed Purchase',
-                    sub: 'Nayi feed kharid darj karein',
-                    onTap: () {},
-                  ),
+
+                  // ✅ LIVE UI TOGGLES
+                  if (_canViewFarmers)
+                    _QuickTile(
+                      icon: Icons.people_rounded,
+                      label: 'Farmers List',
+                      sub: 'Farmer details dekhein',
+                      onTap: () {},
+                    ),
+
+                  if (_canViewStock)
+                    _QuickTile(
+                      icon: Icons.inventory_2_rounded,
+                      label: 'Stock Entry',
+                      sub: 'Feed / Medicine stock update',
+                      onTap: () {},
+                    ),
+
+                  if (_canViewPurchase)
+                    _QuickTile(
+                      icon: Icons.shopping_cart_rounded,
+                      label: 'Feed Purchase',
+                      sub: 'Nayi feed kharid darj karein',
+                      onTap: () {},
+                    ),
                 ],
               ),
             ),
@@ -280,40 +324,50 @@ class _OMFarmersTab extends StatefulWidget {
   State<_OMFarmersTab> createState() => _OMFarmersTabState();
 }
 
-// ✅ FIXED: Added CloudSyncMixin and lifecycle methods
 class _OMFarmersTabState extends State<_OMFarmersTab> with CloudSyncMixin {
   List<Map<String, dynamic>> _farmers = [];
   bool _loading = true;
+  bool _canViewFarmers = false; // ✅ FLAG
 
   @override
   void initState() {
     super.initState();
     _loadData();
-    startCloudSync(); // ✅ Real‑time sync started
+    startCloudSync();
   }
 
   @override
   void onCloudDataChanged() {
-    _loadData(); // ✅ Refresh data when cloud updates
+    _loadData();
   }
 
   @override
   void dispose() {
-    stopCloudSync(); // ✅ Clean up
+    stopCloudSync();
     super.dispose();
   }
 
   Future<void> _loadData() async {
+    _canViewFarmers = await PermissionService.can('farmerProfile', 'view');
     final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-    if (mounted)
+
+    if (mounted) {
       setState(() {
         _farmers = farmers;
         _loading = false;
       });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_loading && !_canViewFarmers) {
+      return Scaffold(
+        backgroundColor: Colors.grey.shade100,
+        body: _buildNoAccess('Farmers List'),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.defaultPrimary,
@@ -372,9 +426,7 @@ class _OMFarmersTabState extends State<_OMFarmersTab> with CloudSyncMixin {
                       ),
                       subtitle: Text(f['phone'] as String? ?? ''),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                      onTap: () {
-                        // TODO: FarmerProfileScreen navigate karo
-                      },
+                      onTap: () {},
                     ),
                   );
                 },
@@ -390,45 +442,55 @@ class _OMStockTab extends StatefulWidget {
   State<_OMStockTab> createState() => _OMStockTabState();
 }
 
-// ✅ FIXED: Added CloudSyncMixin and lifecycle methods
 class _OMStockTabState extends State<_OMStockTab> with CloudSyncMixin {
   Map<String, double> _feedStock = {};
   List<Map<String, dynamic>> _medicines = [];
   bool _loading = true;
+  bool _canViewStock = false; // ✅ FLAG
 
   @override
   void initState() {
     super.initState();
     _loadData();
-    startCloudSync(); // ✅ Real‑time sync started
+    startCloudSync();
   }
 
   @override
   void onCloudDataChanged() {
-    _loadData(); // ✅ Refresh data when cloud updates
+    _loadData();
   }
 
   @override
   void dispose() {
-    stopCloudSync(); // ✅ Clean up
+    stopCloudSync();
     super.dispose();
   }
 
   Future<void> _loadData() async {
+    _canViewStock = await PermissionService.can('feedStock', 'view');
     final feedStock = await CompanyStore.instance.getFeedStockMap();
     final medicines = await CompanyStore.instance.getJsonList(
       'medicineStockList',
     );
-    if (mounted)
+
+    if (mounted) {
       setState(() {
         _feedStock = feedStock;
         _medicines = medicines;
         _loading = false;
       });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_loading && !_canViewStock) {
+      return Scaffold(
+        backgroundColor: Colors.grey.shade100,
+        body: _buildNoAccess('Stock & Inventory'),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.defaultPrimary,
@@ -537,32 +599,6 @@ class _OMStockTabState extends State<_OMStockTab> with CloudSyncMixin {
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Feed Purchase Add Karo'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.defaultPrimary,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                    onPressed: () {
-                      /* TODO */
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.medication_rounded),
-                    label: const Text('Medicine Entry'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                    onPressed: () {
-                      /* TODO */
-                    },
                   ),
                 ],
               ),

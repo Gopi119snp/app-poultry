@@ -461,12 +461,18 @@ class PermissionService {
     return _fillModuleMap(roleData);
   }
 
+  // ✅ FIX: JSON encoding crash को रोकने के लिए safe conversion
   static Future<void> saveRoleDefaultMatrix(
     String role,
     Map<String, Map<String, bool>> matrix,
   ) async {
     final raw = await _loadRawRolePermissions();
-    raw[role] = matrix.map((k, v) => MapEntry(k, v));
+    // Fix: JSON encoding crash ko rokne ke liye ekdum basic Map mein convert kiya
+    final safeMatrix = <String, dynamic>{};
+    matrix.forEach((k, v) {
+      safeMatrix[k] = Map<String, dynamic>.from(v);
+    });
+    raw[role] = safeMatrix;
     await _saveRolePermissions(raw);
   }
 
@@ -500,12 +506,18 @@ class PermissionService {
     return getRoleDefaultMatrix(role);
   }
 
+  // ✅ FIX: Same JSON fix for Person overriding
   static Future<void> savePersonMatrix(
     String phone,
     Map<String, Map<String, bool>> matrix,
   ) async {
     final raw = await _loadRawPersonPermissions();
-    raw[phone] = matrix.map((k, v) => MapEntry(k, v));
+    // Fix: Same JSON fix for Person overriding
+    final safeMatrix = <String, dynamic>{};
+    matrix.forEach((k, v) {
+      safeMatrix[k] = Map<String, dynamic>.from(v);
+    });
+    raw[phone] = safeMatrix;
     await _savePersonPermissions(raw);
   }
 
