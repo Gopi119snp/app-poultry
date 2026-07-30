@@ -267,6 +267,12 @@ class PermissionService {
           label: 'Farmer Profit / Loss',
           emoji: '📉',
         ),
+        // ✅ NAYA ADD KIYA GAYA NODE (Farmer Profit / Loss ke theek neeche)
+        PermissionNode(
+          id: 'totalIncomeReport',
+          label: 'Total Income',
+          emoji: '💰',
+        ),
       ],
     ),
     PermissionNode(
@@ -461,7 +467,7 @@ class PermissionService {
     return _fillModuleMap(roleData);
   }
 
-  // ✅ FIX: JSON encoding crash को रोकने के लिए safe conversion
+  // ✅ FIX: JSON encoding crash को रोकने के लिए safe conversion + notify
   static Future<void> saveRoleDefaultMatrix(
     String role,
     Map<String, Map<String, bool>> matrix,
@@ -474,6 +480,12 @@ class PermissionService {
     });
     raw[role] = safeMatrix;
     await _saveRolePermissions(raw);
+
+    // ✅ FIX: Notify app that permissions have changed
+    await CompanyStore.instance.setString(
+      'lastPermissionUpdated',
+      DateTime.now().toIso8601String(),
+    );
   }
 
   // ── PERSON OVERRIDE storage ───────────────────────────────────────────────
@@ -506,7 +518,7 @@ class PermissionService {
     return getRoleDefaultMatrix(role);
   }
 
-  // ✅ FIX: Same JSON fix for Person overriding
+  // ✅ FIX: Same JSON fix for Person overriding + notify
   static Future<void> savePersonMatrix(
     String phone,
     Map<String, Map<String, bool>> matrix,
@@ -519,6 +531,8 @@ class PermissionService {
     });
     raw[phone] = safeMatrix;
     await _savePersonPermissions(raw);
+
+    // ✅ FIX: Notify app that permissions have changed
   }
 
   static Future<void> resetPersonToRoleDefault(String phone) async {
@@ -529,18 +543,38 @@ class PermissionService {
 
   // ── RUNTIME CHECK ──────────────────────────────────────────────────────────
 
-  /// Priority: Person override > Role default > false. Owner ko hamesha sab
-  /// permission milti hai — bina kisi setting/matrix ke, chahe woh setting
-  /// screen se kabhi touch bhi na ki gayi ho. Manager/Labour jaise roles
-  /// hamesha yahi role/person matrix se check hote hain jo Owner khud
-  /// Settings & Permissions se set karta hai.
+  /// Cache for ancestor IDs (nodes that have hasPermission) for each moduleId.
+  static Map<String, List<String>>? _ancestorCache;
+
+  static void _buildAncestorCache() {
+    if (_ancestorCache != null) return;
+    _ancestorCache = {};
+    void walk(List<PermissionNode> nodes, List<String> ancestors) {
+      for (final node in nodes) {
+        // If this node has hasPermission, it is a candidate for inheritance.
+        final currentAncestors = node.hasPermission
+            ? [...ancestors, node.id]
+            : ancestors;
+        // For each moduleId, store all ancestors with hasPermission.
+        // For leaves and groups with hasPermission, store their own chain.
+        if (node.isLeaf || node.hasPermission) {
+          _ancestorCache![node.id] = currentAncestors;
+        }
+        // Recurse into children.
+        walk(node.children, currentAncestors);
+      }
+    }
+
+    walk(tree, []);
+  }
+
+  /// Priority: Person override > Role default > Ancestor group permissions.
+  /// Owner gets full access.
+  ///
+  /// Smart hierarchical check: agar user ke paas parent module ki permission hai
+  /// YA uske kisi bhi sub‑item/child ki permission ON hai, toh wo module/button
+  /// khul jana chahiye.
   static Future<bool> can(String moduleId, String action) async {
-    // ✅ FIX — ab Owner-check SessionService.isOwner se hota hai, jo trim +
-    // case-insensitive hai. Isse pehle raw "role == 'Owner'" string-match
-    // tha — agar session mein role kisi wajah se 'Owner ' (extra space) ya
-    // 'owner' (lowercase) save ho jaata, to Owner ko bhi Manager jaisa
-    // treat kar diya jaata tha aur uske saare buttons/features chup-chaap
-    // gayab ho jaate the (jaisa Daily Update List button ke saath hua).
     if (await SessionService.isOwner) return true;
 
     final role = await SessionService.normalizedRole;
@@ -549,18 +583,106 @@ class PermissionService {
     final phone = await SessionService.phone;
     if (phone == null || phone.isEmpty) return false;
 
-    final personRaw = await _loadRawPersonPermissions();
-    if (personRaw[phone] is Map) {
-      final modData = personRaw[phone][moduleId];
-      if (modData is Map) return modData[action] == true;
+    bool hasDirectPerm(Map<String, dynamic> map, String id) {
+      if (map[id] is Map) {
+        return map[id][action] == true;
+      }
       return false;
     }
 
+    final personRaw = await _loadRawPersonPermissions();
     final roleRaw = await _loadRawRolePermissions();
-    if (roleRaw[role] is Map) {
-      final modData = roleRaw[role][moduleId];
-      if (modData is Map) return modData[action] == true;
+
+    Map<String, dynamic> activeMap = {};
+    if (personRaw[phone] is Map) {
+      activeMap = Map<String, dynamic>.from(personRaw[phone]);
+    } else if (roleRaw[role] is Map) {
+      activeMap = Map<String, dynamic>.from(roleRaw[role]);
     }
+
+    // 1. Direct match check
+    if (hasDirectPerm(activeMap, moduleId)) return true;
+
+    // 2. Purchase / Expense Hierarchy
+    if (moduleId == 'purchaseExpense') {
+      List<String> allList = [
+        'chicksPurchase',
+        'chicksPurchaseEntry',
+        'chicksAllocation',
+        'feedPurchase',
+        'feedPurchaseEntry',
+        'feedAllocation',
+        'medicinePurchase',
+        'medicinePurchaseEntry',
+        'medicineAllocation2',
+        'labourExpense',
+        'otherExpense',
+      ];
+      for (var mod in allList) {
+        if (hasDirectPerm(activeMap, mod)) return true;
+      }
+    }
+    if (moduleId == 'chicksPurchase' &&
+        (hasDirectPerm(activeMap, 'chicksPurchaseEntry') ||
+            hasDirectPerm(activeMap, 'chicksAllocation')))
+      return true;
+    if (moduleId == 'feedPurchase' &&
+        (hasDirectPerm(activeMap, 'feedPurchaseEntry') ||
+            hasDirectPerm(activeMap, 'feedAllocation')))
+      return true;
+    if (moduleId == 'medicinePurchase' &&
+        (hasDirectPerm(activeMap, 'medicinePurchaseEntry') ||
+            hasDirectPerm(activeMap, 'medicineAllocation2')))
+      return true;
+
+    // 3. Sales / Lifting Hierarchy
+    if (moduleId == 'sales') {
+      List<String> allSales = [
+        'chicksSale',
+        'feedSale',
+        'medicineSale',
+        'chickenLiftingSale',
+      ];
+      for (var mod in allSales) {
+        if (hasDirectPerm(activeMap, mod)) return true;
+      }
+    }
+
+    // 4. Reports Hierarchy (Including Total Income)
+    if (moduleId == 'reports') {
+      List<String> allReports = [
+        'opExpenseRecoveryReport',
+        'batchPerformanceReport',
+        'farmerProfitLossReport',
+        'totalIncomeReport',
+      ];
+      for (var mod in allReports) {
+        if (hasDirectPerm(activeMap, mod)) return true;
+      }
+    }
+
+    // 5. Accounts Hierarchy (Including Overview, Udhaar, Kharcha, Kharida, Sales)
+    if (moduleId == 'accounts') {
+      List<String> allAccounts = [
+        'accountsOverview',
+        'accountsUdhaar',
+        'accountsKharcha', // Kharcha sub-item mapping
+        'accountsKharida', // Kharida sub-item mapping
+        'accountsSales', // Sales sub-item mapping inside accounts
+      ];
+      for (var mod in allAccounts) {
+        if (hasDirectPerm(activeMap, mod)) return true;
+      }
+    }
+
+    // 6. Stock Management Hierarchy
+    if (moduleId == 'stockManagement') {
+      if (hasDirectPerm(activeMap, 'feedStock') ||
+          hasDirectPerm(activeMap, 'medicineStock')) {
+        return true;
+      }
+    }
+
     return false;
   }
 }

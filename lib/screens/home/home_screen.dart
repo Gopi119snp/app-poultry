@@ -47,7 +47,8 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   int _currentIndex = 0;
 
   static const Color primaryGreen = Color(0xFF1B5E20);
@@ -103,26 +104,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _canViewFeedAllocationHistory = false;
   bool _canViewMedicineAllocationHistory = false;
 
+  // ✅ New timer for background permission polling
+  Timer? _permissionPollTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _autoProcessMonthlySalaries();
     _loadKpiData();
     _loadStockData();
     _loadAppliedRuleState();
     _loadPermissionFlags();
 
+    // ✅ Jab bhi data change hoga, permissions aur data dono live refresh honge
     _dataChangeSub = CompanyStore.instance.onDataChanged.listen((_) {
       if (!mounted) return;
       _loadKpiData();
       _loadStockData();
       _loadAppliedRuleState();
       _loadPermissionFlags();
+      setState(
+        () {},
+      ); // ✅ Screen ko turant rebuild karega taaki buttons aaye ya hatein
     });
 
     _instantRefreshTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
       _loadKpiData();
       _loadStockData();
+      _loadPermissionFlags();
+    });
+
+    // ✅ 4-second fast timer for background permission check
+    _permissionPollTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadPermissionFlags();
     });
 
     _chickBounceController = AnimationController(
@@ -169,9 +188,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadPermissionFlags();
+      _loadKpiData();
+      _loadStockData();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _instantRefreshTimer?.cancel();
     _dataChangeSub?.cancel();
+    _permissionPollTimer?.cancel(); // ✅ Cancel the new timer
     _chickBounceController.dispose();
     _dustController.dispose();
     super.dispose();

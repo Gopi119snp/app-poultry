@@ -70,23 +70,35 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
     });
   }
 
+  // ✅ Helper to show a quick snackbar after save
+  void _showSavedSnackbar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: primaryGreen,
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  // ─── FIXED: setState → save → notify ────────────────────────────────
   Future<void> _toggleRoleDefault(
     String role,
     String moduleId,
     String action,
     bool value,
   ) async {
-    setState(() => _roleDefaults[role]![moduleId]![action] = value);
-    await PermissionService.saveRoleDefaultMatrix(role, _roleDefaults[role]!);
-  }
-
-  void _setAllRoleDefaultForModule(String role, String moduleId, bool value) {
     setState(() {
-      for (final a in PermissionService.actions) {
-        _roleDefaults[role]![moduleId]![a] = value;
-      }
+      _roleDefaults[role]![moduleId]![action] = value;
     });
-    PermissionService.saveRoleDefaultMatrix(role, _roleDefaults[role]!);
+    await PermissionService.saveRoleDefaultMatrix(role, _roleDefaults[role]!);
+    // Force trigger save and notify
+    await CompanyStore.instance.setString(
+      'lastPermissionUpdated',
+      DateTime.now().toIso8601String(),
+    );
+    _showSavedSnackbar('Role default permission updated');
   }
 
   Future<void> _togglePerson(
@@ -95,23 +107,64 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
     String action,
     bool value,
   ) async {
-    setState(() => _personMatrices[phone]![moduleId]![action] = value);
+    setState(() {
+      _personMatrices[phone]![moduleId]![action] = value;
+    });
     await PermissionService.savePersonMatrix(phone, _personMatrices[phone]!);
+    // Force trigger save and notify
+    await CompanyStore.instance.setString(
+      'lastPermissionUpdated',
+      DateTime.now().toIso8601String(),
+    );
+    _showSavedSnackbar('Person permission updated');
   }
 
-  void _setAllPersonForModule(String phone, String moduleId, bool value) {
+  // ─── Also fix bulk toggles ──────────────────────────────────────────
+  Future<void> _setAllRoleDefaultForModule(
+    String role,
+    String moduleId,
+    bool value,
+  ) async {
+    setState(() {
+      for (final a in PermissionService.actions) {
+        _roleDefaults[role]![moduleId]![a] = value;
+      }
+    });
+    await PermissionService.saveRoleDefaultMatrix(role, _roleDefaults[role]!);
+    await CompanyStore.instance.setString(
+      'lastPermissionUpdated',
+      DateTime.now().toIso8601String(),
+    );
+    _showSavedSnackbar('All permissions for module updated');
+  }
+
+  Future<void> _setAllPersonForModule(
+    String phone,
+    String moduleId,
+    bool value,
+  ) async {
     setState(() {
       for (final a in PermissionService.actions) {
         _personMatrices[phone]![moduleId]![a] = value;
       }
     });
-    PermissionService.savePersonMatrix(phone, _personMatrices[phone]!);
+    await PermissionService.savePersonMatrix(phone, _personMatrices[phone]!);
+    await CompanyStore.instance.setString(
+      'lastPermissionUpdated',
+      DateTime.now().toIso8601String(),
+    );
+    _showSavedSnackbar('All permissions for module updated');
   }
 
   Future<void> _resetPersonToDefault(String phone, String role) async {
     await PermissionService.resetPersonToRoleDefault(phone);
     final fresh = await PermissionService.getRoleDefaultMatrix(role);
     setState(() => _personMatrices[phone] = fresh);
+    // Also notify others
+    await CompanyStore.instance.setString(
+      'lastPermissionUpdated',
+      DateTime.now().toIso8601String(),
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Role ke default permission par wapas aa gaya'),
