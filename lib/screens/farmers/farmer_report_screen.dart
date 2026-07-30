@@ -1706,7 +1706,8 @@ Widget buildBarGraph(_LotEarning e) {
   final double maxVal = bars.map((b) => b.value.abs()).reduce(math.max);
   if (maxVal <= 0) return const SizedBox.shrink();
 
-  const double maxBarH = 100.0;
+  // ✅ Auto‑adjust fix: slightly lower max bar height for more space
+  const double maxBarH = 90.0;
 
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1721,30 +1722,35 @@ Widget buildBarGraph(_LotEarning e) {
         ),
       ),
       const SizedBox(height: 12),
+      // ✅ Increased height to prevent clipping
       SizedBox(
-        height: 140,
+        height: 160,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: bars.map((bar) {
             final double barH = (bar.value.abs() / maxVal) * maxBarH;
             return Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Text(
-                      fmtShort(bar.value),
-                      style: TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.bold,
-                        color: bar.value < 0
-                            ? Colors.red.shade700
-                            : Colors.black87,
+                    // ✅ FittedBox makes text shrink if needed
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        fmtShort(bar.value),
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: bar.value < 0
+                              ? Colors.red.shade700
+                              : Colors.black87,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Container(
                       height: barH.clamp(4.0, maxBarH),
                       decoration: BoxDecoration(
@@ -1755,14 +1761,19 @@ Widget buildBarGraph(_LotEarning e) {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      bar.label,
-                      style: const TextStyle(
-                        fontSize: 8,
-                        color: Colors.black54,
+                    const SizedBox(height: 6),
+                    // ✅ FittedBox for labels too
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        bar.label,
+                        style: const TextStyle(
+                          fontSize: 8.5,
+                          color: Colors.black54,
+                          height: 1.2,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
@@ -1771,10 +1782,10 @@ Widget buildBarGraph(_LotEarning e) {
           }).toList(),
         ),
       ),
-      const SizedBox(height: 10),
+      const SizedBox(height: 12),
       Wrap(
         spacing: 10,
-        runSpacing: 4,
+        runSpacing: 6,
         children: bars
             .map(
               (b) => Row(

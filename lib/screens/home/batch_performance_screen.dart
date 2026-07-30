@@ -963,19 +963,23 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                '📈 Company Trend — Weight Growth %',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+          // FIX: Wrapped the entire Row in SingleChildScrollView to prevent overflow on small screens
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '📈 Company Trend — Weight Growth %',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
                 ),
-              ),
-              _granularityToggle(),
-            ],
+                _granularityToggle(),
+              ],
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -1024,6 +1028,7 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
     );
   }
 
+  // ── FIXED: granularity toggle now scrolls horizontally when content overflows ──
   Widget _granularityToggle() {
     return Container(
       padding: const EdgeInsets.all(3),
@@ -1031,37 +1036,43 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
         color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: ['Daily', 'Weekly', 'Monthly'].map((g) {
-          final bool sel = _granularity == g;
-          return GestureDetector(
-            onTap: () => setState(() => _granularity = g),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-              decoration: BoxDecoration(
-                color: sel ? Colors.white : Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: sel
-                    ? [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.06),
-                          blurRadius: 4,
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Text(
-                g,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: sel ? _bpGreen : Colors.grey.shade600,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: ['Daily', 'Weekly', 'Monthly'].map((g) {
+            final bool sel = _granularity == g;
+            return GestureDetector(
+              onTap: () => setState(() => _granularity = g),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: sel ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: sel
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 4,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  g,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: sel ? _bpGreen : Colors.grey.shade600,
+                  ),
                 ),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
