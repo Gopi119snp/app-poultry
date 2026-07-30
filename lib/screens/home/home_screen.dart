@@ -31,7 +31,6 @@ import 'global_search_screen.dart';
 import 'notifications_screen.dart';
 import 'feed_stock_history_screen.dart';
 import 'all_recent_activity_screen.dart';
-// ✅ NEW IMPORT for income engine
 import 'income_engine.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -58,7 +57,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _activeBatchCount = 0;
   final List<Map<String, dynamic>> _liftingFarmers = [];
 
-  // 🛑 NAYA CODE: Home screen income ke liye
   double _currentMonthIncome = 0.0;
   String _currentMonthName = '';
 
@@ -76,20 +74,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   StreamSubscription<void>? _dataChangeSub;
   String _selectedActivityFilter = 'Default';
 
-  // ── 🚜 SAAS SELECTION STATE TRACKING VARIABLES ─────────────────────────────
   int? _appliedCompanyRuleId;
   bool _isRule1Editing = true;
   bool _isRule2Editing = true;
 
-  // ── 📦 STOCK MANAGEMENT STATE (FEED + MEDICINE) ────────────────────────────
-  int _stockSubTab = 0; // 0 = Feed, 1 = Medicine
-
+  int _stockSubTab = 0;
   List<Map<String, dynamic>> _feedStockList = [];
   Map<String, double> _medicineRemainingBase = {};
-
   List<Map<String, dynamic>> _medicineStock = [];
 
-  // ── CHICK ANIMATION ───────────────────────────────────────────────────────
   late AnimationController _chickBounceController;
   late AnimationController _dustController;
   late Animation<double> _chickBounceAnim;
@@ -97,7 +90,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _dustScaleAnim;
   bool _showDust = false;
 
-  // ── 🔐 PERMISSION FLAGS ──────────────────────────────
   bool _canViewPurchase = false;
   bool _canViewSales = false;
   bool _canViewReportsQuick = false;
@@ -329,14 +321,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _loadKpiData() async {
     if (!mounted) return;
 
-    // ── Fetch all data asynchronously (outside setState) ──
     final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
     final minLifting =
         await CompanyStore.instance.getInt('minLiftingDays') ?? 23;
     final maxLifting =
         await CompanyStore.instance.getInt('maxLiftingDays') ?? 60;
 
-    // 🛑 NAYA CODE START: Live Income Calculation for Current Month
     final now = DateTime.now();
     final currentMonthFilter = AppDateFilter(
       label: 'Current Month',
@@ -369,7 +359,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       'Dec',
     ];
     String monthLabel = '${monthNames[now.month]} ${now.year}';
-    // 🛑 NAYA CODE END
 
     // Fetch activity logs
     String? logsJson = await CompanyStore.instance.getString(
@@ -377,15 +366,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
     List<dynamic> rawLogs = logsJson != null ? json.decode(logsJson) : [];
 
-    // ✅ NAYA CODE: Current logged-in user ki details pata karein
+    // ✅ FIX 1: Filter logs based on role
     final currentRole = await SessionService.currentRole ?? 'Owner';
     final currentName = await SessionService.currentName ?? '';
 
-    // Build the temporary activity list
     List<Map<String, dynamic>> tempActivitiesCompiled = [];
 
     for (var log in rawLogs) {
-      // ✅ Agar user Owner nahi hai, toh doosro ke logs seedha skip kar do
+      // ✅ Agar user Owner nahi hai, toh doosro ke logs skip karo
       if (currentRole.toLowerCase() != 'owner') {
         String logName = log['performedByName']?.toString() ?? '';
         if (currentName.isNotEmpty && logName != currentName) {
@@ -426,22 +414,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     if (!mounted) return;
 
-    // ── Now update UI inside setState ──
     setState(() {
-      _currentMonthIncome = calculatedIncome; // 🛑 NAYA CODE
-      _currentMonthName = monthLabel; // 🛑 NAYA CODE
+      _currentMonthIncome = calculatedIncome;
+      _currentMonthName = monthLabel;
       _minLiftingDays = minLifting;
       _maxLiftingDays = maxLifting;
       _liftingFarmers.clear();
       _recentActivitiesList.clear();
 
-      // Compute farmer count and active batches
       if (farmers.isNotEmpty) {
         _farmerCount = farmers.length;
         int activeBatchesSum = 0;
 
         for (var farmer in farmers) {
-          // Lifting calculation (kept from original code)
           if (farmer['batches'] != null) {
             final List<dynamic> batchesList = farmer['batches'];
             for (var batch in batchesList) {
@@ -460,7 +445,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _activeBatchCount = 0;
       }
 
-      // Apply filter and assign to _recentActivitiesList
       if (_selectedActivityFilter == 'Field Manager') {
         _recentActivitiesList = tempActivitiesCompiled
             .where((act) => act['roleGroup'] == 'Field Manager')
@@ -2511,7 +2495,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         if (qty <= 0 || rate <= 0) {
                           Get.snackbar(
                             'Sahi Value Daalein ⚠️',
-                            'Din/Ghanta aur Rate theek se dalein.',
+                            'Din/Ghanta aur rate theek se dalein.',
                             backgroundColor: Colors.red,
                             colorText: Colors.white,
                           );
@@ -5648,25 +5632,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    // 🛑 NAYA CODE: Dynamic Profit/Loss Card
-                    _kpiCard(
-                      _currentMonthIncome >= 0 ? '💰' : '📉',
-                      _currentMonthIncome >= 0
-                          ? 'Profit\n($_currentMonthName)'
-                          : 'Loss\n($_currentMonthName)',
-                      '${_currentMonthIncome >= 0 ? "+" : "-"}₹${_formatMoney(_currentMonthIncome.abs())}',
-                      Colors.white,
-                    ),
-                    const SizedBox(width: 12),
-                    _kpiCard(
-                      '🚜',
-                      'Lifting Ready',
-                      '${_liftingFarmers.length}',
-                      Colors.white,
-                    ),
-                  ],
+                // ✅ FIX 2: Role-based card
+                FutureBuilder<String?>(
+                  future: SessionService.currentRole,
+                  builder: (context, snapshot) {
+                    final role = (snapshot.data ?? 'Owner').toLowerCase();
+                    final bool isOwner = role == 'owner';
+
+                    return Row(
+                      children: [
+                        isOwner
+                            ? _kpiCard(
+                                _currentMonthIncome >= 0 ? '💰' : '📉',
+                                _currentMonthIncome >= 0
+                                    ? 'Profit\n($_currentMonthName)'
+                                    : 'Loss\n($_currentMonthName)',
+                                '${_currentMonthIncome >= 0 ? "+" : "-"}₹${_formatMoney(_currentMonthIncome.abs())}',
+                                Colors.white,
+                              )
+                            : _kpiCard(
+                                '📝',
+                                'My Total Entries',
+                                '${_recentActivitiesList.length} Logs',
+                                Colors.white,
+                              ),
+                        const SizedBox(width: 12),
+                        _kpiCard(
+                          '🚜',
+                          'Lifting Ready',
+                          '${_liftingFarmers.length}',
+                          Colors.white,
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
