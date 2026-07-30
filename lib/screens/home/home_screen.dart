@@ -117,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _loadKpiData();
       _loadStockData();
       _loadAppliedRuleState();
+      _loadPermissionFlags();
     });
 
     _instantRefreshTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
@@ -6522,46 +6523,68 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // ─────────────────── MEDICINE STOCK TAB ───────────────────────────────────
   Widget _buildMedicineStockTab() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Medicine Inventory',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+    // ✅ Permission guard: agar user ko view permission nahi hai toh message dikhao
+    return FutureBuilder<bool>(
+      future: PermissionService.can('medicineStock', 'view'),
+      builder: (context, snapshot) {
+        final bool canView =
+            snapshot.data ?? false; // default false if not loaded
+        if (!canView) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Text(
+                'Aapko Medicine Stock dekhne ki permission nahi hai.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: _medicineStock.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('💊', style: TextStyle(fontSize: 50)),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Abhi koi medicine stock nahi hai',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 13,
-                          ),
+          );
+        }
+
+        // Original medicine stock UI
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Medicine Inventory',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: _medicineStock.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text('💊', style: TextStyle(fontSize: 50)),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Abhi koi medicine stock nahi hai',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: _medicineStock.length,
-                    itemBuilder: (context, index) =>
-                        _medicineStockCard(_medicineStock[index]),
-                  ),
+                      )
+                    : ListView.builder(
+                        itemCount: _medicineStock.length,
+                        itemBuilder: (context, index) =>
+                            _medicineStockCard(_medicineStock[index]),
+                      ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -6642,13 +6665,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
-              IconButton(
-                icon: const Icon(
-                  Icons.delete_outline_rounded,
-                  color: Colors.grey,
-                  size: 20,
-                ),
-                onPressed: () => _showDeleteMedicineConfirm(medicine),
+
+              // ✅ FIX: Delete icon tabhi dikhega jab user ke paas 'delete' permission hogi
+              FutureBuilder<bool>(
+                future: PermissionService.can('medicineStock', 'delete'),
+                builder: (context, snapshot) {
+                  final bool canDelete = snapshot.data ?? false;
+                  if (!canDelete) return const SizedBox.shrink();
+
+                  return IconButton(
+                    icon: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.grey,
+                      size: 20,
+                    ),
+                    onPressed: () => _showDeleteMedicineConfirm(medicine),
+                  );
+                },
               ),
             ],
           ),
