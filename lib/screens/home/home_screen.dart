@@ -5538,6 +5538,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (index) {
+            // ✅ Reports permission check
+            if (index == 3 && !_canViewReportsQuick) {
+              Get.snackbar(
+                'Access Nahi Hai 🚫',
+                'Aapko reports dekhne ki permission nahi di gayi hai.',
+                backgroundColor: Colors.red,
+                colorText: Colors.white,
+                snackPosition: SnackPosition.BOTTOM,
+              );
+              return;
+            }
             if (index == 3) {
               Get.to(() => const ReportsScreen());
             } else {
@@ -5551,18 +5562,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             fontWeight: FontWeight.bold,
             fontSize: 11,
           ),
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-            BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Farmers'),
-            BottomNavigationBarItem(
+          items: [
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.home),
+              label: 'Home',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.people),
+              label: 'Farmers',
+            ),
+            const BottomNavigationBarItem(
               icon: Icon(Icons.inventory_2),
               label: 'Stock',
             ),
+            // ✅ Reports item with permission-based icon color
             BottomNavigationBarItem(
-              icon: Icon(Icons.bar_chart),
+              icon: Icon(
+                Icons.bar_chart,
+                color: _canViewReportsQuick ? null : Colors.grey.shade400,
+              ),
               label: 'Reports',
             ),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
               icon: Icon(Icons.upgrade_rounded),
               label: 'Lifting',
             ),
@@ -5605,13 +5626,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Namaste, ${widget.ownerName}! 👋',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
+                // ✅ Dynamic greeting using SessionService.currentName
+                FutureBuilder<String?>(
+                  future: SessionService.currentName,
+                  builder: (context, snapshot) {
+                    final loggedInName = snapshot.data ?? widget.ownerName;
+                    return Text(
+                      'Namaste, $loggedInName! 👋',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 4),
                 Text(
