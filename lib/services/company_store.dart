@@ -228,6 +228,26 @@ class CompanyStore {
     }, SetOptions(merge: true));
   }
 
+  Future<void> registerStaffMembership({
+    required String companyId,
+    required String staffUid,
+    required String phone,
+    required String role,
+    required String displayName,
+  }) async {
+    await _db
+        .collection('companies')
+        .doc(companyId)
+        .collection('staff')
+        .doc(staffUid)
+        .set({
+          'phone': phone,
+          'role': role,
+          'displayName': displayName,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+  }
+
   Future<Map<String, dynamic>?> lookupPhone(String phone) async {
     if (!FirebaseBootstrap.isReady) return null;
     final normalized = _normalizePhone(phone);

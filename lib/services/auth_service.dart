@@ -38,15 +38,14 @@ class AuthResult {
     required String displayName,
     required String ownerName,
     required String companyName,
-  }) =>
-      AuthResult(
-        success: true,
-        companyId: companyId,
-        role: role,
-        displayName: displayName,
-        ownerName: ownerName,
-        companyName: companyName,
-      );
+  }) => AuthResult(
+    success: true,
+    companyId: companyId,
+    role: role,
+    displayName: displayName,
+    ownerName: ownerName,
+    companyName: companyName,
+  );
 }
 
 class AuthService {
@@ -184,7 +183,8 @@ class AuthService {
               }
             }
 
-            final displayName = lookup['displayName'] as String? ??
+            final displayName =
+                lookup['displayName'] as String? ??
                 profile['ownerName'] as String? ??
                 '';
 
@@ -250,8 +250,9 @@ class AuthService {
 
       if (companyId != null) {
         await CompanyStore.instance.activateCompany(companyId);
-        final farmers =
-            await CompanyStore.instance.getJsonList('companyFarmers');
+        final farmers = await CompanyStore.instance.getJsonList(
+          'companyFarmers',
+        );
         final farmer = farmers.where((f) => f['phone'] == normalized).toList();
 
         if (farmer.isEmpty) {
@@ -327,10 +328,11 @@ class AuthService {
 
     try {
       final secondary = await _getSecondaryAuth();
-      await secondary.createUserWithEmailAndPassword(
+      final cred = await secondary.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
+      final staffUid = cred.user!.uid;
       await secondary.signOut();
 
       await CompanyStore.instance.registerPhoneLookup(
@@ -338,6 +340,14 @@ class AuthService {
         companyId: companyId,
         role: role,
         authEmail: email,
+        displayName: name,
+      );
+
+      await CompanyStore.instance.registerStaffMembership(
+        companyId: companyId,
+        staffUid: staffUid,
+        phone: phone,
+        role: role,
         displayName: name,
       );
     } on FirebaseAuthException catch (e) {
@@ -492,12 +502,12 @@ class AuthService {
     for (final key in ['officeManagers', 'fieldManagers']) {
       final raw = prefs.getString(key);
       if (raw == null) continue;
-      final list =
-          List<Map<String, dynamic>>.from(json.decode(raw) as List);
+      final list = List<Map<String, dynamic>>.from(json.decode(raw) as List);
       for (final m in list) {
         if (m['phone'] == phone && m['password'] == password) {
-          final role =
-              key == 'officeManagers' ? 'Office Manager' : 'Field Manager';
+          final role = key == 'officeManagers'
+              ? 'Office Manager'
+              : 'Field Manager';
           final cid = prefs.getString('companyId') ?? 'local_company';
           await SessionService.saveLoginSession(
             companyId: cid,
