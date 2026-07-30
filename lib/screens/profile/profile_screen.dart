@@ -24,7 +24,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _phone = '';
   String _industry = '';
   String _profileImagePath = ''; // Image path store karne ke liye
-  String _ownerSignatureBase64 = ''; // Owner signature, base64 mein CompanyStore se
+  String _ownerSignatureBase64 =
+      ''; // Owner signature, base64 mein CompanyStore se
 
   final ImagePicker _imagePicker = ImagePicker(); // Picker object
   final ImagePicker _signaturePicker = ImagePicker();
@@ -32,6 +33,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // Managers lists
   List<Map<String, dynamic>> _officeManagers = [];
   List<Map<String, dynamic>> _fieldManagers = [];
+
+  // ✅ New state variables for role-based restriction
+  bool _isOwner = true;
+  String _currentUserRole = 'Owner';
+  String _currentUserName = '';
 
   @override
   void initState() {
@@ -41,6 +47,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadProfile() async {
     if (!mounted) return;
+
+    // ✅ Check current session role
+    final role = await SessionService.currentRole ?? 'Owner';
+    final name = await SessionService.currentName ?? '';
+    _isOwner = role.toLowerCase() == 'owner';
+    _currentUserRole = role;
+    _currentUserName = name;
+
     setState(() {
       _ownerName = '';
       _companyName = '';
@@ -63,8 +77,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _ownerSignatureBase64 =
         await CompanyStore.instance.getString('ownerSignature') ?? '';
 
-    _officeManagers =
-        await CompanyStore.instance.getJsonList('officeManagers');
+    _officeManagers = await CompanyStore.instance.getJsonList('officeManagers');
     _fieldManagers = await CompanyStore.instance.getJsonList('fieldManagers');
 
     if (!mounted) return;
@@ -480,6 +493,130 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ AGAR USER OWNER NAHI HAI (YAANI MANAGER HAI), TOH YE SCREEN DIKHEGI
+    if (!_isOwner) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: primaryGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+            onPressed: () => Get.back(),
+          ),
+          title: Text(
+            '$_currentUserRole Profile',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: primaryGreen.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      _currentUserName.isNotEmpty
+                          ? _currentUserName[0].toUpperCase()
+                          : 'M',
+                      style: const TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: primaryGreen,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _currentUserName,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: primaryGreen.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _currentUserRole,
+                    style: const TextStyle(
+                      color: primaryGreen,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'Aapka account company ke sath connected hai. Owner ki confidential profile aur manager list yahan hidden hai.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12.5,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 30),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _logout,
+                    icon: const Icon(Icons.logout_rounded),
+                    label: const Text(
+                      'Logout Karo',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 👑 AGAR OWNER HAI, TOH PURANA POORA ORIGINAL DASHBOARD DIKHEGA (Jo aapka code hai)
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -772,7 +909,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
                     onPressed: _pickSignature,
-                    icon: Icon(Icons.edit_rounded, size: 15, color: primaryGreen),
+                    icon: Icon(
+                      Icons.edit_rounded,
+                      size: 15,
+                      color: primaryGreen,
+                    ),
                     label: Text(
                       'Signature Badlo',
                       style: TextStyle(color: primaryGreen, fontSize: 12),
