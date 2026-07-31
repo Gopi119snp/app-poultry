@@ -2,14 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:get/get.dart';
 import 'dart:convert';
+import 'dart:async'; // ✅ Timer & Stream ke liye zaroori hai
 import '../../services/company_store.dart';
 import 'purchase_expense_screen.dart' show ensureFeedStockMigrated;
 
 const Color _fplGreen = Color(0xFF1B5E20);
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 🔧 SHARED HELPERS (farmer_report_screen.dart jaisa hi)
-// ═══════════════════════════════════════════════════════════════════════════
 
 DateTime? _parseDdMmYyyy(String? s) {
   if (s == null || s.trim().isEmpty) return null;
@@ -66,22 +63,16 @@ class _CatAmount {
   double get income => billed - cost;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 📦 PER-BATCH RECORD — ab har batch ka apna record store hota hai (status
-// ke saath), taaki totals ko "include active?" toggle ke hisaab se
-// dynamically recompute kiya ja sake, bina wapas se load kiye.
-// ═══════════════════════════════════════════════════════════════════════════
 class _BatchProfitRecord {
   final String farmerId;
   final String farmerName;
   final String batchId;
-  final bool isCompleted; // COMPLETED/CLOSED = true, warna active/other
+  final bool isCompleted;
   final double trueTotalProfit;
   final double silentIncome;
   final bool opExpenseDataMissing;
-  final bool allocationDataMissing; // ✅ FIX #9 — naya
-  final DateTime
-  trendDate; // last sale date, ya batch start date agar sale hi nahi hui
+  final bool allocationDataMissing;
+  final DateTime trendDate;
 
   const _BatchProfitRecord({
     required this.farmerId,
@@ -91,7 +82,7 @@ class _BatchProfitRecord {
     required this.trueTotalProfit,
     required this.silentIncome,
     required this.opExpenseDataMissing,
-    required this.allocationDataMissing, // ✅ FIX #9 — naya
+    required this.allocationDataMissing,
     required this.trendDate,
   });
 }
@@ -102,14 +93,11 @@ class _FarmerAgg {
   double trueTotalProfit = 0.0;
   int batchCount = 0;
   bool opExpenseDataMissing = false;
-  bool allocationDataMissing = false; // ✅ FIX #9 — naya
+  bool allocationDataMissing = false;
 
   _FarmerAgg({required this.farmerId, required this.farmerName});
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 📊 FARMER PROFIT / LOSS SCREEN
-// ═══════════════════════════════════════════════════════════════════════════
 class FarmerProfitLossScreen extends StatefulWidget {
   const FarmerProfitLossScreen({super.key});
 
@@ -117,19 +105,11 @@ class FarmerProfitLossScreen extends StatefulWidget {
   State<FarmerProfitLossScreen> createState() => _FarmerProfitLossScreenState();
 }
 
-// ✅ FIX 1: Added CloudSyncMixin
 class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
     with CloudSyncMixin {
   bool _isLoading = true;
   String _granularity = 'Weekly';
-
-  // ✅ NEW: true = Active (abhi sale na hui) batches ka invest bhi minus
-  // karke total profit dikhega. false = sirf COMPLETED batches ka clean
-  // profit dikhega.
   bool _includeActiveBatches = true;
-
-  // ✅ NEW: raw per-batch records — toggle change hone par yahi se
-  // dynamically re-aggregate hota hai, wapas load nahi karna padta.
   List<_BatchProfitRecord> _allRecords = [];
 
   // Rule 1 config
@@ -152,22 +132,42 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
   List<Map<String, dynamic>> _medicineStock = [];
   List<Map<String, dynamic>> _chicksPurchaseHistory = [];
 
+  // ✅ Real-time Sync & Polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
     _loadData();
-    startCloudSync(); // ✅ FIX 2
+    startCloudSync();
+
+    // ✅ Real-time stream listener
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadData();
+    });
+
+    // ✅ 5-second polling timer
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadData();
+    });
   }
 
   @override
   void dispose() {
-    stopCloudSync(); // ✅ FIX 4
+    stopCloudSync();
+    _dataSub?.cancel();
+    _pollTimer?.cancel(); // ✅ Clean up
     super.dispose();
   }
 
   @override
   void onCloudDataChanged() {
-    // ✅ FIX 3
     _loadData();
   }
 
@@ -179,9 +179,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
     return exp / kg;
   }
 
-  // ✅ FIX #7 — weighted sale-average weight (batch_detail_screen.dart ke
-  // _computeWeightedSaleAvgWeight jaisa hi), taaki Big/Small classification
-  // kisi ek leftover cost-entry weight se skew na ho.
   double _computeWeightedSaleAvgWeight(
     List<dynamic> entries, {
     required double fallback,
@@ -276,7 +273,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
-    // ── Rule 1 config ──
     final r1Json = await CompanyStore.instance.getString(
       'rule1SettlementConfig',
     );
@@ -308,7 +304,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
       } catch (_) {}
     }
 
-    // ── Feed/Medicine/Chicks reference data ──
     List<Map<String, dynamic>> feedStock = [];
     try {
       feedStock = List<Map<String, dynamic>>.from(
@@ -342,7 +337,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
     _medicineStock = medStock;
     _chicksPurchaseHistory = chicksHistory;
 
-    // ── Company-wide monthly Operational Expense ──
     final Map<String, double> monthlyOpExpense = {};
     final otherJson = await CompanyStore.instance.getString(
       'otherExpenseHistory',
@@ -375,7 +369,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
       } catch (_) {}
     }
 
-    // ── Farmers + company-wide monthly KG sold ──
     final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
     final Map<String, double> monthlyKgSold = {};
     for (final rawF in farmers) {
@@ -400,8 +393,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
     _monthlyOpExpense = monthlyOpExpense;
     _monthlyKgSold = monthlyKgSold;
 
-    // ── Har farmer ke har batch ke liye trueTotalProfit calculate karo,
-    // status ke saath store karo (filtering baad mein UI mein hogi) ──
     final List<_BatchProfitRecord> records = [];
 
     for (final rawF in farmers) {
@@ -420,7 +411,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
             .toUpperCase();
         final bool isCompleted = status == 'COMPLETED' || status == 'CLOSED';
 
-        // Sort by date (jaisa farmer_report_screen.dart karta hai)
         final indexed = List<MapEntry<int, Map<String, dynamic>>>.generate(
           entriesRaw.length,
           (i) => MapEntry(i, Map<String, dynamic>.from(entriesRaw[i])),
@@ -466,7 +456,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
           }
         }
 
-        // ✅ FIX #7 — weighted sale-average weight, last-entry weight nahi
         final double sizeClassificationWeight = _computeWeightedSaleAvgWeight(
           entries,
           fallback: latestAvgWeight,
@@ -493,20 +482,10 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
             totalSaleMoney > 0;
         if (!hasAnyInvestment) continue;
 
-        // ✅ FIX #9 — flag karo jab sale hui ho lekin feed allocation-cost
-        // record hi nahi hai (matlab ye batch sirf Flock se track hui,
-        // Purchase→Allocate kabhi use hi nahi hua) — warna feed cost
-        // silently ₹0 dikhta hai aur profit overstate ho jata hai.
         final bool allocationDataMissing =
             totalWeightSoldKg > 0 && feedAmt.cost <= 0;
 
         double farmerPayout;
-
-        // ✅ FIX #8 — COMPLETED batches ke liye ACTUAL frozen settlement
-        // snapshot (jo farmer ko diya gaya) use karo, live Rule-1 config se
-        // dobara recalculate mat karo. Warna company baad mein rates
-        // change kare to purani settled batches ka "profit" bhi silently
-        // badal jayega — jo actual paid amount se mismatch karega.
         final Map<String, dynamic>? finalSnapshot =
             b['finalSettlementSnapshot'] is Map
             ? Map<String, dynamic>.from(b['finalSettlementSnapshot'])
@@ -521,7 +500,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
               : null;
 
           if (snapshotRuleId == 2) {
-            // Rule 2 (FCR Matrix) — payout manual approval se aata hai
             farmerPayout =
                 (finalSnapshot['approvedPayout'] as num?)?.toDouble() ?? 0.0;
           } else {
@@ -529,9 +507,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
                 (finalSnapshot['netPayout'] as num?)?.toDouble() ?? 0.0;
           }
         } else {
-          // ACTIVE batch ya settlement abhi tak nahi bana — sirf is case
-          // mein live/current Rule-1 config se ESTIMATE karo (kyunki koi
-          // frozen number exist hi nahi karta).
           final adminCost = isBigSize ? _r1BigAdminCost : _r1SmAdminCost;
           final medInProd = isBigSize
               ? _r1BigMedicineInProd
@@ -585,7 +560,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
           if (farmerPayout < 0) farmerPayout = 0;
         }
 
-        // ✅ Same trueTotalProfit formula jaisa farmer_report_screen.dart mein hai
         final double trueTotalProfit =
             totalSaleMoney -
             chicksAmt.cost -
@@ -611,7 +585,7 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
             trueTotalProfit: trueTotalProfit,
             silentIncome: silentIncome,
             opExpenseDataMissing: opExpenseDataMissing,
-            allocationDataMissing: allocationDataMissing, // ✅ FIX #9 — naya
+            allocationDataMissing: allocationDataMissing,
             trendDate: trendDate,
           ),
         );
@@ -625,13 +599,11 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
     });
   }
 
-  // ✅ NEW: toggle ke hisaab se filtered records
   List<_BatchProfitRecord> get _filteredRecords {
     if (_includeActiveBatches) return _allRecords;
     return _allRecords.where((r) => r.isCompleted).toList();
   }
 
-  // ✅ NEW: filtered records se farmer-wise aggregate banao
   List<_FarmerAgg> get _farmerAggs {
     final Map<String, _FarmerAgg> map = {};
     for (final r in _filteredRecords) {
@@ -642,13 +614,11 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
       agg.trueTotalProfit += r.trueTotalProfit;
       agg.batchCount += 1;
       if (r.opExpenseDataMissing) agg.opExpenseDataMissing = true;
-      if (r.allocationDataMissing)
-        agg.allocationDataMissing = true; // ✅ FIX #9 — naya
+      if (r.allocationDataMissing) agg.allocationDataMissing = true;
     }
     return map.values.toList();
   }
 
-  // ── Trend: filtered records ko Daily/Weekly/Monthly bucket mein group karo ──
   List<MapEntry<DateTime, double>> _bucketedTrend() {
     final records = _filteredRecords;
     if (records.isEmpty) return [];
@@ -680,10 +650,7 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
       (s, f) => s + f.trueTotalProfit,
     );
     final bool anyMissing = farmerAggs.any((f) => f.opExpenseDataMissing);
-    final bool anyAllocMissing = // ✅ FIX #9 — naya
-    farmerAggs.any(
-      (f) => f.allocationDataMissing,
-    );
+    final bool anyAllocMissing = farmerAggs.any((f) => f.allocationDataMissing);
 
     final top5 = List<_FarmerAgg>.from(farmerAggs)
       ..sort((a, b) => b.trueTotalProfit.compareTo(a.trueTotalProfit));
@@ -733,7 +700,6 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
                       ),
                     )
                   else ...[
-                    // ✅ NEW: Active/Completed toggle
                     if (activeBatchCount > 0)
                       Container(
                         margin: const EdgeInsets.only(bottom: 14),
@@ -811,7 +777,7 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
                         ),
                       ),
 
-                    if (anyAllocMissing) // ✅ FIX #9 — naya
+                    if (anyAllocMissing)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 14),
                         child: _warningBanner(

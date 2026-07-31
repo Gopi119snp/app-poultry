@@ -1,3 +1,4 @@
+import 'dart:async'; // ✅ EDIT: StreamSubscription + Timer ke liye
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'dart:convert';
@@ -32,10 +33,38 @@ class _AllRecentActivityScreenState extends State<AllRecentActivityScreen> {
   List<String> _allAvailablePersons = [];
   List<String> _currentAvailablePersons = [];
 
+  // ✅ Real-time sync & polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
     _loadAllActivities();
+
+    // ✅ Real-time CompanyStore stream listener — naya activity log darj
+    // hote hi screen turant refresh ho jayegi, bina manual refresh kiye
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadAllActivities();
+    });
+
+    // ✅ 5-second fast verification timer
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadAllActivities();
+    });
+  }
+
+  @override
+  void dispose() {
+    _dataSub?.cancel();
+    _pollTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadAllActivities() async {

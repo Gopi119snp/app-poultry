@@ -1,3 +1,4 @@
+import 'dart:async'; // ✅ EDIT: StreamSubscription + Timer ke liye
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -56,6 +57,10 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
     'Dec',
   ];
 
+  // ✅ Real-time sync & polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
+
   /// Konse mahine kisi bhi season se cover nahi hain — inhi mahino mein
   /// Default Multiplier use hoga. Agar list empty hai, matlab saare 12
   /// mahine kisi season se cover ho chuke hain aur default kabhi use
@@ -79,6 +84,23 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
     super.initState();
     _loadExistingConfig();
     startCloudSync(); // ✅ FIX
+
+    // ✅ Real-time CompanyStore stream listener — config change hote hi
+    // screen turant refresh ho jayegi
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadExistingConfig();
+    });
+
+    // ✅ 5-second fast verification timer taaki config live update ho
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadExistingConfig();
+    });
   }
 
   @override
@@ -90,6 +112,8 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
   @override
   void dispose() {
     stopCloudSync(); // ✅ FIX
+    _dataSub?.cancel();
+    _pollTimer?.cancel(); // ✅ Clean up
     _multiplierCtrl.dispose();
     super.dispose();
   }

@@ -1,3 +1,4 @@
+import 'dart:async'; // ✅ EDIT: StreamSubscription + Timer ke liye
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -31,11 +32,32 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
   WeightRuleType _ruleType = WeightRuleType.standardFormula;
   final Map<int, double> _customChart = {};
 
+  // ✅ Real-time sync & polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
     _loadExistingConfig();
     startCloudSync(); // ✅ FIX
+
+    // ✅ Real-time CompanyStore stream listener — config change hote hi
+    // screen turant refresh ho jayegi
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadExistingConfig();
+    });
+
+    // ✅ 5-second fast verification timer
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadExistingConfig();
+    });
   }
 
   @override
@@ -47,6 +69,8 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
   @override
   void dispose() {
     stopCloudSync(); // ✅ FIX
+    _dataSub?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 

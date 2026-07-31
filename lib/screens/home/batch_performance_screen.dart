@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:get/get.dart';
 import 'dart:convert';
+import 'dart:async'; // ✅ Timer & Stream ke liye zaroori hai
 import '../../services/company_store.dart';
 import '../../utils/feed_consumption_rule_engine.dart';
 
 const Color _bpGreen = Color(0xFF1B5E20);
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 📦 DATA MODEL
-// ═══════════════════════════════════════════════════════════════════════════
 class _BatchMetrics {
   final String farmerId;
   final String farmerName;
@@ -29,8 +27,6 @@ class _BatchMetrics {
   final double totalFeedKg;
   final double totalExpectedFeedKg;
   final DateTime startDate;
-  // 🔧 Naye fields — data-quality tracking ke liye, taaki "missing data"
-  // batches galti se ranking/averages mein "best" ya "worst" ban ke na aa jaayein.
   final bool hasWeightData;
   final bool hasFeedData;
   final bool isFcrValid;
@@ -62,8 +58,6 @@ class _BatchMetrics {
   });
 }
 
-// Ek batch ke computation ka poora result — final metrics + uske trend
-// samples ek hi pass mein ek saath, taaki dono kabhi disagree na karein.
 class _BatchComputation {
   final _BatchMetrics metrics;
   final List<Map<String, dynamic>> trendSamples;
@@ -75,7 +69,6 @@ class _BatchComputation {
   });
 }
 
-// ── Shared helpers (batch_detail_screen.dart jaisi hi formula) ─────────────
 int _standardTargetWeightGrams(int daysOld) {
   if (daysOld <= 0) return 40;
   if (daysOld <= 7) return 40 + (daysOld * 20);
@@ -107,17 +100,12 @@ int _daysOldFrom(DateTime start, DateTime reference) {
 
 int _clampInt(int v, int lo, int hi) => v < lo ? lo : (v > hi ? hi : v);
 
-// candidate date "current" se naya ya barabar hai kya (null-safe) — latest
-// weight/entry track karne ke liye use hota hai.
 bool _isNewerOrEqual(DateTime? candidate, DateTime? current) {
   if (current == null) return true;
   if (candidate == null) return true;
   return !candidate.isBefore(current);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 📊 BATCH PERFORMANCE SCREEN
-// ═══════════════════════════════════════════════════════════════════════════
 class BatchPerformanceScreen extends StatefulWidget {
   const BatchPerformanceScreen({super.key});
 
@@ -127,21 +115,45 @@ class BatchPerformanceScreen extends StatefulWidget {
 
 class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
   bool _isLoading = true;
-  bool _hasLoadError = false; // 🔧 ab silent fail nahi hoga, banner dikhega
-  bool _showActive = true; // true = Active section, false = Completed section
+  bool _hasLoadError = false;
+  bool _showActive = true;
   String _granularity = 'Weekly';
 
   List<_BatchMetrics> _activeBatches = [];
   List<_BatchMetrics> _completedBatches = [];
-
-  // Trend raw samples — {batchDay, actualG, targetG, mortalityCount, actualFeedKg, expectedFeedKg}
   List<Map<String, dynamic>> _activeTrendSamples = [];
   List<Map<String, dynamic>> _completedTrendSamples = [];
+
+  // ✅ Real-time Sync & Polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+
+    // ✅ Real-time stream listener
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadData();
+    });
+
+    // ✅ 5-second polling timer
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _dataSub?.cancel();
+    _pollTimer?.cancel(); // ✅ Clean up
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -162,10 +174,7 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
           json.decode(feedRuleJson),
         );
       }
-    } catch (_) {
-      // Feed rule config corrupt ho to bhi default config se aage badh jaate hain —
-      // ye non-critical hai isliye yahan silent fallback theek hai.
-    }
+    } catch (_) {}
 
     final List<_BatchMetrics> active = [];
     final List<_BatchMetrics> completed = [];
@@ -193,9 +202,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
         }
       }
     } catch (e, st) {
-      // 🔧 Pehle yahan catch (_) {} tha — error chupchaap gum ho jaati thi
-      // aur report incomplete/empty dikh jaati thi bina bataye. Ab user ko
-      // banner dikhega aur console mein bhi log hoga.
       debugPrint('BatchPerformanceScreen._loadData error: $e\n$st');
       loadError = true;
     }
@@ -211,7 +217,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
     });
   }
 
-  // ── Ek batch ke liye final metrics + trend samples ek saath compute karo ──
   _BatchComputation? _computeBatchAndTrend(
     Map<String, dynamic> farmer,
     Map<String, dynamic> batch,
@@ -223,9 +228,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
     final startDate = _parseDdMmYyyy(batch['startDate']?.toString());
     if (startDate == null) return null;
 
-    // 🔧 Status normalization ab COMPLETED/CLOSED ke alawa common synonyms
-    // (SETTLED/FINISHED/DONE) ko bhi pehchanta hai, taaki wo galti se
-    // Active list mein na reh jaayein.
     String status = (batch['status'] ?? '').toString().toUpperCase().trim();
     const completedStatuses = {
       'COMPLETED',
@@ -238,10 +240,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
     final isCompleted = completedStatuses.contains(status);
     if (isCompleted) status = 'COMPLETED';
 
-    // 🔧 Entries ko date ke hisaab se sort karte hain — isse (a) "latest
-    // weight" waqai latest hoti hai chahe entries kisi bhi order mein save
-    // hui hon, aur (b) mortality/sale ka day-wise cumulative timeline sahi
-    // banta hai.
     final rawEntries = (batch['dailyEntries'] as List?) ?? [];
     final List<Map<String, dynamic>> entries = [];
     for (final rawE in rawEntries) {
@@ -267,8 +265,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
     DateTime? latestWeightDate;
     DateTime? lastEntryDate;
 
-    // Day-indexed deltas — Expected Feed ke liye mortality/sale-adjusted
-    // live-bird timeline banane ke kaam aayenge.
     final Map<int, int> mortalityByDay = {};
     final Map<int, int> soldByDay = {};
     final Map<int, double> returnFeedByDay = {};
@@ -292,9 +288,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
 
         final saleAvgWt =
             double.tryParse(e['avgWeightSold']?.toString() ?? '') ?? 0.0;
-        // 🔧 Pehle sirf tab update hota tha jab latestAvgWeightKg == 0 tha,
-        // isliye baad ki actual sale weight ignore ho jaati thi. Ab hamesha
-        // sabse latest DATE waali weight entry use hoti hai.
         if (saleAvgWt > 0 && _isNewerOrEqual(d, latestWeightDate)) {
           latestAvgWeightKg = saleAvgWt;
           latestWeightDate = d;
@@ -331,26 +324,17 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
     final hasFeedData = netFeedKg > 0;
     final hasWeightData = latestAvgWeightKg > 0;
 
-    // 🔧 Completed batch ki age ab aaj tak nahi badhti rahegi — jis din
-    // batch ki AAKHRI entry hui (best available "closing" proxy jab tak
-    // dedicated closing-date field na ho) usi ko reference maan kar daysOld
-    // nikalte hain. Active batches ke liye pehle jaisa DateTime.now() hi hai.
     final referenceDate = isCompleted
         ? (lastEntryDate ?? startDate)
         : DateTime.now();
     final daysOld = _daysOldFrom(startDate, referenceDate);
 
-    // 🔧 liveChicks ab kabhi negative nahi ho sakta (duplicate/galat entries
-    // se bhi 0 se neeche nahi jayega).
     final rawLiveChicks = initialChicks - totalMortality - totalChicksSold;
     final liveChicks = _clampInt(rawLiveChicks, 0, initialChicks);
     final mortalityPct = initialChicks > 0
         ? (totalMortality / initialChicks) * 100
         : 0.0;
 
-    // 🔧 Har din ke liye mortality/sale-adjusted "live at day start" timeline —
-    // ye Expected Feed (main total) aur trend chart, dono ke liye ek hi
-    // source hai, taaki dono kabhi ek-dusre se disagree na karein.
     final loopDays = daysOld + 1;
     final Map<int, int> liveAtDayStart = {};
     int cumMort = 0;
@@ -377,12 +361,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
 
     final currentLiveWeightKg = liveChicks * latestAvgWeightKg;
     final totalBiomassKg = totalWeightSoldKg + currentLiveWeightKg;
-    // ⚠️ Simplification (pehle jaisi hi): "actual consumed" = net feed
-    // delivered (bags − return). Agar future mein actual-consumption
-    // (wastage/spillage adjust kiya hua) data available ho, to FCR formula
-    // ko us hisaab se aur behtar kiya ja sakta hai — abhi ye business
-    // formula decision hai jo maine change nahi ki, sirf data accuracy
-    // (negative live chicks, latest weight, sorted entries) fix ki hai.
     final actualFeedConsumedKg = netFeedKg;
     final fcr = totalBiomassKg > 0
         ? actualFeedConsumedKg / totalBiomassKg
@@ -439,7 +417,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
     );
   }
 
-  // ── Day-wise trend samples (batch-age indexed, calendar date nahi) ──
   List<Map<String, dynamic>> _buildTrendSamples(
     List<Map<String, dynamic>> entries,
     DateTime startDate,
@@ -463,15 +440,10 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
       final feedKg = (e['feedTotalKg'] is num)
           ? (e['feedTotalKg'] as num).toDouble()
           : 0.0;
-      // 🔧 Usi din ka return feed bhi netted-off — pehle sirf final metric
-      // mein return feed subtract hota tha, chart mein nahi; ab dono
-      // consistent hain.
       final returnKg = returnFeedByDay[dayNum] ?? 0.0;
       final netFeedKgForDayRaw = feedKg - returnKg;
       final netFeedKgForDay = netFeedKgForDayRaw < 0 ? 0.0 : netFeedKgForDayRaw;
 
-      // 🔧 Expected feed ab is din ke actual live-bird count (mortality/sale
-      // adjusted) se calculate hota hai, initialChicks fixed maan kar nahi.
       final liveForDay = liveAtDayStart[dayNum] ?? 0;
       final expectedFeedKg = FeedConsumptionEngine.calculateDayFeedKg(
         config: feedConfig,
@@ -481,7 +453,7 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
       );
 
       samples.add({
-        'batchDay': dayNum, // 🔧 calendar date ki jagah batch-age (day number)
+        'batchDay': dayNum,
         'actualG': wt > 0 ? wt * 1000 : null,
         'targetG': wt > 0
             ? _standardTargetWeightGrams(dayNum - 1).toDouble()
@@ -494,11 +466,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
     return samples;
   }
 
-  // ── Trend samples ko Daily/Weekly/Monthly bucket mein group karo ──
-  // 🔧 Ab calendar date ki jagah batch-age (day number since batch start) se
-  // bucket hota hai. Isse alag-alag start-date waale batches ek "calendar
-  // week" mein mix nahi hote — sabka Day 1, Day 8... hi ek dusre se compare
-  // hota hai, jo company-wide trend ke liye zyada meaningful hai.
   List<Map<String, dynamic>> _bucketTrend(
     List<Map<String, dynamic>> samples,
     String granularity,
@@ -601,8 +568,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  // 🔧 Data load karte waqt error aaye to ab chup nahi rehta —
-                  // banner + retry button dikhta hai.
                   if (_hasLoadError)
                     Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -639,8 +604,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
                         ],
                       ),
                     ),
-
-                  // ── Active/Completed Toggle ──
                   Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
@@ -665,7 +628,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
                   if (list.isEmpty)
                     Container(
                       padding: const EdgeInsets.all(30),
@@ -812,10 +774,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
   }
 
   Widget _buildAverages(List<_BatchMetrics> list) {
-    // 🔧 Avg FCR ab "pooled" hai (total feed ÷ total biomass) — chhota
-    // 100-chick batch aur bada 50,000-chick batch ab unke size ke hisaab se
-    // hi average mein contribute karte hain, barabar nahi. Invalid/missing
-    // FCR waale batches average se bahar rakhe gaye hain.
     final fcrEligible = list.where((m) => m.isFcrValid).toList();
     final totalFeedForFcr = fcrEligible.fold(0.0, (s, m) => s + m.totalFeedKg);
     final totalBiomassForFcr = fcrEligible.fold(
@@ -832,9 +790,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
         ? (totalMortality / totalInitial) * 100
         : 0.0;
 
-    // 🔧 Weight growth ab chick-count-weighted hai, aur sirf un batches se
-    // jinke paas actual weight data hai — missing data ab average ko galat
-    // tarike se neeche nahi khinchega.
     final weightEligible = list.where((m) => m.hasWeightData).toList();
     final weightWeightedSum = weightEligible.fold(
       0.0,
@@ -848,7 +803,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
         ? weightWeightedSum / weightChickSum
         : 0.0;
 
-    // 🔧 Feed efficiency bhi pooled — total expected ÷ total actual feed.
     final feedEligible = list.where((m) => m.hasFeedData).toList();
     final totalExpectedForEff = feedEligible.fold(
       0.0,
@@ -963,7 +917,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // FIX: Wrapped the entire Row in SingleChildScrollView to prevent overflow on small screens
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -1028,7 +981,6 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
     );
   }
 
-  // ── FIXED: granularity toggle now scrolls horizontally when content overflows ──
   Widget _granularityToggle() {
     return Container(
       padding: const EdgeInsets.all(3),

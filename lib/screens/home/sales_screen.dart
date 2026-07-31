@@ -1,3 +1,4 @@
+import 'dart:async'; // ✅ EDIT: StreamSubscription + Timer ke liye
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -47,10 +48,38 @@ class _SalesScreenState extends State<SalesScreen> {
   bool _canChicken = false;
   bool _loaded = false;
 
+  // ✅ Real-time sync variables
+  StreamSubscription<void>? _dataChangeSub;
+  Timer? _permissionPollTimer;
+
   @override
   void initState() {
     super.initState();
     _loadPermissions();
+
+    // ✅ Real-time CompanyStore stream listener — permission/data change hote
+    // hi is screen ki permissions turant refresh ho jayengi
+    _dataChangeSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadPermissions();
+    });
+
+    // ✅ 5-second fast verification timer taaki permission live update ho
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _permissionPollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadPermissions();
+    });
+  }
+
+  @override
+  void dispose() {
+    _dataChangeSub?.cancel();
+    _permissionPollTimer?.cancel(); // ✅ Clean up timer
+    super.dispose();
   }
 
   Future<void> _loadPermissions() async {

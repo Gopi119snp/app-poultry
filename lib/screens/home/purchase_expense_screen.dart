@@ -1,3 +1,4 @@
+import 'dart:async'; // ✅ EDIT: StreamSubscription + Timer ke liye
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -165,7 +166,7 @@ class ChicksPurchase {
 // ═══════════════════════════════════════════════════════════════════════════
 // 🛒 PURCHASE EXPENSE SCREEN — FULL CODE WITH MULTIPLE ALLOCATIONS
 // ═══════════════════════════════════════════════════════════════════════════
-class PurchaseExpenseScreen extends StatelessWidget {
+class PurchaseExpenseScreen extends StatefulWidget {
   final Future<void> Function() onChicksTap;
   final Future<void> Function() onFeedTap;
   final Future<void> Function() onMedicineTap;
@@ -182,6 +183,43 @@ class PurchaseExpenseScreen extends StatelessWidget {
   });
 
   static const Color primaryGreen = Color(0xFF1B5E20);
+
+  @override
+  State<PurchaseExpenseScreen> createState() => _PurchaseExpenseScreenState();
+}
+
+class _PurchaseExpenseScreenState extends State<PurchaseExpenseScreen> {
+  StreamSubscription<void>? _dataChangeSub;
+  Timer? _permissionPollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // ✅ Real-time CompanyStore stream listener — permission/data change hote
+    // hi is screen ko turant refresh karega
+    _dataChangeSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      setState(() {});
+    });
+
+    // ✅ 5-second fast verification timer taaki permission live update ho
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _permissionPollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _dataChangeSub?.cancel();
+    _permissionPollTimer?.cancel(); // ✅ Clean up timer
+    super.dispose();
+  }
 
   // =============================================================================
   // 🔀 MULTIPLE CHICKS ALLOCATION FORM — ADD MODE (New Allocations)
@@ -2102,7 +2140,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        backgroundColor: primaryGreen,
+        backgroundColor: PurchaseExpenseScreen.primaryGreen,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(
@@ -2134,7 +2172,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
               decoration: const BoxDecoration(
-                color: primaryGreen,
+                color: PurchaseExpenseScreen.primaryGreen,
                 borderRadius: BorderRadius.only(
                   bottomLeft: Radius.circular(28),
                   bottomRight: Radius.circular(28),
@@ -2199,7 +2237,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
                             badgeText: 'Stock In',
                             onTap: () => Get.to(
                               () => ChicksHistoryScreen(
-                                onChicksTap: onChicksTap,
+                                onChicksTap: widget.onChicksTap,
                                 onShowAllocation: _showAllocationDialog,
                               ),
                             ),
@@ -2218,7 +2256,9 @@ class PurchaseExpenseScreen extends StatelessWidget {
                             textColor: Colors.blue.shade800,
                             badgeText: 'Stock Ready',
                             onTap: () => Get.to(
-                              () => FeedHistoryScreen(onFeedTap: onFeedTap),
+                              () => FeedHistoryScreen(
+                                onFeedTap: widget.onFeedTap,
+                              ),
                             ),
                           ),
                         );
@@ -2236,7 +2276,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
                             badgeText: 'Farmer Rate',
                             onTap: () => Get.to(
                               () => MedicineHistoryScreen(
-                                onMedicineTap: onMedicineTap,
+                                onMedicineTap: widget.onMedicineTap,
                               ),
                             ),
                           ),
@@ -2260,7 +2300,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                 themeColor: Colors.orange.shade800,
                                 historyPrefsKey: 'labourExpenseHistory',
                                 dateKey: 'date',
-                                onAddTap: onLabourTap,
+                                onAddTap: widget.onLabourTap,
                                 addButtonLabel: 'Naya Labour Expense',
                                 emptyMessage: 'Koi record nahi.',
                                 canAdd: perms['labourAdd'] == true,
@@ -2297,7 +2337,7 @@ class PurchaseExpenseScreen extends StatelessWidget {
                                 themeColor: Colors.purple.shade700,
                                 historyPrefsKey: 'otherExpenseHistory',
                                 dateKey: 'date',
-                                onAddTap: onOtherTap,
+                                onAddTap: widget.onOtherTap,
                                 addButtonLabel: 'Naya Expense Add Karo',
                                 emptyMessage: 'Koi record nahi.',
                                 canAdd: perms['otherAdd'] == true,

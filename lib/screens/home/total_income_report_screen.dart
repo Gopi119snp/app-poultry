@@ -1,6 +1,8 @@
+import 'dart:async'; // ✅ EDIT: StreamSubscription + Timer ke liye
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:poultrypro/services/company_store.dart'; // ✅ EDIT: CompanyStore ke liye
 import 'accounts_screen.dart' show AppDateFilter;
 import 'income_engine.dart';
 
@@ -37,6 +39,10 @@ class _TotalIncomeReportScreenState extends State<TotalIncomeReportScreen> {
   // 0 = Company-Farmer, 1 = Private Sales, null = koi select nahi
   int? _selectedSide;
 
+  // ✅ Real-time sync & polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
@@ -47,6 +53,30 @@ class _TotalIncomeReportScreenState extends State<TotalIncomeReportScreen> {
       end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
     );
     _loadData();
+
+    // ✅ Real-time CompanyStore stream listener — data change hote hi
+    // report turant refresh ho jayegi
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadData();
+    });
+
+    // ✅ 5-second fast verification timer
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _dataSub?.cancel();
+    _pollTimer?.cancel(); // ✅ Clean up
+    super.dispose();
   }
 
   Future<void> _loadData() async {

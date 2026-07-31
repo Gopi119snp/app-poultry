@@ -1,3 +1,4 @@
+import 'dart:async'; // ✅ EDIT: StreamSubscription + Timer ke liye
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../services/company_store.dart';
@@ -421,11 +422,32 @@ class _FeedStockFarmerAllocationsScreenState
   String _name = '';
   bool _isLoading = true;
 
+  // ✅ Real-time sync & polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
     _load();
     startCloudSync(); // ✅ FIX
+
+    // ✅ Real-time CompanyStore stream listener — data change hote hi
+    // screen turant refresh ho jayegi
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _load();
+    });
+
+    // ✅ 5-second fast verification timer
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _load();
+    });
   }
 
   @override
@@ -437,6 +459,8 @@ class _FeedStockFarmerAllocationsScreenState
   @override
   void dispose() {
     stopCloudSync(); // ✅ FIX
+    _dataSub?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
@@ -598,11 +622,32 @@ class _FeedStockPrivateBuyersScreenState
   String _name = '';
   bool _isLoading = true;
 
+  // ✅ Real-time sync & polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
     _load();
     startCloudSync(); // ✅ FIX
+
+    // ✅ Real-time CompanyStore stream listener — data change hote hi
+    // screen turant refresh ho jayegi
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _load();
+    });
+
+    // ✅ 5-second fast verification timer
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _load();
+    });
   }
 
   @override
@@ -614,6 +659,8 @@ class _FeedStockPrivateBuyersScreenState
   @override
   void dispose() {
     stopCloudSync(); // ✅ FIX
+    _dataSub?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
@@ -991,11 +1038,32 @@ class _MedicineStockFarmerAllocationsScreenState
   List<Map<String, dynamic>> _allocs = [];
   bool _isLoading = true;
 
+  // ✅ Real-time sync & polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
     _load();
     startCloudSync(); // ✅ FIX
+
+    // ✅ Real-time CompanyStore stream listener — data change hote hi
+    // screen turant refresh ho jayegi
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _load();
+    });
+
+    // ✅ 5-second fast verification timer
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _load();
+    });
   }
 
   @override
@@ -1007,6 +1075,8 @@ class _MedicineStockFarmerAllocationsScreenState
   @override
   void dispose() {
     stopCloudSync(); // ✅ FIX
+    _dataSub?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
@@ -1173,11 +1243,32 @@ class _MedicineStockPrivateBuyersScreenState
   List<Map<String, dynamic>> _rows = [];
   bool _isLoading = true;
 
+  // ✅ Real-time sync & polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
     _load();
     startCloudSync(); // ✅ FIX
+
+    // ✅ Real-time CompanyStore stream listener — data change hote hi
+    // screen turant refresh ho jayegi
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _load();
+    });
+
+    // ✅ 5-second fast verification timer
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _load();
+    });
   }
 
   @override
@@ -1189,6 +1280,8 @@ class _MedicineStockPrivateBuyersScreenState
   @override
   void dispose() {
     stopCloudSync(); // ✅ FIX
+    _dataSub?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 

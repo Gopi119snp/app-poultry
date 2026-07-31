@@ -2,19 +2,89 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:get/get.dart';
 import 'dart:convert';
+import 'dart:async'; // ✅ Added for Timer
 import '../../services/company_store.dart';
+import '../../services/permission_service.dart';
 import 'batch_performance_screen.dart';
 import 'farmer_profit_loss_screen.dart';
 import 'total_income_report_screen.dart';
 import 'accounts_screen.dart' show AppDateFilter, isDateInFilter;
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 📊 REPORTS SCREEN — Main hub
+// 📊 REPORTS SCREEN — Main hub with strict individual permission checks
 // ═══════════════════════════════════════════════════════════════════════════
 const Color _repGreen = Color(0xFF1B5E20);
 
-class ReportsScreen extends StatelessWidget {
+class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
+
+  @override
+  State<ReportsScreen> createState() => _ReportsScreenState();
+}
+
+class _ReportsScreenState extends State<ReportsScreen> {
+  bool _canViewOpExp = false;
+  bool _canViewBatchPerf = false;
+  bool _canViewFarmerPl = false;
+  bool _canViewTotalIncome = false;
+  bool _isLoading = true;
+
+  // ✅ New: real-time listener and periodic poll timer
+  StreamSubscription<void>? _dataSub;
+  Timer? _permissionPollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPermissions();
+
+    // ✅ Real-time CompanyStore listener
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadPermissions();
+    });
+
+    // ✅ Har 4-5 second mein background mein permission check karne ke liye timer
+    _permissionPollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadPermissions();
+    });
+  }
+
+  @override
+  void dispose() {
+    _dataSub?.cancel();
+    _permissionPollTimer?.cancel(); // ✅ Timer clean up
+    super.dispose();
+  }
+
+  Future<void> _loadPermissions() async {
+    final opExp = await PermissionService.can(
+      'opExpenseRecoveryReport',
+      'view',
+    );
+    final batchPerf = await PermissionService.can(
+      'batchPerformanceReport',
+      'view',
+    );
+    final farmerPl = await PermissionService.can(
+      'farmerProfitLossReport',
+      'view',
+    );
+    final totalInc = await PermissionService.can('totalIncomeReport', 'view');
+
+    if (!mounted) return;
+    setState(() {
+      _canViewOpExp = opExp;
+      _canViewBatchPerf = batchPerf;
+      _canViewFarmerPl = farmerPl;
+      _canViewTotalIncome = totalInc;
+      _isLoading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,97 +115,139 @@ class ReportsScreen extends StatelessWidget {
           ],
         ),
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-              decoration: const BoxDecoration(
-                color: _repGreen,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(28),
-                  bottomRight: Radius.circular(28),
-                ),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Business Insights',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Report Select Karein',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: _repGreen))
+          : SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Available Reports',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                    decoration: const BoxDecoration(
+                      color: _repGreen,
+                      borderRadius: BorderRadius.only(
+                        bottomLeft: Radius.circular(28),
+                        bottomRight: Radius.circular(28),
+                      ),
+                    ),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Business Insights',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Report Select Karein',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  _ReportCard(
-                    emoji: '🧮',
-                    title: 'Operational Expense Recovery',
-                    subtitle:
-                        'Admin charges collected vs company ka operational kharcha — per KG basis',
-                    color: Colors.indigo,
-                    onTap: () =>
-                        Get.to(() => const OperationalExpenseReportScreen()),
+                  const SizedBox(height: 24),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Available Reports',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
+                        // 1. Operational Expense Recovery
+                        if (_canViewOpExp) ...[
+                          _ReportCard(
+                            emoji: '🧮',
+                            title: 'Operational Expense Recovery',
+                            subtitle:
+                                'Admin charges collected vs company ka operational kharcha — per KG basis',
+                            color: Colors.indigo,
+                            onTap: () => Get.to(
+                              () => const OperationalExpenseReportScreen(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        // 2. Batch Performance
+                        if (_canViewBatchPerf) ...[
+                          _ReportCard(
+                            emoji: '🐔',
+                            title: 'Batch Performance',
+                            subtitle:
+                                'FCR, Mortality, Weight Growth aur Feed Efficiency — Top/Bottom 5 ke saath',
+                            color: Colors.indigo,
+                            onTap: () =>
+                                Get.to(() => const BatchPerformanceScreen()),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        // 3. Farmer Profit / Loss
+                        if (_canViewFarmerPl) ...[
+                          _ReportCard(
+                            emoji: '🧑‍🌾',
+                            title: 'Farmer Profit / Loss',
+                            subtitle:
+                                'Har farmer ka Chicks+Feed+Medicine+Admin margin minus Operational Expense',
+                            color: Colors.indigo,
+                            onTap: () =>
+                                Get.to(() => const FarmerProfitLossScreen()),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        // 4. Total Income (Farmer Profit / Loss ke theek neeche)[cite: 5]
+                        if (_canViewTotalIncome) ...[
+                          _ReportCard(
+                            emoji: '💰',
+                            title: 'Total Income',
+                            subtitle:
+                                'Company-Farmer aur Private Sales dono ka profit/loss, category-wise',
+                            color: Colors.indigo,
+                            onTap: () =>
+                                Get.to(() => const TotalIncomeReportScreen()),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+
+                        if (!_canViewOpExp &&
+                            !_canViewBatchPerf &&
+                            !_canViewFarmerPl &&
+                            !_canViewTotalIncome)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 40),
+                            child: Center(
+                              child: Text(
+                                'Aapko kisi bhi Report ko dekhne ki permission nahi hai.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        const SizedBox(height: 30),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  _ReportCard(
-                    emoji: '🐔',
-                    title: 'Batch Performance',
-                    subtitle:
-                        'FCR, Mortality, Weight Growth aur Feed Efficiency — Top/Bottom 5 ke saath',
-                    color: Colors.indigo,
-                    onTap: () => Get.to(() => const BatchPerformanceScreen()),
-                  ),
-                  const SizedBox(height: 12),
-                  _ReportCard(
-                    emoji: '🧑‍🌾',
-                    title: 'Farmer Profit / Loss',
-                    subtitle:
-                        'Har farmer ka Chicks+Feed+Medicine+Admin margin minus Operational Expense',
-                    color: Colors.indigo,
-                    onTap: () => Get.to(() => const FarmerProfitLossScreen()),
-                  ),
-                  const SizedBox(height: 12),
-                  _ReportCard(
-                    emoji: '💰',
-                    title: 'Total Income',
-                    subtitle:
-                        'Company-Farmer aur Private Sales dono ka profit/loss, category-wise',
-                    color: Colors.indigo,
-                    onTap: () => Get.to(() => const TotalIncomeReportScreen()),
-                  ),
-                  const SizedBox(height: 30),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -195,37 +307,13 @@ class _ReportCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        if (comingSoon) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              'Jald',
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(

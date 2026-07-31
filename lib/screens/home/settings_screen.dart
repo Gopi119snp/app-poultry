@@ -1,3 +1,4 @@
+import 'dart:async'; // ✅ EDIT: StreamSubscription + Timer ke liye
 import 'package:flutter/material.dart';
 import '../../services/permission_service.dart';
 import '../../services/company_store.dart'; // ✅ FIX — CloudSyncMixin ke liye
@@ -19,11 +20,32 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
   Map<String, Map<String, Map<String, bool>>> _roleDefaults = {};
   Map<String, Map<String, Map<String, bool>>> _personMatrices = {};
 
+  // ✅ Real-time sync & polling variables
+  StreamSubscription<void>? _dataSub;
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
     _loadAll();
     // ✅ FIX
+
+    // ✅ Real-time CompanyStore stream listener — data change hote hi
+    // screen turant refresh ho jayegi
+    _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadAll();
+    });
+
+    // ✅ 5-second fast verification timer
+    // (stream miss ho jaaye toh bhi backup ke roop mein kaam karega)
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadAll();
+    });
   }
 
   @override
@@ -35,6 +57,8 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
   @override
   void dispose() {
     // ✅ FIX
+    _dataSub?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 

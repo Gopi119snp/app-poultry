@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'dart:convert';
+import 'dart:async'; // ✅ Added for Timer
 import '../../services/company_store.dart';
 import 'purchase_expense_screen.dart'
     show
@@ -114,15 +115,22 @@ class AccountsScreen extends StatefulWidget {
   State<AccountsScreen> createState() => _AccountsScreenState();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ UPDATED _AccountsScreenState with real-time listeners and timer
+// ═══════════════════════════════════════════════════════════════════════════
 class _AccountsScreenState extends State<AccountsScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
   bool _isLoading = true;
 
+  // ✅ Real-time permission & data sync variables
+  StreamSubscription<void>? _dataChangeSub;
+  Timer? _permissionPollTimer;
+
   List<_DueItem> _dues = [];
   List<_LedgerItem> _expenses = [];
   List<_LedgerItem> _purchases = [];
-  List<_LedgerItem> _sales = []; // ✅ NEW: Central Sales List
+  List<_LedgerItem> _sales = [];
 
   List<Map<String, dynamic>> _rawChicksPurchases = [];
   List<Map<String, dynamic>> _rawFeedStock = [];
@@ -147,11 +155,28 @@ class _AccountsScreenState extends State<AccountsScreen>
     );
 
     _loadAll();
+
+    // ✅ Real-time CompanyStore stream listener
+    _dataChangeSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadAll();
+    });
+
+    // ✅ 5-second fast verification timer taaki permission live update ho
+    _permissionPollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      // Agar zaroorat ho toh yahan permissions check ya data refresh laga sakte hain
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _dataChangeSub?.cancel();
+    _permissionPollTimer?.cancel(); // ✅ Clean up timer
     super.dispose();
   }
 
