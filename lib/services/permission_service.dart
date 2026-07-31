@@ -761,16 +761,19 @@ class PermissionService {
     _ancestorCache = {};
     void walk(List<PermissionNode> nodes, List<String> ancestors) {
       for (final node in nodes) {
-        // If this node has hasPermission, it is a candidate for inheritance.
+        // ✅ FIX — cache save karo ancestors (self ke bina) — ancestors mein
+        // append karne SE PEHLE. Isse node ka apna id uski khud ki ancestor
+        // list mein doosri baar nahi aata (canNested mein redundant check
+        // avoid ho jata hai).
+        if (node.isLeaf || node.hasPermission) {
+          _ancestorCache![node.id] = ancestors;
+        }
+        // Recurse ke liye — is node ka hasPermission ho to isse bhi
+        // ancestors mein jod do (taaki iske CHILDREN ke liye ye ancestor
+        // ban jaye).
         final currentAncestors = node.hasPermission
             ? [...ancestors, node.id]
             : ancestors;
-        // For each moduleId, store all ancestors with hasPermission.
-        // For leaves and groups with hasPermission, store their own chain.
-        if (node.isLeaf || node.hasPermission) {
-          _ancestorCache![node.id] = currentAncestors;
-        }
-        // Recurse into children.
         walk(node.children, currentAncestors);
       }
     }
@@ -819,5 +822,36 @@ class PermissionService {
     // Sirf direct match — koi hierarchy OR-fallback nahi. Har module
     // (parent group ho ya leaf) ka apna explicit toggle hi final hai.
     return hasDirectPerm(activeMap, moduleId);
+  }
+
+  /// ⭐⭐ Screen/feature ke liye ASLI check — "Grandfather → Father → Child"
+  /// wala poora tree upar tak check karta hai (existing `_ancestorCache` /
+  /// `_buildAncestorCache` ko reuse karke — wo pehle se hi har node ke
+  /// hasPermission-wale ancestors ki list bana kar rakhta hai).
+  ///
+  /// Agar chain mein KAHI BHI (grandparent ho ya immediate parent) ka
+  /// 'view' access OFF hai, to niche ka sab kuch — screen ho, button ho —
+  /// turant OFF maana jayega, bhale khud moduleId ka apna toggle ON hi
+  /// kyu na ho.
+  ///
+  /// Example: Purchase/Expense (grandfather) → Chicks Purchase (father) →
+  /// Purchase Entry (child). Agar Purchase/Expense ka Overall Access OFF
+  /// kar diya, to Chicks Purchase screen aur uske andar ke Purchase Entry /
+  /// Allocation buttons — sab turant access-denied ho jayenge.
+  ///
+  /// PermissionGate aur PermissionScreenGate dono is method ko use karte
+  /// hain, isliye jahan bhi ye widgets lage hain wahan cascade apne aap
+  /// kaam karega — har jagah alag se code likhne ki zaroorat nahi.
+  static Future<bool> canNested(String moduleId, String action) async {
+    if (await SessionService.isOwner) return true;
+
+    _buildAncestorCache();
+    final ancestors = _ancestorCache![moduleId] ?? const <String>[];
+    for (final ancestorId in ancestors) {
+      if (!(await can(ancestorId, 'view'))) {
+        return false; // Koi bhi ancestor ka view OFF => sab OFF
+      }
+    }
+    return can(moduleId, action);
   }
 }

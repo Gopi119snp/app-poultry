@@ -62,7 +62,10 @@ class _PermissionGateState extends State<PermissionGate> {
   }
 
   Future<void> _check() async {
-    final result = await PermissionService.can(widget.moduleId, widget.action);
+    final result = await PermissionService.canNested(
+      widget.moduleId,
+      widget.action,
+    );
     if (!mounted) return;
     if (_allowed != result) {
       setState(() => _allowed = result);
@@ -130,7 +133,10 @@ class _PermissionScreenGateState extends State<PermissionScreenGate> {
   }
 
   Future<void> _check() async {
-    final result = await PermissionService.can(widget.moduleId, widget.action);
+    final result = await PermissionService.canNested(
+      widget.moduleId,
+      widget.action,
+    );
     if (!mounted) return;
     if (_allowed != result) {
       setState(() => _allowed = result);

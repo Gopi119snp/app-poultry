@@ -2143,268 +2143,276 @@ class _PurchaseExpenseScreenState extends State<PurchaseExpenseScreen> {
   // ✅ EDIT 2: replaced build method
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: PurchaseExpenseScreen.primaryGreen,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-          ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Row(
-          children: [
-            Text('🛒', style: TextStyle(fontSize: 20)),
-            SizedBox(width: 8),
-            Text(
-              'Purchase / Expense',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+    // ✅ FIX — poori screen ab 'purchaseExpense' ke 'view' permission se
+    // gated hai. Owner jaise hi permission OFF karega, ye screen turant
+    // "Access Nahi Hai" mein badal jayegi — manager ko back karne ki
+    // zaroorat nahi (PermissionScreenGate khud reactive hai).
+    return PermissionScreenGate(
+      moduleId: 'purchaseExpense',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: PurchaseExpenseScreen.primaryGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
             ),
-          ],
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-              decoration: const BoxDecoration(
-                color: PurchaseExpenseScreen.primaryGreen,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(28),
-                  bottomRight: Radius.circular(28),
+            onPressed: () => Get.back(),
+          ),
+          title: const Row(
+            children: [
+              Text('🛒', style: TextStyle(fontSize: 20)),
+              SizedBox(width: 8),
+              Text(
+                'Purchase / Expense',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Kya kharida ya kharcha kiya?',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Category select karein',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Categories',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  FutureBuilder<Map<String, bool>>(
-                    future: _loadCategoryPermissions(),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 40),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      final perms = snapshot.data!;
-                      final List<Widget> cards = [];
-
-                      if (perms['chicks'] == true) {
-                        cards.add(
-                          _PurchaseCategoryCard(
-                            emoji: '🐣',
-                            label: 'Chicks',
-                            subtitle: 'Day Old Chicks',
-                            bgColor: Colors.yellow.shade50,
-                            borderColor: Colors.yellow.shade300,
-                            iconBg: Colors.yellow.shade200,
-                            textColor: Colors.orange.shade900,
-                            badgeText: 'Stock In',
-                            onTap: () => Get.to(
-                              () => ChicksHistoryScreen(
-                                onChicksTap: widget.onChicksTap,
-                                onShowAllocation: _showAllocationDialog,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-                      if (perms['feed'] == true) {
-                        cards.add(
-                          _PurchaseCategoryCard(
-                            emoji: '🌾',
-                            label: 'Feed',
-                            subtitle: 'Starter, Grower, Finisher',
-                            bgColor: Colors.blue.shade50,
-                            borderColor: Colors.blue.shade200,
-                            iconBg: Colors.blue.shade100,
-                            textColor: Colors.blue.shade800,
-                            badgeText: 'Stock Ready',
-                            onTap: () => Get.to(
-                              () => FeedHistoryScreen(
-                                onFeedTap: widget.onFeedTap,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-                      if (perms['medicine'] == true) {
-                        cards.add(
-                          _PurchaseCategoryCard(
-                            emoji: '💊',
-                            label: 'Medicine',
-                            subtitle: 'Dawai, Tika, Vitamin',
-                            bgColor: Colors.teal.shade50,
-                            borderColor: Colors.teal.shade200,
-                            iconBg: Colors.teal.shade100,
-                            textColor: Colors.teal.shade800,
-                            badgeText: 'Farmer Rate',
-                            onTap: () => Get.to(
-                              () => MedicineHistoryScreen(
-                                onMedicineTap: widget.onMedicineTap,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-                      if (perms['labour'] == true) {
-                        cards.add(
-                          _PurchaseCategoryCard(
-                            emoji: '👷',
-                            label: 'Labour',
-                            subtitle: 'Majdoor, Kaam kharcha',
-                            bgColor: Colors.orange.shade50,
-                            borderColor: Colors.orange.shade200,
-                            iconBg: Colors.orange.shade100,
-                            textColor: Colors.orange.shade800,
-                            badgeText: 'Company Expense',
-                            onTap: () => Get.to(
-                              () => CategoryHistoryScreen(
-                                title: 'Labour Expense',
-                                emoji: '👷',
-                                themeColor: Colors.orange.shade800,
-                                historyPrefsKey: 'labourExpenseHistory',
-                                dateKey: 'date',
-                                onAddTap: widget.onLabourTap,
-                                addButtonLabel: 'Naya Labour Expense',
-                                emptyMessage: 'Koi record nahi.',
-                                canAdd: perms['labourAdd'] == true,
-                                itemBuilder: (context, entry) => historyEntryCard(
-                                  title: entry['workerName'] ?? '-',
-                                  subtitle:
-                                      '${entry['labourType']} | ${entry['unitMode']}',
-                                  amountLabel:
-                                      '₹${(entry['totalAmount'] as num).toDouble().toStringAsFixed(2)}',
-                                  entry: entry,
-                                  dateKey: 'date',
-                                  color: Colors.orange.shade800,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-                      if (perms['other'] == true) {
-                        cards.add(
-                          _PurchaseCategoryCard(
-                            emoji: '📋',
-                            label: 'Other Expense',
-                            subtitle: 'Miscellaneous kharcha',
-                            bgColor: Colors.purple.shade50,
-                            borderColor: Colors.purple.shade200,
-                            iconBg: Colors.purple.shade100,
-                            textColor: Colors.purple.shade800,
-                            badgeText: 'Company Expense',
-                            onTap: () => Get.to(
-                              () => CategoryHistoryScreen(
-                                title: 'Other Expense',
-                                emoji: '📋',
-                                themeColor: Colors.purple.shade700,
-                                historyPrefsKey: 'otherExpenseHistory',
-                                dateKey: 'date',
-                                onAddTap: widget.onOtherTap,
-                                addButtonLabel: 'Naya Expense Add Karo',
-                                emptyMessage: 'Koi record nahi.',
-                                canAdd: perms['otherAdd'] == true,
-                                itemBuilder: (context, entry) => historyEntryCard(
-                                  title: entry['expenseType'] ?? '-',
-                                  subtitle: entry['note'] ?? 'Koi note nahi',
-                                  amountLabel:
-                                      '₹${(entry['amount'] as num).toDouble().toStringAsFixed(2)}',
-                                  entry: entry,
-                                  dateKey: 'date',
-                                  color: Colors.purple.shade700,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-
-                      if (cards.isEmpty) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 30),
-                          child: Center(
-                            child: Text(
-                              'Aapko is section ka access nahi diya gaya hai.',
-                              style: TextStyle(color: Colors.grey.shade500),
-                            ),
-                          ),
-                        );
-                      }
-
-                      final List<Widget> rows = [];
-                      for (int i = 0; i < cards.length; i += 2) {
-                        final bool hasSecond = i + 1 < cards.length;
-                        rows.add(
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 14),
-                            child: Row(
-                              children: [
-                                Expanded(child: cards[i]),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: hasSecond
-                                      ? cards[i + 1]
-                                      : const SizedBox(),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
-                      return Column(children: rows);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
+        body: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                decoration: const BoxDecoration(
+                  color: PurchaseExpenseScreen.primaryGreen,
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(28),
+                    bottomRight: Radius.circular(28),
+                  ),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Kya kharida ya kharcha kiya?',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Category select karein',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Categories',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    FutureBuilder<Map<String, bool>>(
+                      future: _loadCategoryPermissions(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 40),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        final perms = snapshot.data!;
+                        final List<Widget> cards = [];
+
+                        if (perms['chicks'] == true) {
+                          cards.add(
+                            _PurchaseCategoryCard(
+                              emoji: '🐣',
+                              label: 'Chicks',
+                              subtitle: 'Day Old Chicks',
+                              bgColor: Colors.yellow.shade50,
+                              borderColor: Colors.yellow.shade300,
+                              iconBg: Colors.yellow.shade200,
+                              textColor: Colors.orange.shade900,
+                              badgeText: 'Stock In',
+                              onTap: () => Get.to(
+                                () => ChicksHistoryScreen(
+                                  onChicksTap: widget.onChicksTap,
+                                  onShowAllocation: _showAllocationDialog,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        if (perms['feed'] == true) {
+                          cards.add(
+                            _PurchaseCategoryCard(
+                              emoji: '🌾',
+                              label: 'Feed',
+                              subtitle: 'Starter, Grower, Finisher',
+                              bgColor: Colors.blue.shade50,
+                              borderColor: Colors.blue.shade200,
+                              iconBg: Colors.blue.shade100,
+                              textColor: Colors.blue.shade800,
+                              badgeText: 'Stock Ready',
+                              onTap: () => Get.to(
+                                () => FeedHistoryScreen(
+                                  onFeedTap: widget.onFeedTap,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        if (perms['medicine'] == true) {
+                          cards.add(
+                            _PurchaseCategoryCard(
+                              emoji: '💊',
+                              label: 'Medicine',
+                              subtitle: 'Dawai, Tika, Vitamin',
+                              bgColor: Colors.teal.shade50,
+                              borderColor: Colors.teal.shade200,
+                              iconBg: Colors.teal.shade100,
+                              textColor: Colors.teal.shade800,
+                              badgeText: 'Farmer Rate',
+                              onTap: () => Get.to(
+                                () => MedicineHistoryScreen(
+                                  onMedicineTap: widget.onMedicineTap,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        if (perms['labour'] == true) {
+                          cards.add(
+                            _PurchaseCategoryCard(
+                              emoji: '👷',
+                              label: 'Labour',
+                              subtitle: 'Majdoor, Kaam kharcha',
+                              bgColor: Colors.orange.shade50,
+                              borderColor: Colors.orange.shade200,
+                              iconBg: Colors.orange.shade100,
+                              textColor: Colors.orange.shade800,
+                              badgeText: 'Company Expense',
+                              onTap: () => Get.to(
+                                () => CategoryHistoryScreen(
+                                  title: 'Labour Expense',
+                                  emoji: '👷',
+                                  themeColor: Colors.orange.shade800,
+                                  historyPrefsKey: 'labourExpenseHistory',
+                                  dateKey: 'date',
+                                  onAddTap: widget.onLabourTap,
+                                  addButtonLabel: 'Naya Labour Expense',
+                                  emptyMessage: 'Koi record nahi.',
+                                  canAdd: perms['labourAdd'] == true,
+                                  itemBuilder: (context, entry) => historyEntryCard(
+                                    title: entry['workerName'] ?? '-',
+                                    subtitle:
+                                        '${entry['labourType']} | ${entry['unitMode']}',
+                                    amountLabel:
+                                        '₹${(entry['totalAmount'] as num).toDouble().toStringAsFixed(2)}',
+                                    entry: entry,
+                                    dateKey: 'date',
+                                    color: Colors.orange.shade800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        if (perms['other'] == true) {
+                          cards.add(
+                            _PurchaseCategoryCard(
+                              emoji: '📋',
+                              label: 'Other Expense',
+                              subtitle: 'Miscellaneous kharcha',
+                              bgColor: Colors.purple.shade50,
+                              borderColor: Colors.purple.shade200,
+                              iconBg: Colors.purple.shade100,
+                              textColor: Colors.purple.shade800,
+                              badgeText: 'Company Expense',
+                              onTap: () => Get.to(
+                                () => CategoryHistoryScreen(
+                                  title: 'Other Expense',
+                                  emoji: '📋',
+                                  themeColor: Colors.purple.shade700,
+                                  historyPrefsKey: 'otherExpenseHistory',
+                                  dateKey: 'date',
+                                  onAddTap: widget.onOtherTap,
+                                  addButtonLabel: 'Naya Expense Add Karo',
+                                  emptyMessage: 'Koi record nahi.',
+                                  canAdd: perms['otherAdd'] == true,
+                                  itemBuilder: (context, entry) => historyEntryCard(
+                                    title: entry['expenseType'] ?? '-',
+                                    subtitle: entry['note'] ?? 'Koi note nahi',
+                                    amountLabel:
+                                        '₹${(entry['amount'] as num).toDouble().toStringAsFixed(2)}',
+                                    entry: entry,
+                                    dateKey: 'date',
+                                    color: Colors.purple.shade700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        if (cards.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 30),
+                            child: Center(
+                              child: Text(
+                                'Aapko is section ka access nahi diya gaya hai.',
+                                style: TextStyle(color: Colors.grey.shade500),
+                              ),
+                            ),
+                          );
+                        }
+
+                        final List<Widget> rows = [];
+                        for (int i = 0; i < cards.length; i += 2) {
+                          final bool hasSecond = i + 1 < cards.length;
+                          rows.add(
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: Row(
+                                children: [
+                                  Expanded(child: cards[i]),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: hasSecond
+                                        ? cards[i + 1]
+                                        : const SizedBox(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+                        return Column(children: rows);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
@@ -2572,260 +2580,310 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.orange.shade800,
-        title: const Row(
-          children: [
-            Text('🐣', style: TextStyle(fontSize: 18)),
-            SizedBox(width: 8),
-            Text('Chicks Purchase'),
-          ],
+    // ✅ FIX — Ye screen ab 'chicksPurchase' ke 'view' se gated hai, aur
+    // canNested() ke through iska grandparent 'purchaseExpense' bhi
+    // automatically check hota hai. Dono mein se koi bhi OFF ho, ye screen
+    // turant "Access Nahi Hai" mein badal jayegi.
+    return PermissionScreenGate(
+      moduleId: 'chicksPurchase',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.orange.shade800,
+          title: const Row(
+            children: [
+              Text('🐣', style: TextStyle(fontSize: 18)),
+              SizedBox(width: 8),
+              Text('Chicks Purchase'),
+            ],
+          ),
         ),
-      ),
-      body: Column(
-        children: [
-          // Add Button — gated
-          if (_canAddPurchase)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    await widget.onChicksTap();
-                    _loadHistory();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange.shade800,
-                  ),
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  label: const Text(
-                    'Naya Chicks Purchase Add Karo',
-                    style: TextStyle(color: Colors.white),
+        body: Column(
+          children: [
+            // Add Button — ab PermissionGate se khud-reactive hai
+            PermissionGate(
+              moduleId: 'chicksPurchaseEntry',
+              action: 'add',
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      await widget.onChicksTap();
+                      _loadHistory();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange.shade800,
+                    ),
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text(
+                      'Naya Chicks Purchase Add Karo',
+                      style: TextStyle(color: Colors.white),
+                    ),
                   ),
                 ),
               ),
             ),
 
-          // List
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _entries.isEmpty
-                ? const Center(child: Text('Koi record nahi.'))
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _entries.length,
-                    itemBuilder: (context, index) {
-                      final purchase = _entries[index];
-                      final double remaining = purchase.remainingQty;
-                      final bool fullyAllocated = remaining <= 0;
+            // List
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _entries.isEmpty
+                  ? const Center(child: Text('Koi record nahi.'))
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _entries.length,
+                      itemBuilder: (context, index) {
+                        final purchase = _entries[index];
+                        final double remaining = purchase.remainingQty;
+                        final bool fullyAllocated = remaining <= 0;
 
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: Colors.orange.shade200,
-                            width: 1.2,
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.orange.shade200,
+                              width: 1.2,
+                            ),
                           ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // ── Purchase Header ──
-                            Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade50,
-                                borderRadius: const BorderRadius.only(
-                                  topLeft: Radius.circular(14),
-                                  topRight: Radius.circular(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // ── Purchase Header ──
+                              Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(14),
+                                    topRight: Radius.circular(14),
+                                  ),
                                 ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          purchase.company,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                            color: Colors.orange.shade900,
-                                          ),
-                                        ),
-                                        Text(
-                                          'Breed: ${purchase.breed} | Total: ${purchase.totalQty.toStringAsFixed(0)} Chicks',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.black54,
-                                          ),
-                                        ),
-                                        if (purchase.addedByName.isNotEmpty)
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
                                           Text(
-                                            '👤 ${purchase.addedByRole.isNotEmpty ? "${purchase.addedByRole}: " : ""}${purchase.addedByName}',
+                                            purchase.company,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                              color: Colors.orange.shade900,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Breed: ${purchase.breed} | Total: ${purchase.totalQty.toStringAsFixed(0)} Chicks',
                                             style: const TextStyle(
-                                              fontSize: 11,
+                                              fontSize: 12,
                                               color: Colors.black54,
                                             ),
                                           ),
-                                        Text(
-                                          '🕒 ${formatHistoryDateTime(purchase.date)}',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.black45,
+                                          if (purchase.addedByName.isNotEmpty)
+                                            Text(
+                                              '👤 ${purchase.addedByRole.isNotEmpty ? "${purchase.addedByRole}: " : ""}${purchase.addedByName}',
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.black54,
+                                              ),
+                                            ),
+                                          Text(
+                                            '🕒 ${formatHistoryDateTime(purchase.date)}',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.black45,
+                                            ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Text(
-                                    '₹${purchase.totalAmount.toStringAsFixed(2)}',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15,
-                                      color: Colors.orange.shade900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // ── ✅ NEW: Ab inline mixed list nahi — 2 alag
-                            // buttons (Farmer Allocation / Private Buyer),
-                            // Feed/Medicine jaisa hi pattern. Tap karne par
-                            // us lot ke sirf usi type ke allocations ki list
-                            // khulti hai, aur wahan se tap karke same
-                            // edit/delete detail dialog khulta hai.
-                            if (purchase.allocations.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  14,
-                                  10,
-                                  14,
-                                  0,
-                                ),
-                                child: Column(
-                                  children: [
-                                    _allocSummaryNavRow(
-                                      icon: Icons.people_alt_rounded,
-                                      label:
-                                          'Farmer Allocation (${purchase.allocations.where((a) => a['type'] == 'Company').length})',
-                                      color: Colors.blue,
-                                      onTap: () => _openFilteredAllocationList(
-                                        purchase,
-                                        'Company',
+                                        ],
                                       ),
                                     ),
-                                    const SizedBox(height: 8),
-                                    _allocSummaryNavRow(
-                                      icon: Icons.storefront_rounded,
-                                      label:
-                                          'Private Buyer (${purchase.allocations.where((a) => a['type'] == 'Private').length})',
-                                      color: Colors.green,
-                                      onTap: () => _openFilteredAllocationList(
-                                        purchase,
-                                        'Private',
+                                    Text(
+                                      '₹${purchase.totalAmount.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                        color: Colors.orange.shade900,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
 
-                            // ── STEP 3: Pending Allocation (remainingQty) ──
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: fullyAllocated
-                                      ? Colors.green.shade50
-                                      : Colors.red.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: fullyAllocated
-                                        ? Colors.green.shade300
-                                        : Colors.red.shade300,
+                              // ── ✅ NEW: Ab inline mixed list nahi — 2 alag
+                              // buttons (Farmer Allocation / Private Buyer),
+                              // Feed/Medicine jaisa hi pattern. Tap karne par
+                              // us lot ke sirf usi type ke allocations ki list
+                              // khulti hai, aur wahan se tap karke same
+                              // edit/delete detail dialog khulta hai.
+                              if (purchase.allocations.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    14,
+                                    10,
+                                    14,
+                                    0,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      _allocSummaryNavRow(
+                                        icon: Icons.people_alt_rounded,
+                                        label:
+                                            'Farmer Allocation (${purchase.allocations.where((a) => a['type'] == 'Company').length})',
+                                        color: Colors.blue,
+                                        onTap: () =>
+                                            _openFilteredAllocationList(
+                                              purchase,
+                                              'Company',
+                                            ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      _allocSummaryNavRow(
+                                        icon: Icons.storefront_rounded,
+                                        label:
+                                            'Private Buyer (${purchase.allocations.where((a) => a['type'] == 'Private').length})',
+                                        color: Colors.green,
+                                        onTap: () =>
+                                            _openFilteredAllocationList(
+                                              purchase,
+                                              'Private',
+                                            ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                child: Text(
-                                  fullyAllocated
-                                      ? '✅ Sabhi Chicks Allocate Ho Gaye!'
-                                      : '⏳ Pending Allocation: ${remaining.toStringAsFixed(0)} Chicks',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: fullyAllocated
-                                        ? Colors.green.shade800
-                                        : Colors.red.shade800,
-                                  ),
-                                ),
-                              ),
-                            ),
 
-                            // ── Allocate Button (remaining > 0 ho toh enable) ──
-                            Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  // STEP 3 CONDITION: remainingQty > 0 ho toh enable
-                                  onPressed: (fullyAllocated || !_canAllocate)
-                                      ? null
-                                      : () {
-                                          widget.onShowAllocation(
-                                            context,
-                                            purchase.toMap(),
-                                            _loadHistory,
-                                          );
-                                        },
-                                  icon: const Icon(
-                                    Icons.call_split_rounded,
-                                    size: 18,
+                              // ── STEP 3: Pending Allocation (remainingQty) ──
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  14,
+                                  8,
+                                  14,
+                                  0,
+                                ),
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
                                   ),
-                                  label: Text(
-                                    fullyAllocated
-                                        ? 'Fully Allocated'
-                                        : 'Allocate Chicks',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                  decoration: BoxDecoration(
+                                    color: fullyAllocated
+                                        ? Colors.green.shade50
+                                        : Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: fullyAllocated
+                                          ? Colors.green.shade300
+                                          : Colors.red.shade300,
                                     ),
                                   ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: fullyAllocated
-                                        ? Colors.grey.shade400
-                                        : Colors.orange.shade900,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
+                                  child: Text(
+                                    fullyAllocated
+                                        ? '✅ Sabhi Chicks Allocate Ho Gaye!'
+                                        : '⏳ Pending Allocation: ${remaining.toStringAsFixed(0)} Chicks',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: fullyAllocated
+                                          ? Colors.green.shade800
+                                          : Colors.red.shade800,
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
+
+                              // ── Allocate Button (remaining > 0 ho toh enable) ──
+                              Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  child: PermissionGate(
+                                    moduleId: 'chicksAllocation',
+                                    action: 'add',
+                                    // Permission na ho to bhi button dikhega,
+                                    // bas hamesha disabled rahega.
+                                    fallback: ElevatedButton.icon(
+                                      onPressed: null,
+                                      icon: const Icon(
+                                        Icons.call_split_rounded,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        fullyAllocated
+                                            ? 'Fully Allocated'
+                                            : 'Allocate Chicks',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.grey.shade400,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    child: ElevatedButton.icon(
+                                      // STEP 3 CONDITION: remainingQty > 0 ho toh enable
+                                      onPressed: fullyAllocated
+                                          ? null
+                                          : () {
+                                              widget.onShowAllocation(
+                                                context,
+                                                purchase.toMap(),
+                                                _loadHistory,
+                                              );
+                                            },
+                                      icon: const Icon(
+                                        Icons.call_split_rounded,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        fullyAllocated
+                                            ? 'Fully Allocated'
+                                            : 'Allocate Chicks',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: fullyAllocated
+                                            ? Colors.grey.shade400
+                                            : Colors.orange.shade900,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
@@ -3347,103 +3405,122 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen>
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) Get.back(result: _changed);
-      },
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF5F5F5),
-        appBar: AppBar(
-          backgroundColor: Colors.blue.shade700,
-          leading: IconButton(
-            icon: const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: Colors.white,
+    // ✅ FIX — 'feedPurchase' ke 'view' se gated, aur canNested() ke through
+    // grandparent 'purchaseExpense' bhi automatically cascade hota hai.
+    return PermissionScreenGate(
+      moduleId: 'feedPurchase',
+      action: 'view',
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) Get.back(result: _changed);
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF5F5F5),
+          appBar: AppBar(
+            backgroundColor: Colors.blue.shade700,
+            leading: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: Colors.white,
+              ),
+              onPressed: () => Get.back(result: _changed),
             ),
-            onPressed: () => Get.back(result: _changed),
+            title: const Row(
+              children: [
+                Text('🌾', style: TextStyle(fontSize: 18)),
+                SizedBox(width: 8),
+                Text('Feed Purchase'),
+              ],
+            ),
           ),
-          title: const Row(
-            children: [
-              Text('🌾', style: TextStyle(fontSize: 18)),
-              SizedBox(width: 8),
-              Text('Feed Purchase'),
-            ],
-          ),
-        ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (_canAddPurchase) ...[
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                          await widget.onFeedTap();
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    PermissionGate(
+                      moduleId: 'feedPurchaseEntry',
+                      action: 'add',
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                await widget.onFeedTap();
+                                _changed = true;
+                                _load();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade700,
+                              ),
+                              icon: const Icon(Icons.add, color: Colors.white),
+                              label: const Text(
+                                'Naya Feed Purchase',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                    ),
+                    PermissionGate(
+                      moduleId: 'feedAllocation',
+                      action: 'add',
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                final result =
+                                    await _showFeedAllocateToFarmerDialog(
+                                      context,
+                                      _feedStock,
+                                    );
+                                if (result == true) {
+                                  _changed = true;
+                                  _load();
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange.shade700,
+                              ),
+                              icon: const Icon(
+                                Icons.person_add_alt_1_rounded,
+                                color: Colors.white,
+                              ),
+                              label: const Text(
+                                'Allocate to Farmer',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ..._feedStock.map(
+                      (f) => _FeedRunningStockCard(
+                        feedType: f,
+                        onChanged: () {
                           _changed = true;
                           _load();
                         },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade700,
-                        ),
-                        icon: const Icon(Icons.add, color: Colors.white),
-                        label: const Text(
-                          'Naya Feed Purchase',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (_canAllocate) ...[
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton.icon(
-                        onPressed: () async {
-                          final result = await _showFeedAllocateToFarmerDialog(
-                            context,
-                            _feedStock,
-                          );
-                          if (result == true) {
-                            _changed = true;
-                            _load();
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange.shade700,
-                        ),
-                        icon: const Icon(
-                          Icons.person_add_alt_1_rounded,
-                          color: Colors.white,
-                        ),
-                        label: const Text(
-                          'Allocate to Farmer',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
                       ),
                     ),
                   ],
-                  const SizedBox(height: 16),
-                  ..._feedStock.map(
-                    (f) => _FeedRunningStockCard(
-                      feedType: f,
-                      onChanged: () {
-                        _changed = true;
-                        _load();
-                      },
-                    ),
-                  ),
-                ],
-              ),
-      ),
-    );
+                ),
+        ),
+      ), // PopScope
+    ); // PermissionScreenGate
   }
 }
 
@@ -6015,131 +6092,144 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.teal.shade700,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    // ✅ FIX — 'medicinePurchase' ke 'view' se gated, aur canNested() ke
+    // through grandparent 'purchaseExpense' bhi automatically cascade
+    // hota hai.
+    return PermissionScreenGate(
+      moduleId: 'medicinePurchase',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.teal.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Row(
-          children: [
-            Text('💊', style: TextStyle(fontSize: 18)),
-            SizedBox(width: 8),
-            Text(
-              'Medicine Purchase',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+          title: const Row(
+            children: [
+              Text('💊', style: TextStyle(fontSize: 18)),
+              SizedBox(width: 8),
+              Text(
+                'Medicine Purchase',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
+            ],
+          ),
+        ),
+        body: Column(
+          children: [
+            PermissionGate(
+              moduleId: 'medicinePurchaseEntry',
+              action: 'add',
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      await widget.onMedicineTap();
+                      _loadData();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade700,
+                    ),
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text(
+                      'Naya Medicine Add Karo',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            // ── Allocate to Farmer button ──
+            PermissionGate(
+              moduleId: 'medicineAllocation2',
+              action: 'add',
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: _medicines.isEmpty
+                        ? null
+                        : () async {
+                            await Get.to(
+                              () => AllocateMedicineToFarmerScreen(
+                                medicines: _medicines,
+                                availBaseQty: _availBaseQty,
+                              ),
+                            );
+                            _loadData();
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange.shade700,
+                      disabledBackgroundColor: Colors.grey.shade300,
+                    ),
+                    icon: const Icon(
+                      Icons.person_add_rounded,
+                      color: Colors.white,
+                    ),
+                    label: const Text(
+                      'Allocate to Farmer',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _medicines.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('💊', style: TextStyle(fontSize: 52)),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Koi medicine record nahi.',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _medicines.length,
+                      itemBuilder: (ctx, index) {
+                        final med = _medicines[index];
+                        final String mId = med['id']?.toString() ?? '';
+                        return _MedicineRunningLotCard(
+                          med: med,
+                          soldBaseQty: _soldBaseQty[mId] ?? 0.0,
+                          allocatedBaseQty: _allocatedBaseQty(med),
+                          privateSales: _privateSalesByMed[mId] ?? const [],
+                          onRefresh: _loadData,
+                        );
+                      },
+                    ),
             ),
           ],
         ),
-      ),
-      body: Column(
-        children: [
-          if (_canAddPurchase)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    await widget.onMedicineTap();
-                    _loadData();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal.shade700,
-                  ),
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  label: const Text(
-                    'Naya Medicine Add Karo',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
-            ),
-          // ── Allocate to Farmer button ──
-          if (_canAllocate)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              child: SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: _medicines.isEmpty
-                      ? null
-                      : () async {
-                          await Get.to(
-                            () => AllocateMedicineToFarmerScreen(
-                              medicines: _medicines,
-                              availBaseQty: _availBaseQty,
-                            ),
-                          );
-                          _loadData();
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange.shade700,
-                    disabledBackgroundColor: Colors.grey.shade300,
-                  ),
-                  icon: const Icon(
-                    Icons.person_add_rounded,
-                    color: Colors.white,
-                  ),
-                  label: const Text(
-                    'Allocate to Farmer',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _medicines.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('💊', style: TextStyle(fontSize: 52)),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Koi medicine record nahi.',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _medicines.length,
-                    itemBuilder: (ctx, index) {
-                      final med = _medicines[index];
-                      final String mId = med['id']?.toString() ?? '';
-                      return _MedicineRunningLotCard(
-                        med: med,
-                        soldBaseQty: _soldBaseQty[mId] ?? 0.0,
-                        allocatedBaseQty: _allocatedBaseQty(med),
-                        privateSales: _privateSalesByMed[mId] ?? const [],
-                        onRefresh: _loadData,
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
