@@ -96,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen>
   bool _canViewReportsQuick = false;
   bool _canViewAccountsQuick = false;
   bool _canViewSettlement = false;
+  bool _canEditSettlement = false;
   bool _canViewSettingsPermissions = false;
   bool _canViewFeedRule = false;
   bool _canViewWeightRule = false;
@@ -103,6 +104,14 @@ class _HomeScreenState extends State<HomeScreen>
   bool _canEditLiftingRange = false;
   bool _canViewFeedAllocationHistory = false;
   bool _canViewMedicineAllocationHistory = false;
+  // ✅ ADD — Stock Management aur Lifting tab ke liye permission flags
+  bool _canViewStockManagement = false;
+  bool _canViewFeedStock = false;
+  bool _canViewMedicineStock = false;
+  bool _canDeleteMedicineStock = false;
+  bool _canViewLifting = false;
+  bool _canViewLiftingList = false;
+  bool _canEditLiftingList = false;
 
   // ✅ New timer for background permission polling
   Timer? _permissionPollTimer;
@@ -227,6 +236,7 @@ class _HomeScreenState extends State<HomeScreen>
     final reports = await PermissionService.can('reports', 'view');
     final accounts = await PermissionService.can('accounts', 'view');
     final settlement = await PermissionService.can('settlement', 'view');
+    final settlementEdit = await PermissionService.can('settlement', 'edit');
     final settingsPerm = await PermissionService.can(
       'settingsPermissions',
       'view',
@@ -246,6 +256,23 @@ class _HomeScreenState extends State<HomeScreen>
       'medicineAllocation2',
       'view',
     );
+    // ✅ ADD — Stock Management aur Lifting ke liye
+    final stockMgmt = await PermissionService.can('stockManagement', 'view');
+    final feedStockView = await PermissionService.can('feedStock', 'view');
+    final medStockView = await PermissionService.can('medicineStock', 'view');
+    final medStockDelete = await PermissionService.can(
+      'medicineStock',
+      'delete',
+    );
+    final liftingView = await PermissionService.can('lifting', 'view');
+    final liftingListView = await PermissionService.can(
+      'liftingListView',
+      'view',
+    );
+    final liftingListEdit = await PermissionService.can(
+      'liftingListView',
+      'edit',
+    );
 
     if (!mounted) return;
     setState(() {
@@ -254,6 +281,7 @@ class _HomeScreenState extends State<HomeScreen>
       _canViewReportsQuick = reports;
       _canViewAccountsQuick = accounts;
       _canViewSettlement = settlement;
+      _canEditSettlement = settlementEdit;
       _canViewSettingsPermissions = settingsPerm;
       _canViewFeedRule = feedRule;
       _canViewWeightRule = weightRule;
@@ -261,6 +289,14 @@ class _HomeScreenState extends State<HomeScreen>
       _canEditLiftingRange = liftingEdit;
       _canViewFeedAllocationHistory = feedAllocHistory;
       _canViewMedicineAllocationHistory = medAllocHistory;
+      // ✅ ADD
+      _canViewStockManagement = stockMgmt;
+      _canViewFeedStock = feedStockView;
+      _canViewMedicineStock = medStockView;
+      _canDeleteMedicineStock = medStockDelete;
+      _canViewLifting = liftingView;
+      _canViewLiftingList = liftingListView;
+      _canEditLiftingList = liftingListEdit;
     });
   }
 
@@ -4060,193 +4096,232 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ],
             ),
-            bottomNavigationBar: Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.white,
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: (_appliedCompanyRuleId == selectedRuleTab)
-                        ? Colors.orange
-                        : primaryGreen,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+            bottomNavigationBar: !_canEditSettlement
+                ? null // ✅ ADD — 'edit' permission nahi to Save/Apply button hi nahi dikhega
+                : Container(
+                    padding: const EdgeInsets.all(16),
+                    color: Colors.white,
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              (_appliedCompanyRuleId == selectedRuleTab)
+                              ? Colors.orange
+                              : primaryGreen,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        onPressed: () async {
+                          if (_appliedCompanyRuleId != null &&
+                              _appliedCompanyRuleId != selectedRuleTab) {
+                            Navigator.pop(context);
+                            _showRuleConflictWarning(
+                              context,
+                              _appliedCompanyRuleId!,
+                            );
+                            return;
+                          }
+
+                          if (selectedRuleTab == 1) {
+                            final rule1Config = {
+                              'bigFeedRate':
+                                  double.tryParse(
+                                    r1BigFeedRateCtrl.text.trim(),
+                                  ) ??
+                                  42.0,
+                              'bigChicksRate':
+                                  double.tryParse(
+                                    r1BigChicksRateCtrl.text.trim(),
+                                  ) ??
+                                  40.0,
+                              'bigAdminCost':
+                                  double.tryParse(
+                                    r1BigAdminCostCtrl.text.trim(),
+                                  ) ??
+                                  1.50,
+                              'bigKgPerBag':
+                                  double.tryParse(
+                                    r1BigKgPerBagCtrl.text.trim(),
+                                  ) ??
+                                  50.0,
+                              'bigTargetCost':
+                                  double.tryParse(
+                                    r1BigTargetCostCtrl.text.trim(),
+                                  ) ??
+                                  85.0,
+                              'bigBaseComm':
+                                  double.tryParse(
+                                    r1BigBaseCommCtrl.text.trim(),
+                                  ) ??
+                                  8.0,
+                              'bigSavingsShare':
+                                  double.tryParse(
+                                    r1BigSavingsShareCtrl.text.trim(),
+                                  ) ??
+                                  50.0,
+                              'bigExceededShare':
+                                  double.tryParse(
+                                    r1BigExceededShareCtrl.text.trim(),
+                                  ) ??
+                                  50.0,
+                              'bigRateBonusThresh':
+                                  double.tryParse(
+                                    r1BigRateBonusThreshCtrl.text.trim(),
+                                  ) ??
+                                  110.0,
+                              'bigRateBonusShare':
+                                  double.tryParse(
+                                    r1BigRateBonusShareCtrl.text.trim(),
+                                  ) ??
+                                  10.0,
+                              'bigMedicineInProd': r1BigMedicineInProdCost,
+                              'smFeedRate':
+                                  double.tryParse(
+                                    r1SmFeedRateCtrl.text.trim(),
+                                  ) ??
+                                  42.0,
+                              'smChicksRate':
+                                  double.tryParse(
+                                    r1SmChicksRateCtrl.text.trim(),
+                                  ) ??
+                                  40.0,
+                              'smAdminCost':
+                                  double.tryParse(
+                                    r1SmAdminCostCtrl.text.trim(),
+                                  ) ??
+                                  1.50,
+                              'smKgPerBag':
+                                  double.tryParse(
+                                    r1SmKgPerBagCtrl.text.trim(),
+                                  ) ??
+                                  50.0,
+                              'smTargetCost':
+                                  double.tryParse(
+                                    r1SmTargetCostCtrl.text.trim(),
+                                  ) ??
+                                  90.0,
+                              'smBaseComm':
+                                  double.tryParse(
+                                    r1SmBaseCommCtrl.text.trim(),
+                                  ) ??
+                                  10.0,
+                              'smSavingsShare':
+                                  double.tryParse(
+                                    r1SmSavingsShareCtrl.text.trim(),
+                                  ) ??
+                                  50.0,
+                              'smExceededShare':
+                                  double.tryParse(
+                                    r1SmExceededShareCtrl.text.trim(),
+                                  ) ??
+                                  50.0,
+                              'smRateBonusThresh':
+                                  double.tryParse(
+                                    r1SmRateBonusThreshCtrl.text.trim(),
+                                  ) ??
+                                  120.0,
+                              'smRateBonusShare':
+                                  double.tryParse(
+                                    r1SmRateBonusShareCtrl.text.trim(),
+                                  ) ??
+                                  10.0,
+                              'smMedicineInProd': r1SmMedicineInProdCost,
+                            };
+
+                            await CompanyStore.instance.setString(
+                              'rule1SettlementConfig',
+                              json.encode(rule1Config),
+                            );
+                            await CompanyStore.instance.setInt(
+                              'appliedCompanyRuleId',
+                              1,
+                            );
+
+                            setState(() {
+                              _appliedCompanyRuleId = 1;
+                              _isRule1Editing = false;
+                            });
+                            setModalState(() {});
+                            if (!mounted) return;
+                            Navigator.pop(context);
+                            Get.snackbar(
+                              'Rule 1 (Auto Size) Applied ✅',
+                              '> 1.2 KG = Big Size rates, ≤ 1.2 KG = Small Size rates — automatic apply hoga.',
+                              backgroundColor: primaryGreen,
+                              colorText: Colors.white,
+                              snackPosition: SnackPosition.BOTTOM,
+                              margin: const EdgeInsets.all(15),
+                            );
+                          } else if (selectedRuleTab == 2) {
+                            final rule2Config = {
+                              'baseRate':
+                                  double.tryParse(r2BaseRateCtrl.text.trim()) ??
+                                  7.50,
+                              'goodMin':
+                                  double.tryParse(r2GoodMinCtrl.text.trim()) ??
+                                  1.40,
+                              'goodMax':
+                                  double.tryParse(r2GoodMaxCtrl.text.trim()) ??
+                                  1.54,
+                              'normMin':
+                                  double.tryParse(r2NormMinCtrl.text.trim()) ??
+                                  1.55,
+                              'normMax':
+                                  double.tryParse(r2NormMaxCtrl.text.trim()) ??
+                                  1.65,
+                              'bonus':
+                                  double.tryParse(r2BonusCtrl.text.trim()) ??
+                                  0.10,
+                              'penalty':
+                                  double.tryParse(r2PenaltyCtrl.text.trim()) ??
+                                  0.15,
+                              'isRupeeMode': r2IsRupeeIncentiveMode,
+                              'isMedIncludeProd': r2IsMedicineIncludeProd,
+                              'useConvFcr': r2UseConvertedFcr,
+                            };
+
+                            await CompanyStore.instance.setString(
+                              'rule2SettlementConfig',
+                              json.encode(rule2Config),
+                            );
+                            await CompanyStore.instance.setInt(
+                              'appliedCompanyRuleId',
+                              2,
+                            );
+
+                            setState(() {
+                              _appliedCompanyRuleId = 2;
+                              _isRule2Editing = false;
+                            });
+                            setModalState(() {});
+                            if (!mounted) return;
+                            Navigator.pop(context);
+                            Get.snackbar(
+                              'Rule 2 Globally Applied Locked ⚡',
+                              'FCR range criteria successfully lock ho chuki hai.',
+                              backgroundColor: primaryGreen,
+                              colorText: Colors.white,
+                              snackPosition: SnackPosition.BOTTOM,
+                              margin: const EdgeInsets.all(15),
+                            );
+                          }
+                        },
+                        child: Text(
+                          _appliedCompanyRuleId == selectedRuleTab
+                              ? 'Rule Active & Saved'
+                              : 'Process Selected Rule Engine',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  onPressed: () async {
-                    if (_appliedCompanyRuleId != null &&
-                        _appliedCompanyRuleId != selectedRuleTab) {
-                      Navigator.pop(context);
-                      _showRuleConflictWarning(context, _appliedCompanyRuleId!);
-                      return;
-                    }
-
-                    if (selectedRuleTab == 1) {
-                      final rule1Config = {
-                        'bigFeedRate':
-                            double.tryParse(r1BigFeedRateCtrl.text.trim()) ??
-                            42.0,
-                        'bigChicksRate':
-                            double.tryParse(r1BigChicksRateCtrl.text.trim()) ??
-                            40.0,
-                        'bigAdminCost':
-                            double.tryParse(r1BigAdminCostCtrl.text.trim()) ??
-                            1.50,
-                        'bigKgPerBag':
-                            double.tryParse(r1BigKgPerBagCtrl.text.trim()) ??
-                            50.0,
-                        'bigTargetCost':
-                            double.tryParse(r1BigTargetCostCtrl.text.trim()) ??
-                            85.0,
-                        'bigBaseComm':
-                            double.tryParse(r1BigBaseCommCtrl.text.trim()) ??
-                            8.0,
-                        'bigSavingsShare':
-                            double.tryParse(
-                              r1BigSavingsShareCtrl.text.trim(),
-                            ) ??
-                            50.0,
-                        'bigExceededShare':
-                            double.tryParse(
-                              r1BigExceededShareCtrl.text.trim(),
-                            ) ??
-                            50.0,
-                        'bigRateBonusThresh':
-                            double.tryParse(
-                              r1BigRateBonusThreshCtrl.text.trim(),
-                            ) ??
-                            110.0,
-                        'bigRateBonusShare':
-                            double.tryParse(
-                              r1BigRateBonusShareCtrl.text.trim(),
-                            ) ??
-                            10.0,
-                        'bigMedicineInProd': r1BigMedicineInProdCost,
-                        'smFeedRate':
-                            double.tryParse(r1SmFeedRateCtrl.text.trim()) ??
-                            42.0,
-                        'smChicksRate':
-                            double.tryParse(r1SmChicksRateCtrl.text.trim()) ??
-                            40.0,
-                        'smAdminCost':
-                            double.tryParse(r1SmAdminCostCtrl.text.trim()) ??
-                            1.50,
-                        'smKgPerBag':
-                            double.tryParse(r1SmKgPerBagCtrl.text.trim()) ??
-                            50.0,
-                        'smTargetCost':
-                            double.tryParse(r1SmTargetCostCtrl.text.trim()) ??
-                            90.0,
-                        'smBaseComm':
-                            double.tryParse(r1SmBaseCommCtrl.text.trim()) ??
-                            10.0,
-                        'smSavingsShare':
-                            double.tryParse(r1SmSavingsShareCtrl.text.trim()) ??
-                            50.0,
-                        'smExceededShare':
-                            double.tryParse(
-                              r1SmExceededShareCtrl.text.trim(),
-                            ) ??
-                            50.0,
-                        'smRateBonusThresh':
-                            double.tryParse(
-                              r1SmRateBonusThreshCtrl.text.trim(),
-                            ) ??
-                            120.0,
-                        'smRateBonusShare':
-                            double.tryParse(
-                              r1SmRateBonusShareCtrl.text.trim(),
-                            ) ??
-                            10.0,
-                        'smMedicineInProd': r1SmMedicineInProdCost,
-                      };
-
-                      await CompanyStore.instance.setString(
-                        'rule1SettlementConfig',
-                        json.encode(rule1Config),
-                      );
-                      await CompanyStore.instance.setInt(
-                        'appliedCompanyRuleId',
-                        1,
-                      );
-
-                      setState(() {
-                        _appliedCompanyRuleId = 1;
-                        _isRule1Editing = false;
-                      });
-                      setModalState(() {});
-                      if (!mounted) return;
-                      Navigator.pop(context);
-                      Get.snackbar(
-                        'Rule 1 (Auto Size) Applied ✅',
-                        '> 1.2 KG = Big Size rates, ≤ 1.2 KG = Small Size rates — automatic apply hoga.',
-                        backgroundColor: primaryGreen,
-                        colorText: Colors.white,
-                        snackPosition: SnackPosition.BOTTOM,
-                        margin: const EdgeInsets.all(15),
-                      );
-                    } else if (selectedRuleTab == 2) {
-                      final rule2Config = {
-                        'baseRate':
-                            double.tryParse(r2BaseRateCtrl.text.trim()) ?? 7.50,
-                        'goodMin':
-                            double.tryParse(r2GoodMinCtrl.text.trim()) ?? 1.40,
-                        'goodMax':
-                            double.tryParse(r2GoodMaxCtrl.text.trim()) ?? 1.54,
-                        'normMin':
-                            double.tryParse(r2NormMinCtrl.text.trim()) ?? 1.55,
-                        'normMax':
-                            double.tryParse(r2NormMaxCtrl.text.trim()) ?? 1.65,
-                        'bonus':
-                            double.tryParse(r2BonusCtrl.text.trim()) ?? 0.10,
-                        'penalty':
-                            double.tryParse(r2PenaltyCtrl.text.trim()) ?? 0.15,
-                        'isRupeeMode': r2IsRupeeIncentiveMode,
-                        'isMedIncludeProd': r2IsMedicineIncludeProd,
-                        'useConvFcr': r2UseConvertedFcr,
-                      };
-
-                      await CompanyStore.instance.setString(
-                        'rule2SettlementConfig',
-                        json.encode(rule2Config),
-                      );
-                      await CompanyStore.instance.setInt(
-                        'appliedCompanyRuleId',
-                        2,
-                      );
-
-                      setState(() {
-                        _appliedCompanyRuleId = 2;
-                        _isRule2Editing = false;
-                      });
-                      setModalState(() {});
-                      if (!mounted) return;
-                      Navigator.pop(context);
-                      Get.snackbar(
-                        'Rule 2 Globally Applied Locked ⚡',
-                        'FCR range criteria successfully lock ho chuki hai.',
-                        backgroundColor: primaryGreen,
-                        colorText: Colors.white,
-                        snackPosition: SnackPosition.BOTTOM,
-                        margin: const EdgeInsets.all(15),
-                      );
-                    }
-                  },
-                  child: Text(
-                    _appliedCompanyRuleId == selectedRuleTab
-                        ? 'Rule Active & Saved'
-                        : 'Process Selected Rule Engine',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
           ),
         ),
       ),
@@ -4362,7 +4437,8 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                 ),
-                if (!isEditable)
+                // ✅ ADD — 'settlement' ke 'edit' permission se gate kiya
+                if (!isEditable && _canEditSettlement)
                   TextButton(
                     onPressed: onToggleEdit,
                     style: TextButton.styleFrom(
@@ -4862,7 +4938,8 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                 ),
-                if (!isEditable)
+                // ✅ ADD — 'settlement' ke 'edit' permission se gate kiya
+                if (!isEditable && _canEditSettlement)
                   TextButton(
                     onPressed: onToggleEdit,
                     style: TextButton.styleFrom(
@@ -5569,11 +5646,33 @@ class _HomeScreenState extends State<HomeScreen>
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (index) {
+            // ✅ ADD — Stock Management permission check
+            if (index == 2 && !_canViewStockManagement) {
+              Get.snackbar(
+                'Access Nahi Hai 🚫',
+                'Aapko Stock Management dekhne ki permission nahi di gayi hai.',
+                backgroundColor: Colors.red,
+                colorText: Colors.white,
+                snackPosition: SnackPosition.BOTTOM,
+              );
+              return;
+            }
             // ✅ Reports permission check
             if (index == 3 && !_canViewReportsQuick) {
               Get.snackbar(
                 'Access Nahi Hai 🚫',
                 'Aapko reports dekhne ki permission nahi di gayi hai.',
+                backgroundColor: Colors.red,
+                colorText: Colors.white,
+                snackPosition: SnackPosition.BOTTOM,
+              );
+              return;
+            }
+            // ✅ ADD — Lifting permission check
+            if (index == 4 && !_canViewLifting) {
+              Get.snackbar(
+                'Access Nahi Hai 🚫',
+                'Aapko Lifting dekhne ki permission nahi di gayi hai.',
                 backgroundColor: Colors.red,
                 colorText: Colors.white,
                 snackPosition: SnackPosition.BOTTOM,
@@ -5602,8 +5701,12 @@ class _HomeScreenState extends State<HomeScreen>
               icon: Icon(Icons.people),
               label: 'Farmers',
             ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.inventory_2),
+            // ✅ ADD — Stock item with permission-based icon color
+            BottomNavigationBarItem(
+              icon: Icon(
+                Icons.inventory_2,
+                color: _canViewStockManagement ? null : Colors.grey.shade400,
+              ),
               label: 'Stock',
             ),
             // ✅ Reports item with permission-based icon color
@@ -5614,8 +5717,12 @@ class _HomeScreenState extends State<HomeScreen>
               ),
               label: 'Reports',
             ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.upgrade_rounded),
+            // ✅ ADD — Lifting item with permission-based icon color
+            BottomNavigationBarItem(
+              icon: Icon(
+                Icons.upgrade_rounded,
+                color: _canViewLifting ? null : Colors.grey.shade400,
+              ),
               label: 'Lifting',
             ),
           ],
@@ -5957,7 +6064,22 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         const SizedBox(height: 16),
         Expanded(
-          child: _liftingFarmers.isEmpty
+          // ✅ ADD — 'liftingListView' permission se list ko gate kiya
+          child: !_canViewLiftingList
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Text(
+                      'Aapko Lifting List dekhne ki permission nahi hai.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                )
+              : _liftingFarmers.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -6061,41 +6183,43 @@ class _HomeScreenState extends State<HomeScreen>
               ],
             ),
             const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  ActivityLogger.log(
-                    actionType: 'UPDATE',
-                    module: 'Batch',
-                    message:
-                        'Farmer "${farmer['name']}" ka lifting process shuru kiya gaya.',
-                  );
+            // ✅ ADD — 'liftingListView' ke 'edit' permission se gate kiya
+            if (_canEditLiftingList)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    ActivityLogger.log(
+                      actionType: 'UPDATE',
+                      module: 'Batch',
+                      message:
+                          'Farmer "${farmer['name']}" ka lifting process shuru kiya gaya.',
+                    );
 
-                  Get.snackbar(
-                    'Lifting Confirm',
-                    '${farmer['name']} ka lifting process shuru ho gaya',
+                    Get.snackbar(
+                      'Lifting Confirm',
+                      '${farmer['name']} ka lifting process shuru ho gaya',
+                      backgroundColor: primaryGreen,
+                      colorText: Colors.white,
+                      snackPosition: SnackPosition.BOTTOM,
+                      margin: const EdgeInsets.all(15),
+                    );
+                  },
+                  icon: const Icon(Icons.upgrade_rounded, size: 18),
+                  label: const Text(
+                    'Lifting Confirm Karo',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
                     backgroundColor: primaryGreen,
-                    colorText: Colors.white,
-                    snackPosition: SnackPosition.BOTTOM,
-                    margin: const EdgeInsets.all(15),
-                  );
-                },
-                icon: const Icon(Icons.upgrade_rounded, size: 18),
-                label: const Text(
-                  'Lifting Confirm Karo',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryGreen,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -6253,6 +6377,26 @@ class _HomeScreenState extends State<HomeScreen>
   // 📦 STOCK SCREEN UI
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildStockScreen() {
+    // ✅ ADD — sirf allowed sub-tabs hi dikhenge
+    final List<Widget> tabButtons = [];
+    if (_canViewFeedStock) {
+      tabButtons.add(Expanded(child: _stockTabButton('🌾 Feed', 0)));
+    }
+    if (_canViewMedicineStock) {
+      if (tabButtons.isNotEmpty) tabButtons.add(const SizedBox(width: 10));
+      tabButtons.add(Expanded(child: _stockTabButton('💊 Medicine', 1)));
+    }
+
+    // ✅ ADD — agar current select kiya hua sub-tab allowed nahi hai to
+    // dusre allowed sub-tab par auto-switch kar do (crash/blank avoid karne ke liye)
+    if (_stockSubTab == 0 && !_canViewFeedStock && _canViewMedicineStock) {
+      _stockSubTab = 1;
+    } else if (_stockSubTab == 1 &&
+        !_canViewMedicineStock &&
+        _canViewFeedStock) {
+      _stockSubTab = 0;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -6283,19 +6427,22 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(child: _stockTabButton('🌾 Feed', 0)),
-                  const SizedBox(width: 10),
-                  Expanded(child: _stockTabButton('💊 Medicine', 1)),
-                ],
-              ),
+              if (tabButtons.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Row(children: tabButtons),
+              ],
             ],
           ),
         ),
         Expanded(
-          child: _stockSubTab == 0
+          child: !_canViewFeedStock && !_canViewMedicineStock
+              ? Center(
+                  child: Text(
+                    'Aapko Stock Management dekhne ki permission nahi hai.',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                  ),
+                )
+              : _stockSubTab == 0
               ? _buildFeedStockTab()
               : _buildMedicineStockTab(),
         ),
@@ -6328,6 +6475,19 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ─────────────────── FEED STOCK TAB ───────────────────────────────────────
   Widget _buildFeedStockTab() {
+    // ✅ ADD — defensive guard (Stock screen already filters, ye double-safety hai)
+    if (!_canViewFeedStock) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Text(
+            'Aapko Feed Stock dekhne ki permission nahi hai.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+          ),
+        ),
+      );
+    }
     final Map<String, MaterialColor> colors = {
       'starter': Colors.blue,
       'grower': Colors.purple,
@@ -6553,68 +6713,62 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ─────────────────── MEDICINE STOCK TAB ───────────────────────────────────
   Widget _buildMedicineStockTab() {
-    // ✅ Permission guard: agar user ko view permission nahi hai toh message dikhao
-    return FutureBuilder<bool>(
-      future: PermissionService.can('medicineStock', 'view'),
-      builder: (context, snapshot) {
-        final bool canView =
-            snapshot.data ?? false; // default false if not loaded
-        if (!canView) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Text(
-                'Aapko Medicine Stock dekhne ki permission nahi hai.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-              ),
-            ),
-          );
-        }
-
-        // Original medicine stock UI
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Medicine Inventory',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: _medicineStock.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text('💊', style: TextStyle(fontSize: 50)),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Abhi koi medicine stock nahi hai',
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: _medicineStock.length,
-                        itemBuilder: (context, index) =>
-                            _medicineStockCard(_medicineStock[index]),
-                      ),
-              ),
-            ],
+    // ✅ FIX — ab FutureBuilder ki jagah state var use ho raha hai (flicker
+    // avoid hota hai, aur baaki file ke pattern se consistent hai).
+    if (!_canViewMedicineStock) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Text(
+            'Aapko Medicine Stock dekhne ki permission nahi hai.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
           ),
-        );
-      },
+        ),
+      );
+    }
+
+    // Original medicine stock UI
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Medicine Inventory',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: _medicineStock.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('💊', style: TextStyle(fontSize: 50)),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Abhi koi medicine stock nahi hai',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: _medicineStock.length,
+                    itemBuilder: (context, index) =>
+                        _medicineStockCard(_medicineStock[index]),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -6697,22 +6851,15 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
 
               // ✅ FIX: Delete icon tabhi dikhega jab user ke paas 'delete' permission hogi
-              FutureBuilder<bool>(
-                future: PermissionService.can('medicineStock', 'delete'),
-                builder: (context, snapshot) {
-                  final bool canDelete = snapshot.data ?? false;
-                  if (!canDelete) return const SizedBox.shrink();
-
-                  return IconButton(
-                    icon: const Icon(
-                      Icons.delete_outline_rounded,
-                      color: Colors.grey,
-                      size: 20,
-                    ),
-                    onPressed: () => _showDeleteMedicineConfirm(medicine),
-                  );
-                },
-              ),
+              if (_canDeleteMedicineStock)
+                IconButton(
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.grey,
+                    size: 20,
+                  ),
+                  onPressed: () => _showDeleteMedicineConfirm(medicine),
+                ),
             ],
           ),
           const SizedBox(height: 10),

@@ -152,16 +152,27 @@ class PermissionService {
       emoji: '📦',
       isLeaf: false,
       hasPermission: true,
+      // ✅ FIX — "Stock Management" ka Overall card sirf Feed/Medicine
+      // sub-tab ke beech switch karta hai, khud koi add/edit/delete nahi
+      // karta (purchaseExpense/sales/reports/accounts jaisa hi pattern).
+      availableActions: const ['view'],
       children: [
         PermissionNode(
           id: 'feedStock',
           label: 'Feed Stock Overview',
           emoji: '🌾',
+          // ✅ FIX — home_screen.dart ka Feed Stock tab poora read-only
+          // inventory dashboard hai (koi add/edit/delete button hai hi
+          // nahi — history button 'feedAllocation' se alag gate hota hai).
+          availableActions: const ['view'],
         ),
         PermissionNode(
           id: 'medicineStock',
           label: 'Medicine Stock Overview',
           emoji: '💉',
+          // ✅ FIX — Sirf View + Delete ka feature hai (stock record delete
+          // karna). Add/Edit ka koi button is screen mein nahi hai.
+          availableActions: const ['view', 'delete'],
         ),
       ],
     ),
@@ -382,23 +393,45 @@ class PermissionService {
         ),
       ],
     ),
-    PermissionNode(id: 'settlement', label: 'Settlement Engine', emoji: '⚖️'),
+    PermissionNode(
+      id: 'settlement',
+      label: 'Settlement Engine',
+      emoji: '⚖️',
+      // ✅ FIX — home_screen.dart ka "Batch Settlement" ek Rule 1/Rule 2
+      // config wizard hai — sirf dekhna (view) aur parameters change karke
+      // "Process Selected Rule Engine" se save karna (edit). Koi add ya
+      // delete ka feature nahi hai (naya rule bana nahi sakte, delete bhi
+      // nahi kar sakte — sirf Rule 1/Rule 2 predefined slots hain).
+      availableActions: const ['view', 'edit'],
+    ),
     PermissionNode(
       id: 'lifting',
       label: 'Lifting',
       emoji: '🚜',
       isLeaf: false,
       hasPermission: true,
+      // ✅ FIX — "Lifting" tab ka Overall card khud koi add/edit/delete
+      // nahi karta, sirf ander ke 2 features (range set + list) ko
+      // organize karta hai. Sirf View toggle hona chahiye.
+      availableActions: const ['view'],
       children: [
         PermissionNode(
           id: 'liftingRangeSet',
           label: 'Range Set Karna',
           emoji: '⚙️',
+          // ✅ FIX — Ye sirf ek settings-action hai (Min/Max din set karna),
+          // koi separate view-screen nahi hai is permission ke liye —
+          // isliye sirf 'edit' rakha.
+          availableActions: const ['edit'],
         ),
         PermissionNode(
           id: 'liftingListView',
           label: 'Lifting List Dekhna',
           emoji: '📋',
+          // ✅ FIX — 'view' se Lifting-ready farmers ki list dikhti hai,
+          // 'edit' se "Lifting Confirm Karo" button dikhta hai. Add/Delete
+          // ka koi feature is list mein nahi hai.
+          availableActions: const ['view', 'edit'],
         ),
       ],
     ),
