@@ -8,6 +8,7 @@ import '../../../utils/weight_growth_rule_engine.dart';
 import '../../../utils/fraud_risk_engine.dart';
 import '../../../utils/performance_alert_engine.dart';
 import '../../../services/activity_logger.dart'; // 🛑 NAYA IMPORT
+import '../../../services/permission_service.dart'; // ✅ FIX — is screen mein row-edit ka koi permission check nahi tha
 
 // =============================================================================
 // 📅 DAILY UPDATE LIST SCREEN
@@ -120,12 +121,38 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
   List<_DayRow> _rows = [];
   late List<dynamic> _localDailyEntries;
 
+  // ── 🔐 PERMISSION FLAGS ─────────────────────────────────────────────────
+  // ✅ FIX — is screen ke row-tap se khulne wale Edit dialog (_showEditDayDialog)
+  // mein Weight/Mortality/Remaining Feed ki NAYI entry add karne ka koi
+  // permission check hi nahi tha — batch_detail_screen.dart ke "Flock
+  // Record" dialog mein to _canAddWeight/_canAddMortality/_canAddRemainingFeed
+  // se gate hota hai, lekin yahi teeno fields is screen se bhi (dusre raaste
+  // se) bina kisi check ke add ho jaate the. Ab wahi 3 flags yahan bhi.
+  bool _canAddWeight = false;
+  bool _canAddMortality = false;
+  bool _canAddRemainingFeed = false;
+  bool get _canEditAnyField =>
+      _canAddWeight || _canAddMortality || _canAddRemainingFeed;
+
   @override
   void initState() {
     super.initState();
     _localDailyEntries = List<dynamic>.from(widget.dailyEntries);
     _loadAndCompute();
+    _loadEditPermissionFlags();
     startCloudSync(); // ✅ FIX
+  }
+
+  Future<void> _loadEditPermissionFlags() async {
+    final weight = await PermissionService.can('averageWeight', 'add');
+    final mortality = await PermissionService.can('mortality', 'add');
+    final remainingFeed = await PermissionService.can('remainingFeed', 'add');
+    if (!mounted) return;
+    setState(() {
+      _canAddWeight = weight;
+      _canAddMortality = mortality;
+      _canAddRemainingFeed = remainingFeed;
+    });
   }
 
   @override
@@ -140,6 +167,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
   // karo.
   @override
   Future<void> onCloudDataChanged() async {
+    _loadEditPermissionFlags(); // ✅ FIX — real-time permission refresh
     try {
       final farmersJson = await CompanyStore.instance.getString(
         'companyFarmers',
@@ -940,41 +968,52 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                   style: const TextStyle(fontSize: 11.5, color: Colors.black87),
                 ),
               ),
-              TextField(
-                controller: mortalityCtrl,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Mortality (is din ki nayi entry)',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+              // ✅ FIX — har field ka apna permission check — is dialog mein
+              // pehle teeno fields hamesha dikhte the, chahe user ko
+              // batch_detail_screen.dart ke Flock Record dialog mein us
+              // field ka add-access diya bhi na gaya ho. Ab yahan bhi wahi
+              // permission respect hota hai.
+              if (_canAddMortality) ...[
+                TextField(
+                  controller: mortalityCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Mortality (is din ki nayi entry)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: weightCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: InputDecoration(
-                  labelText: 'Avg Weight (kg)',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 12),
+              ],
+              if (_canAddWeight) ...[
+                TextField(
+                  controller: weightCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Avg Weight (kg)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: remainingFeedCtrl,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Remaining Feed Bags (optional)',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 12),
+              ],
+              if (_canAddRemainingFeed) ...[
+                TextField(
+                  controller: remainingFeedCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Remaining Feed Bags (optional)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 8),
+              ],
               const Text(
                 'Yeh ek NAYI entry add karega (Flock Record jaisa) — is din '
                 'ke pehle se maujood data mein add hoga, overwrite nahi. Feed '
@@ -1621,6 +1660,12 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                                       final bool isEditable = _isEditableDate(
                                         r.date,
                                       );
+                                      // ✅ FIX — pehle sirf date-window check
+                                      // hota tha, permission bilkul check
+                                      // nahi hota tha. Ab agar user ke paas
+                                      // teeno mein se koi bhi add-permission
+                                      // nahi hai, to edit icon/tap dikhega
+                                      // hi nahi (neeche _canEditAnyField se).
                                       return DataRow(
                                         color: WidgetStateProperty.all(
                                           r.hasMismatch
@@ -1634,26 +1679,35 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                                                                   alpha: 0.5,
                                                                 ))),
                                         ),
-                                        onSelectChanged: isEditable
-                                            ? (_) => _showEditDayDialog(r)
-                                            : (_) {
-                                                Get.snackbar(
-                                                  'Locked 🔒',
-                                                  'Sirf Aaj + pichle 2 din tak hi entry edit ho sakti hai.',
-                                                  backgroundColor:
-                                                      Colors.grey.shade700,
-                                                  colorText: Colors.white,
-                                                  snackPosition:
-                                                      SnackPosition.BOTTOM,
-                                                );
-                                              },
+                                        onSelectChanged: !_canEditAnyField
+                                            ? null
+                                            : (isEditable
+                                                  ? (_) => _showEditDayDialog(r)
+                                                  : (_) {
+                                                      Get.snackbar(
+                                                        'Locked 🔒',
+                                                        'Sirf Aaj + pichle 2 din tak hi entry edit ho sakti hai.',
+                                                        backgroundColor: Colors
+                                                            .grey
+                                                            .shade700,
+                                                        colorText: Colors.white,
+                                                        snackPosition:
+                                                            SnackPosition
+                                                                .BOTTOM,
+                                                      );
+                                                    }),
                                         cells: [
                                           DataCell(
-                                            isEditable
-                                                ? _editButton(
-                                                    () => _showEditDayDialog(r),
-                                                  )
-                                                : _lockedButton(),
+                                            !_canEditAnyField
+                                                ? const SizedBox.shrink()
+                                                : (isEditable
+                                                      ? _editButton(
+                                                          () =>
+                                                              _showEditDayDialog(
+                                                                r,
+                                                              ),
+                                                        )
+                                                      : _lockedButton()),
                                           ),
                                           DataCell(_riskBadge(r.fraud)),
                                           DataCell(

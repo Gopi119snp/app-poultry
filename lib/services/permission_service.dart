@@ -67,11 +67,24 @@ class PermissionService {
               id: 'farmerProfile',
               label: 'Profile / Document',
               emoji: '📇',
+              // ✅ FIX — farmers_screen.dart mein sirf Add Farmer button
+              // (add) hai, farmer_profile_screen.dart mein sirf Edit
+              // (personal details/photo/signature) hai. Poore codebase
+              // mein kahin bhi farmer profile DELETE ka koi button/feature
+              // nahi hai — isliye delete hata diya.
+              availableActions: const ['view', 'add', 'edit'],
             ),
             PermissionNode(
               id: 'farmerBankDetail',
               label: 'Bank Detail',
               emoji: '🏦',
+              // ✅ FIX — Bank detail sirf farmer_profile_screen.dart ke
+              // Bank tab mein view hoti hai aur Edit Bank Details button
+              // se edit hoti hai. Bank ka koi standalone "Add" button ya
+              // Delete feature nahi hai (bank farmer registration ke
+              // waqt hi save hoti hai, jo 'farmerProfile' add ke andar
+              // aata hai).
+              availableActions: const ['view', 'edit'],
             ),
           ],
         ),
@@ -81,16 +94,31 @@ class PermissionService {
           emoji: '📈',
           isLeaf: false,
           hasPermission: true,
+          // ✅ FIX — farmer_profile_screen.dart mein Report tab sirf
+          // FarmerReportScreen dikhata hai (read-only bar-graph/breakdown
+          // dashboard) — koi add/edit/delete button nahi hai. Isliye
+          // sirf 'view' toggle rakha, purchaseExpense/stockManagement
+          // jaisa hi group-card pattern.
+          availableActions: const ['view'],
           children: [
             PermissionNode(
               id: 'farmerDetailInfo',
               label: 'Detail Information Dekho',
               emoji: '🔍',
+              // ✅ FIX — farmer_report_screen.dart mein ye sirf ek
+              // navigation button hai jo BatchDetailInformationScreen
+              // (read-only charts) kholta hai — koi add/edit/delete
+              // feature nahi hai.
+              availableActions: const ['view'],
             ),
             PermissionNode(
               id: 'farmerAllReports',
               label: 'Sabhi Reports Dekho',
               emoji: '📑',
+              // ✅ FIX — ye bhi sirf navigation button hai jo
+              // AllBatchesReportScreen (read-only list+summary) kholta
+              // hai — koi add/edit/delete feature nahi hai.
+              availableActions: const ['view'],
             ),
           ],
         ),
@@ -98,6 +126,11 @@ class PermissionService {
           id: 'batchCreate',
           label: 'Farmer Batch (Making)',
           emoji: '🐣',
+          // ✅ FIX — farmer_profile_screen.dart mein 'view' Batch tab
+          // dikhata hai, 'add' se naya batch start hota hai, 'edit' se
+          // active batch edit hoti hai. Batch DELETE ka koi button nahi
+          // hai (batch khatam karna alag 'batchEnd' node se hota hai).
+          availableActions: const ['view', 'add', 'edit'],
         ),
         PermissionNode(
           id: 'batchTracking',
@@ -115,33 +148,84 @@ class PermissionService {
                   id: 'feedEntry',
                   label: 'Feed Entry',
                   emoji: '🌾',
+                  // ✅ FIX — batch_detail_screen.dart mein sirf
+                  // PermissionService.can('feedEntry','add') check hota
+                  // hai (Flock Record dialog ke Feed section ke liye).
+                  // Koi alag 'view' iska nahi hai (dikhna 'batchCreate'
+                  // tab-level view se control hota hai, entries ka
+                  // history 'dailyUpdateList' se), aur edit/delete ka
+                  // koi feature hi nahi hai (entries immutable hain).
+                  availableActions: const ['add'],
                 ),
                 PermissionNode(
                   id: 'averageWeight',
                   label: 'Average Weight',
                   emoji: '⚖️',
+                  availableActions: const [
+                    'add',
+                  ], // ✅ FIX — sirf add check hota hai
                 ),
                 PermissionNode(
                   id: 'mortality',
                   label: 'Mortality',
                   emoji: '💀',
+                  availableActions: const [
+                    'add',
+                  ], // ✅ FIX — sirf add check hota hai
                 ),
                 PermissionNode(
                   id: 'remainingFeed',
                   label: 'Actual Remaining Feed',
                   emoji: '📊',
+                  availableActions: const [
+                    'add',
+                  ], // ✅ FIX — sirf add check hota hai
                 ),
               ],
             ),
-            PermissionNode(id: 'batchSales', label: 'Sales', emoji: '💰'),
-            PermissionNode(id: 'batchMedicine', label: 'Medicine', emoji: '💊'),
+            PermissionNode(
+              id: 'batchSales',
+              label: 'Sales',
+              emoji: '💰',
+              // ✅ FIX — sirf PermissionService.can('batchSales','add')
+              // check hota hai ('+ Sale' quick-action button). Edit/delete
+              // ka koi feature nahi hai.
+              availableActions: const ['add'],
+            ),
+            PermissionNode(
+              id: 'batchMedicine',
+              label: 'Medicine',
+              emoji: '💊',
+              // ✅ FIX — sirf 'add' check hota hai ('Medicine' quick-action
+              // button). Edit/delete ka koi feature nahi hai.
+              availableActions: const ['add'],
+            ),
             PermissionNode(
               id: 'dailyUpdateList',
               label: 'Daily Update List',
               emoji: '📝',
+              // ✅ FIX — ye sirf ek read-only history screen hai, sirf
+              // 'view' check hota hai. Add/edit/delete ka yahan koi button
+              // nahi hai.
+              availableActions: const ['view'],
             ),
-            PermissionNode(id: 'feedReturn', label: 'Return Feed', emoji: '↩️'),
-            PermissionNode(id: 'batchEnd', label: 'Batch End', emoji: '🏁'),
+            PermissionNode(
+              id: 'feedReturn',
+              label: 'Return Feed',
+              emoji: '↩️',
+              // ✅ FIX — sirf 'add' check hota hai (Batch End flow ke
+              // andar Return Feed dialog). Edit/delete nahi hai.
+              availableActions: const ['add'],
+            ),
+            PermissionNode(
+              id: 'batchEnd',
+              label: 'Batch End',
+              emoji: '🏁',
+              // ✅ FIX — sirf 'add' check hota hai (Batch End button).
+              // Edit/delete ka concept hi nahi (batch ek baar end hone ke
+              // baad COMPLETED ho jaata hai).
+              availableActions: const ['add'],
+            ),
           ],
         ),
       ],

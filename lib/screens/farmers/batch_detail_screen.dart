@@ -23,7 +23,6 @@ import '../../../utils/fraud_risk_engine.dart';
 import '../../../utils/performance_alert_engine.dart';
 import 'daily_update_list_screen.dart';
 import '../../../services/permission_service.dart';
-import '../../../services/session_service.dart';
 import '../../../services/activity_logger.dart';
 
 // =============================================================================
@@ -218,18 +217,6 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   }
 
   Future<void> _loadPermissionFlags() async {
-    final rawRole = await SessionService.currentRole;
-    final isOwnerCheck = await SessionService.isOwner;
-    debugPrint(
-      'DEBUG_ROLE_CHECK: currentRole = "$rawRole" | isOwner = $isOwnerCheck',
-    );
-    Get.snackbar(
-      'DEBUG ROLE',
-      'role="$rawRole" isOwner=$isOwnerCheck',
-      backgroundColor: Colors.purple,
-      colorText: Colors.white,
-      duration: const Duration(seconds: 10),
-    );
     final feedEntry = await PermissionService.can('feedEntry', 'add');
     final weight = await PermissionService.can('averageWeight', 'add');
     final mortality = await PermissionService.can('mortality', 'add');
@@ -4100,11 +4087,17 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                   const SizedBox(height: 16),
 
                   // ═══════════════════════════════════════════════════════
-                  // 🏢 SECTION 1 — FEED (Owner / Office Manager hi bhar sakte)
+                  // 🏢 SECTION 1 — FEED
+                  // ✅ FIX — pehle yahan `widget.userRole == 'Owner' ||
+                  // widget.userRole == 'Office Manager'` ka HARDCODED check
+                  // tha, jo `_canAddFeedEntry` (asli permission) ke UPAR se
+                  // bhi force override kar deta tha. Matlab agar Owner ne
+                  // kisi Field Manager ya CUSTOM role ko Settings se
+                  // 'feedEntry' add ka access diya bhi ho, ye section tab
+                  // bhi kabhi nahi dikhta — sirf permission flag hi kaafi
+                  // hai, ye check ab hata diya.
                   // ═══════════════════════════════════════════════════════
-                  if ((widget.userRole == 'Owner' ||
-                          widget.userRole == 'Office Manager') &&
-                      _canAddFeedEntry) ...[
+                  if (_canAddFeedEntry) ...[
                     const Text(
                       '🏢 Feed Section (Owner / Office Manager)',
                       style: TextStyle(
@@ -4142,12 +4135,15 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
                   // ═══════════════════════════════════════════════════════
                   // 🌾 SECTION 2 — WEIGHT / MORTALITY / REMAINING FEED
+                  // ✅ FIX — same loophole jaisa Section 1 mein tha: hardcoded
+                  // `widget.userRole == 'Owner' || 'Field Manager'` check
+                  // permission flags ke upar force override kar raha tha.
+                  // Ab sirf permission flags (_canAddWeight/_canAddMortality/
+                  // _canAddRemainingFeed) hi authoritative hain.
                   // ═══════════════════════════════════════════════════════
-                  if ((widget.userRole == 'Owner' ||
-                          widget.userRole == 'Field Manager') &&
-                      (_canAddWeight ||
-                          _canAddMortality ||
-                          _canAddRemainingFeed)) ...[
+                  if (_canAddWeight ||
+                      _canAddMortality ||
+                      _canAddRemainingFeed) ...[
                     const Text(
                       '🌾 Field Manager Entries',
                       style: TextStyle(
@@ -4159,89 +4155,103 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                     ),
                     const SizedBox(height: 8),
 
-                    TextField(
-                      controller: _weightController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: InputDecoration(
-                        labelText: 'Average Weight (KG) *',
-                        hintText: 'Sirf KG mein daalein, e.g. 1.8 ya 2.4',
-                        prefixIcon: const Icon(Icons.monitor_weight_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
+                    // ✅ FIX — pehle in teeno fields (Weight/Mortality/
+                    // Remaining Feed) ka apna ALAG permission check nahi
+                    // tha — bahar wala OR-condition sirf poora section
+                    // dikhata/chhupata tha. Matlab agar kisi Field Manager
+                    // ko sirf 'mortality' ka add-access diya gaya ho (Weight
+                    // aur Remaining Feed ka nahi), phir bhi wo dono fields
+                    // dikh jaate the. Ab har field apna khud ka flag check
+                    // karta hai.
+                    if (_canAddWeight) ...[
+                      TextField(
+                        controller: _weightController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Average Weight (KG) *',
+                          hintText: 'Sirf KG mein daalein, e.g. 1.8 ya 2.4',
+                          prefixIcon: const Icon(Icons.monitor_weight_outlined),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    _photoVerifyRow(
-                      label: 'Taraju (Scale) Photo — optional',
-                      photoBytes: _weightPhotoBytes,
-                      mismatch: _weightPhotoMismatch,
-                      mismatchReason: _weightMismatchReason,
-                      onCapture: () =>
-                          _captureAndVerifyWeightPhoto(setDialogState),
-                      onRemove: () => setDialogState(() {
-                        _weightPhotoBytes = null;
-                        _weightPhotoMismatch = false;
-                        _weightMismatchReason = null;
-                      }),
-                    ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 6),
+                      _photoVerifyRow(
+                        label: 'Taraju (Scale) Photo — optional',
+                        photoBytes: _weightPhotoBytes,
+                        mismatch: _weightPhotoMismatch,
+                        mismatchReason: _weightMismatchReason,
+                        onCapture: () =>
+                            _captureAndVerifyWeightPhoto(setDialogState),
+                        onRemove: () => setDialogState(() {
+                          _weightPhotoBytes = null;
+                          _weightPhotoMismatch = false;
+                          _weightMismatchReason = null;
+                        }),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
 
-                    TextField(
-                      controller: _mortalityController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Mortality (Murgi Death Count) *',
-                        hintText: 'e.g. 2',
-                        prefixIcon: const Icon(Icons.analytics_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
+                    if (_canAddMortality) ...[
+                      TextField(
+                        controller: _mortalityController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'Mortality (Murgi Death Count) *',
+                          hintText: 'e.g. 2',
+                          prefixIcon: const Icon(Icons.analytics_outlined),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    _photoVerifyRow(
-                      label: 'Mortality Photo — optional',
-                      photoBytes: _mortalityPhotoBytes,
-                      mismatch: _mortalityPhotoMismatch,
-                      mismatchReason: _mortalityMismatchReason,
-                      onCapture: () =>
-                          _captureAndVerifyMortalityPhoto(setDialogState),
-                      onRemove: () => setDialogState(() {
-                        _mortalityPhotoBytes = null;
-                        _mortalityPhotoMismatch = false;
-                        _mortalityMismatchReason = null;
-                      }),
-                    ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 6),
+                      _photoVerifyRow(
+                        label: 'Mortality Photo — optional',
+                        photoBytes: _mortalityPhotoBytes,
+                        mismatch: _mortalityPhotoMismatch,
+                        mismatchReason: _mortalityMismatchReason,
+                        onCapture: () =>
+                            _captureAndVerifyMortalityPhoto(setDialogState),
+                        onRemove: () => setDialogState(() {
+                          _mortalityPhotoBytes = null;
+                          _mortalityPhotoMismatch = false;
+                          _mortalityMismatchReason = null;
+                        }),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
 
-                    TextField(
-                      controller: _remainingFeedController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Actual Remaining Feed (Bags) *',
-                        hintText: 'Farm par abhi kitne bags bache hain',
-                        prefixIcon: const Icon(Icons.inventory_rounded),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
+                    if (_canAddRemainingFeed) ...[
+                      TextField(
+                        controller: _remainingFeedController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'Actual Remaining Feed (Bags) *',
+                          hintText: 'Farm par abhi kitne bags bache hain',
+                          prefixIcon: const Icon(Icons.inventory_rounded),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    _photoVerifyRow(
-                      label: 'Farm Feed Stock Photo — optional',
-                      photoBytes: _remainingFeedPhotoBytes,
-                      mismatch: false,
-                      mismatchReason: null,
-                      onCapture: () =>
-                          _captureRemainingFeedPhoto(setDialogState),
-                      onRemove: () => setDialogState(() {
-                        _remainingFeedPhotoBytes = null;
-                      }),
-                    ),
-                    const SizedBox(height: 8),
+                      const SizedBox(height: 6),
+                      _photoVerifyRow(
+                        label: 'Farm Feed Stock Photo — optional',
+                        photoBytes: _remainingFeedPhotoBytes,
+                        mismatch: false,
+                        mismatchReason: null,
+                        onCapture: () =>
+                            _captureRemainingFeedPhoto(setDialogState),
+                        onRemove: () => setDialogState(() {
+                          _remainingFeedPhotoBytes = null;
+                        }),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                   ],
                 ],
               ),

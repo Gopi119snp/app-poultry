@@ -89,6 +89,11 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
   void onCloudDataChanged() {
     // ✅ FIX
     _checkActiveBatchStatus();
+    // ✅ FIX — permission flags bhi real-time refresh honi chahiye, warna
+    // agar Owner Settings se kisi tab/button ka access ON/OFF karta hai
+    // jab manager ye screen pehle se khole hue hai, to change turant nahi
+    // dikhta tha (screen band karke dobara kholne par hi update hota tha).
+    _loadPermissionFlags();
   }
 
   Future<void> _loadPermissionFlags() async {

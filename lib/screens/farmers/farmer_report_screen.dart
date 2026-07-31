@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'dart:async'; // ✅ FIX — real-time permission refresh ke liye
 import 'dart:convert';
 import 'dart:math' as math;
 import '../../services/company_store.dart';
@@ -322,11 +323,40 @@ class _FarmerReportScreenState extends State<FarmerReportScreen> {
   bool _canViewAllReports = false;
   bool _canViewDetailInfo = false;
 
+  // ✅ FIX — real-time permission sync variables (sales_screen.dart /
+  // farmer_profile_screen.dart jaisa hi pattern). Pehle is screen mein
+  // koi listener hi nahi tha — agar Owner Settings se "Sabhi Reports
+  // Dekho" ya "Detail Information Dekho" ka access ON/OFF karta tha jab
+  // manager ye Report tab pehle se khole hue tha, to button turant
+  // gayab/pragat nahi hota tha (tab band-khol karne par hi update hota).
+  StreamSubscription<void>? _dataChangeSub;
+  Timer? _permissionPollTimer;
+
   @override
   void initState() {
     super.initState();
     _loadData();
     _loadReportPermissionFlags();
+
+    // ✅ FIX — real-time listener + 5-second backup poll
+    _dataChangeSub = CompanyStore.instance.onDataChanged.listen((_) {
+      if (!mounted) return;
+      _loadReportPermissionFlags();
+    });
+    _permissionPollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _loadReportPermissionFlags();
+    });
+  }
+
+  @override
+  void dispose() {
+    _dataChangeSub?.cancel();
+    _permissionPollTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadReportPermissionFlags() async {
