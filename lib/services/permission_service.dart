@@ -523,11 +523,17 @@ class PermissionService {
       id: 'feedConsumptionRule',
       label: 'Feed Consumption Rule',
       emoji: '🌿',
+      // ✅ FIX — Ye ek single rule-config screen hai (view current rule +
+      // edit karke save). Koi separate "Add new rule" ya "Delete rule"
+      // feature hai hi nahi — season add/remove sirf edit ka hissa hai.
+      availableActions: const ['view', 'edit'],
     ),
     PermissionNode(
       id: 'weightGrowthRule',
       label: 'Weight Growth Rule',
       emoji: '📈',
+      // ✅ FIX — Same reasoning: sirf View + Edit, no Add/Delete at top level.
+      availableActions: const ['view', 'edit'],
     ),
     PermissionNode(
       id: 'performanceAlertRule',

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../services/company_store.dart';
+import '../../services/permission_service.dart'; // ✅ ADD — threshold fields + granularity picker gate karne ke liye
 import '../../widgets/permission_gate.dart'; // ✅ ADD — PermissionGate + PermissionScreenGate ke liye
 import '../../utils/performance_alert_engine.dart';
 
@@ -31,6 +32,8 @@ class _PerformanceAlertRuleScreenState extends State<PerformanceAlertRuleScreen>
   bool _loading = true;
   bool _saving = false;
   bool _showSavedBanner = false;
+  bool _canEdit =
+      false; // ✅ ADD — thresholds/granularity edit karne ki permission
 
   AlertGranularity _granularity = AlertGranularity.flat;
 
@@ -49,6 +52,7 @@ class _PerformanceAlertRuleScreenState extends State<PerformanceAlertRuleScreen>
   void initState() {
     super.initState();
     _loadExistingConfig();
+    _loadEditPermission(); // ✅ ADD
     startCloudSync(); // ✅ FIX
 
     // ✅ Real-time CompanyStore stream listener — config change hote hi
@@ -56,6 +60,7 @@ class _PerformanceAlertRuleScreenState extends State<PerformanceAlertRuleScreen>
     _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
       if (!mounted) return;
       _loadExistingConfig();
+      _loadEditPermission(); // ✅ ADD
     });
 
     // ✅ 5-second fast verification timer
@@ -66,13 +71,23 @@ class _PerformanceAlertRuleScreenState extends State<PerformanceAlertRuleScreen>
         return;
       }
       _loadExistingConfig();
+      _loadEditPermission(); // ✅ ADD
     });
+  }
+
+  // ✅ ADD — 'edit' permission check, taaki view-only user thresholds/mode
+  // change hi na kar sake (sirf Save button chhupana kaafi nahi tha).
+  Future<void> _loadEditPermission() async {
+    final result = await PermissionService.can('performanceAlertRule', 'edit');
+    if (!mounted) return;
+    setState(() => _canEdit = result);
   }
 
   @override
   void onCloudDataChanged() {
     // ✅ FIX
     _loadExistingConfig();
+    _loadEditPermission(); // ✅ ADD — permission change hote hi turant refresh
   }
 
   @override
@@ -369,6 +384,8 @@ class _PerformanceAlertRuleScreenState extends State<PerformanceAlertRuleScreen>
   }) {
     return TextField(
       controller: controller,
+      enabled:
+          _canEdit, // ✅ ADD — 'edit' permission nahi to field disabled/greyed
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       onChanged: (_) => setState(() => _showSavedBanner = false),
       decoration: InputDecoration(
@@ -388,53 +405,69 @@ class _PerformanceAlertRuleScreenState extends State<PerformanceAlertRuleScreen>
     final bool selected = _granularity == value;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () => setState(() {
-        _granularity = value;
-        _showSavedBanner = false;
-      }),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFE8F5E9) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selected ? primaryGreen : Colors.grey.shade200,
-            width: selected ? 1.6 : 1,
+      // ✅ ADD — 'edit' permission nahi to mode switch karna disabled
+      onTap: !_canEdit
+          ? null
+          : () => setState(() {
+              _granularity = value;
+              _showSavedBanner = false;
+            }),
+      child: Opacity(
+        opacity: _canEdit ? 1.0 : 0.6, // ✅ ADD — visually bhi disabled dikhe
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFE8F5E9) : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? primaryGreen : Colors.grey.shade200,
+              width: selected ? 1.6 : 1,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: selected ? primaryGreen : Colors.grey, size: 22),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: selected ? primaryGreen : Colors.black87,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(fontSize: 10.5, color: Colors.grey),
-                  ),
-                ],
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                color: selected ? primaryGreen : Colors.grey,
+                size: 22,
               ),
-            ),
-            Radio<AlertGranularity>(
-              value: value,
-              groupValue: _granularity,
-              activeColor: primaryGreen,
-              onChanged: (v) => setState(() {
-                _granularity = v!;
-                _showSavedBanner = false;
-              }),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: selected ? primaryGreen : Colors.black87,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Radio<AlertGranularity>(
+                value: value,
+                groupValue: _granularity,
+                activeColor: primaryGreen,
+                // ✅ ADD — 'edit' permission nahi to Radio bhi disabled
+                onChanged: !_canEdit
+                    ? null
+                    : (v) => setState(() {
+                        _granularity = v!;
+                        _showSavedBanner = false;
+                      }),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../services/company_store.dart';
+import '../../services/permission_service.dart'; // ✅ FIX — permission check ke liye
+import '../../widgets/permission_gate.dart'; // ✅ FIX — screen + button gate ke liye
 import '../../utils/weight_growth_rule_engine.dart';
 
 // =============================================================================
@@ -29,6 +31,12 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
   bool _saving = false;
   bool _showSavedBanner = false;
 
+  // ✅ FIX — Poora screen 'weightGrowthRule' -> 'view' permission se
+  // protect hai (PermissionScreenGate). Andar rule badalne/save karne ka
+  // permission alag hai — 'edit'. View-only user rule dekh payega, lekin
+  // change/save nahi kar payega.
+  bool _canEdit = false;
+
   WeightRuleType _ruleType = WeightRuleType.standardFormula;
   final Map<int, double> _customChart = {};
 
@@ -40,6 +48,7 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
   void initState() {
     super.initState();
     _loadExistingConfig();
+    _loadPermissions(); // ✅ FIX
     startCloudSync(); // ✅ FIX
 
     // ✅ Real-time CompanyStore stream listener — config change hote hi
@@ -47,6 +56,7 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
     _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
       if (!mounted) return;
       _loadExistingConfig();
+      _loadPermissions(); // ✅ FIX
     });
 
     // ✅ 5-second fast verification timer
@@ -57,7 +67,15 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
         return;
       }
       _loadExistingConfig();
+      _loadPermissions(); // ✅ FIX
     });
+  }
+
+  // ✅ FIX — 'edit' permission check karo (view-only ya edit-allowed).
+  Future<void> _loadPermissions() async {
+    final canEdit = await PermissionService.can('weightGrowthRule', 'edit');
+    if (!mounted) return;
+    setState(() => _canEdit = canEdit);
   }
 
   @override
@@ -146,6 +164,7 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
   }
 
   void _showAddDayDialog() {
+    if (!_canEdit) return; // ✅ FIX — safety guard
     final dayCtrl = TextEditingController();
     final weightCtrl = TextEditingController();
 
@@ -227,6 +246,17 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ✅ FIX — Poora screen 'weightGrowthRule' -> 'view' permission se
+    // protect hai. Jisko view permission nahi hai use "Access Nahi Hai"
+    // dikhega, screen khulegi hi nahi.
+    return PermissionScreenGate(
+      moduleId: 'weightGrowthRule',
+      action: 'view',
+      child: _buildScreenContent(context),
+    );
+  }
+
+  Widget _buildScreenContent(BuildContext context) {
     final sortedDays = _customChart.keys.toList()..sort();
 
     return Scaffold(
@@ -352,14 +382,16 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
                           fontSize: 14,
                         ),
                       ),
-                      TextButton.icon(
-                        onPressed: _showAddDayDialog,
-                        icon: const Icon(Icons.add_circle_rounded, size: 18),
-                        label: const Text('Din Add Karo'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: primaryGreen,
+                      // ✅ FIX — Sirf edit permission wale hi din add kar sakte hain
+                      if (_canEdit)
+                        TextButton.icon(
+                          onPressed: _showAddDayDialog,
+                          icon: const Icon(Icons.add_circle_rounded, size: 18),
+                          label: const Text('Din Add Karo'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: primaryGreen,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -415,53 +447,57 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
                                 style: const TextStyle(fontSize: 13),
                               ),
                             ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.delete_outline_rounded,
-                                color: Colors.redAccent,
-                                size: 20,
+                            // ✅ FIX — Sirf edit permission wale hi din delete kar sakte hain
+                            if (_canEdit)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.redAccent,
+                                  size: 20,
+                                ),
+                                onPressed: () => setState(() {
+                                  _customChart.remove(d);
+                                  _showSavedBanner = false;
+                                }),
                               ),
-                              onPressed: () => setState(() {
-                                _customChart.remove(d);
-                                _showSavedBanner = false;
-                              }),
-                            ),
                           ],
                         ),
                       ),
                     ),
                 ],
                 const SizedBox(height: 28),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: _saving ? null : _saveConfig,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryGreen,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                // ✅ FIX — Save button sirf edit permission wale ko dikhega
+                if (_canEdit)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: _saving ? null : _saveConfig,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryGreen,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                    ),
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.save_rounded, color: Colors.white),
-                    label: Text(
-                      _saving ? 'Saving...' : 'Rule Save Karo',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.save_rounded, color: Colors.white),
+                      label: Text(
+                        _saving ? 'Saving...' : 'Rule Save Karo',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
     );
@@ -476,10 +512,13 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
     final bool selected = _ruleType == type;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () => setState(() {
-        _ruleType = type;
-        _showSavedBanner = false;
-      }),
+      // ✅ FIX — view-only user rule type badal nahi sakta
+      onTap: !_canEdit
+          ? null
+          : () => setState(() {
+              _ruleType = type;
+              _showSavedBanner = false;
+            }),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -518,10 +557,13 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
               value: type,
               groupValue: _ruleType,
               activeColor: primaryGreen,
-              onChanged: (v) => setState(() {
-                _ruleType = v!;
-                _showSavedBanner = false;
-              }),
+              // ✅ FIX — view-only user radio bhi change nahi kar sakta
+              onChanged: !_canEdit
+                  ? null
+                  : (v) => setState(() {
+                      _ruleType = v!;
+                      _showSavedBanner = false;
+                    }),
             ),
           ],
         ),

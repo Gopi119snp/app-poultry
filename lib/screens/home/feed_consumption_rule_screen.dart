@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../services/company_store.dart';
+import '../../services/permission_service.dart'; // ✅ FIX — permission check ke liye
+import '../../widgets/permission_gate.dart'; // ✅ FIX — screen + button gate ke liye
 import '../../utils/feed_consumption_rule_engine.dart';
 
 // =============================================================================
@@ -34,6 +36,13 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
   bool _loading = true;
   bool _saving = false;
   bool _showSavedBanner = false;
+
+  // ✅ FIX — Ye rule Owner ke alawa kisi ko dikhega hi tab jab uska
+  // 'feedConsumptionRule' -> 'view' permission ON ho (PermissionScreenGate
+  // se poora screen protect hota hai neeche). Andar rule badalne/save karne
+  // ka permission alag hai — 'edit'. View-only user rule dekh payega,
+  // lekin change/save nahi kar payega.
+  bool _canEdit = false;
 
   FeedRuleType _ruleType = FeedRuleType.standardAgeChart;
   final TextEditingController _multiplierCtrl = TextEditingController(
@@ -83,6 +92,7 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
   void initState() {
     super.initState();
     _loadExistingConfig();
+    _loadPermissions(); // ✅ FIX
     startCloudSync(); // ✅ FIX
 
     // ✅ Real-time CompanyStore stream listener — config change hote hi
@@ -90,6 +100,7 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
     _dataSub = CompanyStore.instance.onDataChanged.listen((_) {
       if (!mounted) return;
       _loadExistingConfig();
+      _loadPermissions(); // ✅ FIX
     });
 
     // ✅ 5-second fast verification timer taaki config live update ho
@@ -100,7 +111,15 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
         return;
       }
       _loadExistingConfig();
+      _loadPermissions(); // ✅ FIX
     });
+  }
+
+  // ✅ FIX — 'edit' permission check karo (view-only ya edit-allowed).
+  Future<void> _loadPermissions() async {
+    final canEdit = await PermissionService.can('feedConsumptionRule', 'edit');
+    if (!mounted) return;
+    setState(() => _canEdit = canEdit);
   }
 
   @override
@@ -207,6 +226,7 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
   }
 
   void _showAddSeasonDialog() {
+    if (!_canEdit) return; // ✅ FIX — safety guard
     final nameCtrl = TextEditingController();
     final multCtrl = TextEditingController();
     int startMonth = 1;
@@ -348,6 +368,17 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ✅ FIX — Poora screen 'feedConsumptionRule' -> 'view' permission se
+    // protect hai. Jisko view permission nahi hai use "Access Nahi Hai"
+    // dikhega, screen khulegi hi nahi.
+    return PermissionScreenGate(
+      moduleId: 'feedConsumptionRule',
+      action: 'view',
+      child: _buildScreenContent(context),
+    );
+  }
+
+  Widget _buildScreenContent(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF9FBF9),
       appBar: AppBar(
@@ -486,6 +517,8 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
                         const SizedBox(height: 10),
                         TextField(
                           controller: _multiplierCtrl,
+                          readOnly:
+                              !_canEdit, // ✅ FIX — view-only user edit nahi kar sakta
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
@@ -516,14 +549,16 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
                           fontSize: 14,
                         ),
                       ),
-                      TextButton.icon(
-                        onPressed: _showAddSeasonDialog,
-                        icon: const Icon(Icons.add_circle_rounded, size: 18),
-                        label: const Text('Season Add Karo'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: primaryGreen,
+                      // ✅ FIX — Sirf edit permission wale hi Season Add kar sakte hain
+                      if (_canEdit)
+                        TextButton.icon(
+                          onPressed: _showAddSeasonDialog,
+                          icon: const Icon(Icons.add_circle_rounded, size: 18),
+                          label: const Text('Season Add Karo'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: primaryGreen,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -581,17 +616,19 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
                                 ],
                               ),
                             ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.delete_outline_rounded,
-                                color: Colors.redAccent,
-                                size: 20,
+                            // ✅ FIX — Sirf edit permission wale hi season delete kar sakte hain
+                            if (_canEdit)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.redAccent,
+                                  size: 20,
+                                ),
+                                onPressed: () => setState(() {
+                                  _seasons.removeAt(i);
+                                  _showSavedBanner = false;
+                                }),
                               ),
-                              onPressed: () => setState(() {
-                                _seasons.removeAt(i);
-                                _showSavedBanner = false;
-                              }),
-                            ),
                           ],
                         ),
                       );
@@ -652,36 +689,38 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
                 ],
 
                 const SizedBox(height: 28),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: _saving ? null : _saveConfig,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryGreen,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                // ✅ FIX — Save button sirf edit permission wale ko dikhega
+                if (_canEdit)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: _saving ? null : _saveConfig,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryGreen,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                    ),
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.save_rounded, color: Colors.white),
-                    label: Text(
-                      _saving ? 'Saving...' : 'Rule Save Karo',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.save_rounded, color: Colors.white),
+                      label: Text(
+                        _saving ? 'Saving...' : 'Rule Save Karo',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
     );
@@ -696,10 +735,13 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
     final bool selected = _ruleType == type;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () => setState(() {
-        _ruleType = type;
-        _showSavedBanner = false;
-      }),
+      // ✅ FIX — view-only user rule type badal nahi sakta
+      onTap: !_canEdit
+          ? null
+          : () => setState(() {
+              _ruleType = type;
+              _showSavedBanner = false;
+            }),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -738,10 +780,13 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
               value: type,
               groupValue: _ruleType,
               activeColor: primaryGreen,
-              onChanged: (v) => setState(() {
-                _ruleType = v!;
-                _showSavedBanner = false;
-              }),
+              // ✅ FIX — view-only user radio bhi change nahi kar sakta
+              onChanged: !_canEdit
+                  ? null
+                  : (v) => setState(() {
+                      _ruleType = v!;
+                      _showSavedBanner = false;
+                    }),
             ),
           ],
         ),
