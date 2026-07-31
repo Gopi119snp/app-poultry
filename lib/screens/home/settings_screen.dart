@@ -148,9 +148,10 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
     String role,
     String moduleId,
     bool value,
+    List<String> actionsToSet, // ✅ NEW — sirf node ke available actions
   ) async {
     setState(() {
-      for (final a in PermissionService.actions) {
+      for (final a in actionsToSet) {
         _roleDefaults[role]![moduleId]![a] = value;
       }
     });
@@ -166,9 +167,10 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
     String phone,
     String moduleId,
     bool value,
+    List<String> actionsToSet, // ✅ NEW — sirf node ke available actions
   ) async {
     setState(() {
-      for (final a in PermissionService.actions) {
+      for (final a in actionsToSet) {
         _personMatrices[phone]![moduleId]![a] = value;
       }
     });
@@ -304,7 +306,8 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
                     _roleDefaults[role]!,
                     (id, action, val) =>
                         _toggleRoleDefault(role, id, action, val),
-                    (id, val) => _setAllRoleDefaultForModule(role, id, val),
+                    (id, val, actions) =>
+                        _setAllRoleDefaultForModule(role, id, val, actions),
                   ),
                 ),
               ),
@@ -383,7 +386,8 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
               PermissionService.tree,
               matrix,
               (id, action, val) => _togglePerson(person.phone, id, action, val),
-              (id, val) => _setAllPersonForModule(person.phone, id, val),
+              (id, val, actions) =>
+                  _setAllPersonForModule(person.phone, id, val, actions),
             ),
           ],
         ),
@@ -397,7 +401,7 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
     List<PermissionNode> nodes,
     Map<String, Map<String, bool>> matrix,
     void Function(String moduleId, String action, bool value) onToggle,
-    void Function(String moduleId, bool value) onSetAll, {
+    void Function(String moduleId, bool value, List<String> actions) onSetAll, {
     int depth = 0,
   }) {
     final List<Widget> widgets = [];
@@ -416,8 +420,8 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
               perms:
                   matrix[node.id] ??
                   {for (final a in PermissionService.actions) a: false},
-              onAllOn: () => onSetAll(node.id, true),
-              onAllOff: () => onSetAll(node.id, false),
+              onAllOn: () => onSetAll(node.id, true, node.availableActions),
+              onAllOff: () => onSetAll(node.id, false, node.availableActions),
               onToggle: (action, val) => onToggle(node.id, action, val),
             ),
           ),
@@ -434,12 +438,13 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
                   id: node.id,
                   label: 'Overall Access (Sabhi)',
                   emoji: node.emoji,
+                  availableActions: node.availableActions, // ✅ FIX
                 ),
                 perms:
                     matrix[node.id] ??
                     {for (final a in PermissionService.actions) a: false},
-                onAllOn: () => onSetAll(node.id, true),
-                onAllOff: () => onSetAll(node.id, false),
+                onAllOn: () => onSetAll(node.id, true, node.availableActions),
+                onAllOff: () => onSetAll(node.id, false, node.availableActions),
                 onToggle: (action, val) => onToggle(node.id, action, val),
                 highlight: true,
               ),
@@ -559,10 +564,11 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
             ),
           ),
           const Divider(height: 1, color: Colors.black12),
-          // ── Action rows ──
-          ...PermissionService.actions.map((action) {
+          // ── Action rows — sirf wahi jo is node mein actually feature ──
+          // ── ke roop mein maujood hain (node.availableActions) ──
+          ...node.availableActions.map((action) {
             final val = perms[action] ?? false;
-            final isLast = action == PermissionService.actions.last;
+            final isLast = action == node.availableActions.last;
             return Column(
               children: [
                 _actionRow(

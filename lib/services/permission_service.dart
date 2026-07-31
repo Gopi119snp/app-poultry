@@ -14,6 +14,14 @@ class PermissionNode {
   hasPermission; // ⭐ Group hote hue bhi khud ka Overall permission rakhega
   final List<PermissionNode> children;
 
+  /// ✅ NEW — Is node ki asal screen mein kaunse actions (View/Add/Edit/
+  /// Delete) ka feature hi maujood hai. Settings screen ab sirf yahi
+  /// buttons dikhayega — jis feature ka option screen mein hai hi nahi,
+  /// uska toggle Settings mein bhi nahi dikhega. Default = sabhi 4
+  /// (purana behaviour, taaki jin nodes ke liye ye specify nahi kiya
+  /// gaya wahan kuch na tute).
+  final List<String> availableActions;
+
   const PermissionNode({
     required this.id,
     required this.label,
@@ -21,6 +29,7 @@ class PermissionNode {
     this.isLeaf = true,
     this.hasPermission = false,
     this.children = const [],
+    this.availableActions = const ['view', 'add', 'edit', 'delete'],
   });
 }
 
@@ -162,6 +171,7 @@ class PermissionService {
       emoji: '🛒',
       isLeaf: false,
       hasPermission: true,
+      availableActions: const ['view'], // sirf category card hai
       children: [
         PermissionNode(
           id: 'chicksPurchase',
@@ -169,16 +179,23 @@ class PermissionService {
           emoji: '🐣',
           isLeaf: false,
           hasPermission: true,
+          availableActions: const ['view'], // sirf category card hai
           children: [
             PermissionNode(
               id: 'chicksPurchaseEntry',
               label: 'Purchase Entry',
               emoji: '🛒',
+              availableActions: const ['view', 'add'], // edit/delete nahi hai
             ),
             PermissionNode(
               id: 'chicksAllocation',
               label: 'Allocation (Farmer ko dena)',
               emoji: '📤',
+              availableActions: const [
+                'view',
+                'add',
+                'edit',
+              ], // delete ka feature nahi hai
             ),
           ],
         ),
@@ -188,16 +205,19 @@ class PermissionService {
           emoji: '🌾',
           isLeaf: false,
           hasPermission: true,
+          availableActions: const ['view'], // sirf category card hai
           children: [
             PermissionNode(
               id: 'feedPurchaseEntry',
               label: 'Purchase Entry',
               emoji: '🛒',
+              availableActions: const ['view', 'add'], // edit/delete nahi hai
             ),
             PermissionNode(
               id: 'feedAllocation',
               label: 'Allocation (Farmer ko dena)',
               emoji: '📤',
+              // full CRUD hai — default 4 actions hi rehne do
             ),
           ],
         ),
@@ -207,16 +227,19 @@ class PermissionService {
           emoji: '💊',
           isLeaf: false,
           hasPermission: true,
+          availableActions: const ['view'], // sirf category card hai
           children: [
             PermissionNode(
               id: 'medicinePurchaseEntry',
               label: 'Purchase Entry',
               emoji: '🛒',
+              // full CRUD hai — default 4 actions hi rehne do
             ),
             PermissionNode(
               id: 'medicineAllocation2',
               label: 'Allocation (Farmer ko dena)',
               emoji: '📤',
+              // full CRUD hai — default 4 actions hi rehne do
             ),
           ],
         ),
@@ -224,8 +247,14 @@ class PermissionService {
           id: 'labourExpense',
           label: 'Labour / Manager Expense',
           emoji: '👷',
+          availableActions: const ['view', 'add'], // edit/delete nahi hai
         ),
-        PermissionNode(id: 'otherExpense', label: 'Other Expense', emoji: '📋'),
+        PermissionNode(
+          id: 'otherExpense',
+          label: 'Other Expense',
+          emoji: '📋',
+          availableActions: const ['view', 'add'], // edit/delete nahi hai
+        ),
       ],
     ),
     PermissionNode(
@@ -568,12 +597,18 @@ class PermissionService {
     walk(tree, []);
   }
 
-  /// Priority: Person override > Role default > Ancestor group permissions.
-  /// Owner gets full access.
+  /// Priority: Person override > Role default. Owner gets full access.
   ///
-  /// Smart hierarchical check: agar user ke paas parent module ki permission hai
-  /// YA uske kisi bhi sub‑item/child ki permission ON hai, toh wo module/button
-  /// khul jana chahiye.
+  /// ✅ FIX — Ab STRICT tree-based check hai: koi bhi child/sub-item ka
+  /// permission ON hone se parent apne aap "ON" nahi maana jayega.
+  /// Har moduleId (parent ho ya leaf) ka apna EXPLICIT toggle hi authoritative
+  /// hai. Matlab agar Owner ne "Purchase / Expense" ka Overall Access OFF
+  /// kiya hai, to Chicks/Feed/Medicine/Labour/Other mein se kisi ka bhi
+  /// permission ON kyu na ho — Purchase card turant hide ho jayega,
+  /// kyunki parent explicitly OFF hai. Isse har node independently control
+  /// hota hai aur "main OFF to sab OFF" wala tree-hierarchy behaviour milta
+  /// hai (parent OFF hone par uske andar navigate karne ka raasta bhi khud
+  /// band ho jata hai, kyunki parent card hi nahi dikhega).
   static Future<bool> can(String moduleId, String action) async {
     if (await SessionService.isOwner) return true;
 
@@ -600,89 +635,8 @@ class PermissionService {
       activeMap = Map<String, dynamic>.from(roleRaw[role]);
     }
 
-    // 1. Direct match check
-    if (hasDirectPerm(activeMap, moduleId)) return true;
-
-    // 2. Purchase / Expense Hierarchy
-    if (moduleId == 'purchaseExpense') {
-      List<String> allList = [
-        'chicksPurchase',
-        'chicksPurchaseEntry',
-        'chicksAllocation',
-        'feedPurchase',
-        'feedPurchaseEntry',
-        'feedAllocation',
-        'medicinePurchase',
-        'medicinePurchaseEntry',
-        'medicineAllocation2',
-        'labourExpense',
-        'otherExpense',
-      ];
-      for (var mod in allList) {
-        if (hasDirectPerm(activeMap, mod)) return true;
-      }
-    }
-    if (moduleId == 'chicksPurchase' &&
-        (hasDirectPerm(activeMap, 'chicksPurchaseEntry') ||
-            hasDirectPerm(activeMap, 'chicksAllocation')))
-      return true;
-    if (moduleId == 'feedPurchase' &&
-        (hasDirectPerm(activeMap, 'feedPurchaseEntry') ||
-            hasDirectPerm(activeMap, 'feedAllocation')))
-      return true;
-    if (moduleId == 'medicinePurchase' &&
-        (hasDirectPerm(activeMap, 'medicinePurchaseEntry') ||
-            hasDirectPerm(activeMap, 'medicineAllocation2')))
-      return true;
-
-    // 3. Sales / Lifting Hierarchy
-    if (moduleId == 'sales') {
-      List<String> allSales = [
-        'chicksSale',
-        'feedSale',
-        'medicineSale',
-        'chickenLiftingSale',
-      ];
-      for (var mod in allSales) {
-        if (hasDirectPerm(activeMap, mod)) return true;
-      }
-    }
-
-    // 4. Reports Hierarchy (Including Total Income)
-    if (moduleId == 'reports') {
-      List<String> allReports = [
-        'opExpenseRecoveryReport',
-        'batchPerformanceReport',
-        'farmerProfitLossReport',
-        'totalIncomeReport',
-      ];
-      for (var mod in allReports) {
-        if (hasDirectPerm(activeMap, mod)) return true;
-      }
-    }
-
-    // 5. Accounts Hierarchy (Including Overview, Udhaar, Kharcha, Kharida, Sales)
-    if (moduleId == 'accounts') {
-      List<String> allAccounts = [
-        'accountsOverview',
-        'accountsUdhaar',
-        'accountsKharcha', // Kharcha sub-item mapping
-        'accountsKharida', // Kharida sub-item mapping
-        'accountsSales', // Sales sub-item mapping inside accounts
-      ];
-      for (var mod in allAccounts) {
-        if (hasDirectPerm(activeMap, mod)) return true;
-      }
-    }
-
-    // 6. Stock Management Hierarchy
-    if (moduleId == 'stockManagement') {
-      if (hasDirectPerm(activeMap, 'feedStock') ||
-          hasDirectPerm(activeMap, 'medicineStock')) {
-        return true;
-      }
-    }
-
-    return false;
+    // Sirf direct match — koi hierarchy OR-fallback nahi. Har module
+    // (parent group ho ya leaf) ka apna explicit toggle hi final hai.
+    return hasDirectPerm(activeMap, moduleId);
   }
 }

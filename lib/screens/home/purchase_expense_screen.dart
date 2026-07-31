@@ -8,6 +8,7 @@ import 'package:poultrypro/services/company_store.dart';
 import 'package:poultrypro/services/session_service.dart';
 import '../../services/permission_service.dart'; // ✅ EDIT 1
 import '../../services/activity_logger.dart';
+import '../../widgets/permission_gate.dart'; // ✅ FIX — PermissionGate/PermissionScreenGate ke liye
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔗 SHARED HELPERS — Farmer ka batch dhoondhna / naya batch ID banana
@@ -332,13 +333,18 @@ class _PurchaseExpenseScreenState extends State<PurchaseExpenseScreen> {
                   actions: [
                     // Edit mode nahi hai toh edit button dikhao
                     if (!isEditMode)
-                      IconButton(
-                        icon: const Icon(
-                          Icons.edit_rounded,
-                          color: Colors.white,
+                      PermissionGate(
+                        moduleId: 'chicksAllocation',
+                        action: 'edit',
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.edit_rounded,
+                            color: Colors.white,
+                          ),
+                          tooltip: 'Edit this allocation',
+                          onPressed: () =>
+                              setModalState(() => isEditMode = true),
                         ),
-                        tooltip: 'Edit this allocation',
-                        onPressed: () => setModalState(() => isEditMode = true),
                       ),
                   ],
                 ),
@@ -2446,6 +2452,7 @@ class _ChicksHistoryScreenState extends State<ChicksHistoryScreen>
   void onCloudDataChanged() {
     // ✅ FIX
     _loadHistory();
+    _loadPermissions(); // ✅ FIX — permission live-refresh
   }
 
   @override
@@ -3303,6 +3310,7 @@ class _FeedHistoryScreenState extends State<FeedHistoryScreen>
   void onCloudDataChanged() {
     // ✅ FIX
     _load();
+    _loadPermissions(); // ✅ FIX — permission live-refresh
   }
 
   @override
@@ -5110,16 +5118,24 @@ class _FeedAllocationDetailScreenState
           ),
         ),
         actions: [
-          IconButton(
-            icon: Icon(
-              _isEditMode ? Icons.close_rounded : Icons.edit_rounded,
-              color: Colors.white,
+          PermissionGate(
+            moduleId: 'feedAllocation',
+            action: 'edit',
+            child: IconButton(
+              icon: Icon(
+                _isEditMode ? Icons.close_rounded : Icons.edit_rounded,
+                color: Colors.white,
+              ),
+              onPressed: () => setState(() => _isEditMode = !_isEditMode),
             ),
-            onPressed: () => setState(() => _isEditMode = !_isEditMode),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_rounded, color: Colors.white),
-            onPressed: _delete,
+          PermissionGate(
+            moduleId: 'feedAllocation',
+            action: 'delete',
+            child: IconButton(
+              icon: const Icon(Icons.delete_rounded, color: Colors.white),
+              onPressed: _delete,
+            ),
           ),
         ],
       ),
@@ -5879,6 +5895,7 @@ class _MedicineHistoryScreenState extends State<MedicineHistoryScreen>
   void onCloudDataChanged() {
     // ✅ FIX
     _loadData();
+    _loadPermissions(); // ✅ FIX — permission live-refresh
   }
 
   @override
@@ -6274,96 +6291,104 @@ class _MedicineRunningLotCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Add more stock
-                    GestureDetector(
-                      onTap: () async {
-                        await _showAddMoreStockDialog(context, med);
-                        onRefresh();
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.teal.shade700,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.add, color: Colors.white, size: 14),
-                            SizedBox(width: 4),
-                            Text(
-                              'Add',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
+                    PermissionGate(
+                      moduleId: 'medicinePurchase',
+                      action: 'add',
+                      child: GestureDetector(
+                        onTap: () async {
+                          await _showAddMoreStockDialog(context, med);
+                          onRefresh();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.shade700,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.add, color: Colors.white, size: 14),
+                              SizedBox(width: 4),
+                              Text(
+                                'Add',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     // Delete entire lot
-                    GestureDetector(
-                      onTap: () async {
-                        final bool? confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('Pura Lot Delete Karein?'),
-                            content: Text(
-                              'Kya aap "$name" ka poora lot delete karna '
-                              'chahte hain?\n\n'
-                              '⚠️ Isse is medicine ki saari purchase '
-                              'history aur allocations bhi delete ho '
-                              'jayenge. Yeh permanent hai.',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, false),
-                                child: const Text('Cancel'),
+                    PermissionGate(
+                      moduleId: 'medicinePurchase',
+                      action: 'delete',
+                      child: GestureDetector(
+                        onTap: () async {
+                          final bool? confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Pura Lot Delete Karein?'),
+                              content: Text(
+                                'Kya aap "$name" ka poora lot delete karna '
+                                'chahte hain?\n\n'
+                                '⚠️ Isse is medicine ki saari purchase '
+                                'history aur allocations bhi delete ho '
+                                'jayenge. Yeh permanent hai.',
                               ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.red,
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Cancel'),
                                 ),
-                                child: const Text('Yes, Delete Lot'),
-                              ),
-                            ],
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                  ),
+                                  child: const Text('Yes, Delete Lot'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm != true) return;
+                          final String? sj = await CompanyStore.instance
+                              .getString('medicineStockList');
+                          if (sj == null) return;
+                          List<dynamic> all = json.decode(sj);
+                          all.removeWhere((m) => m['id']?.toString() == mId);
+                          await CompanyStore.instance.setString(
+                            'medicineStockList',
+                            json.encode(all),
+                          );
+                          Get.snackbar(
+                            'Deleted 🗑️',
+                            '"$name" lot delete ho gaya',
+                            backgroundColor: Colors.red,
+                            colorText: Colors.white,
+                          );
+                          onRefresh();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.red.shade300),
                           ),
-                        );
-                        if (confirm != true) return;
-                        final String? sj = await CompanyStore.instance
-                            .getString('medicineStockList');
-                        if (sj == null) return;
-                        List<dynamic> all = json.decode(sj);
-                        all.removeWhere((m) => m['id']?.toString() == mId);
-                        await CompanyStore.instance.setString(
-                          'medicineStockList',
-                          json.encode(all),
-                        );
-                        Get.snackbar(
-                          'Deleted 🗑️',
-                          '"$name" lot delete ho gaya',
-                          backgroundColor: Colors.red,
-                          colorText: Colors.white,
-                        );
-                        onRefresh();
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.red.shade300),
-                        ),
-                        child: Icon(
-                          Icons.delete_rounded,
-                          color: Colors.red.shade700,
-                          size: 16,
+                          child: Icon(
+                            Icons.delete_rounded,
+                            color: Colors.red.shade700,
+                            size: 16,
+                          ),
                         ),
                       ),
                     ),
@@ -8015,43 +8040,51 @@ class _MedicinePurchaseHistoryScreenState
                               ),
                               const SizedBox(width: 8),
                               // Edit
-                              InkWell(
-                                onTap: () => _editEntry(i),
-                                borderRadius: BorderRadius.circular(6),
-                                child: Container(
-                                  padding: const EdgeInsets.all(5),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: Colors.blue.shade200,
+                              PermissionGate(
+                                moduleId: 'medicinePurchaseEntry',
+                                action: 'edit',
+                                child: InkWell(
+                                  onTap: () => _editEntry(i),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade50,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: Colors.blue.shade200,
+                                      ),
                                     ),
-                                  ),
-                                  child: Icon(
-                                    Icons.edit_rounded,
-                                    size: 14,
-                                    color: Colors.blue.shade700,
+                                    child: Icon(
+                                      Icons.edit_rounded,
+                                      size: 14,
+                                      color: Colors.blue.shade700,
+                                    ),
                                   ),
                                 ),
                               ),
                               const SizedBox(width: 6),
                               // Delete
-                              InkWell(
-                                onTap: () => _deleteEntry(i),
-                                borderRadius: BorderRadius.circular(6),
-                                child: Container(
-                                  padding: const EdgeInsets.all(5),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.shade50,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: Colors.red.shade200,
+                              PermissionGate(
+                                moduleId: 'medicinePurchaseEntry',
+                                action: 'delete',
+                                child: InkWell(
+                                  onTap: () => _deleteEntry(i),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: Colors.red.shade200,
+                                      ),
                                     ),
-                                  ),
-                                  child: Icon(
-                                    Icons.delete_rounded,
-                                    size: 14,
-                                    color: Colors.red.shade700,
+                                    child: Icon(
+                                      Icons.delete_rounded,
+                                      size: 14,
+                                      color: Colors.red.shade700,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -8949,16 +8982,24 @@ class _MedicineAllocationDetailScreenState
           ),
         ),
         actions: [
-          IconButton(
-            icon: Icon(
-              _isEditMode ? Icons.close_rounded : Icons.edit_rounded,
-              color: Colors.white,
+          PermissionGate(
+            moduleId: 'medicineAllocation2',
+            action: 'edit',
+            child: IconButton(
+              icon: Icon(
+                _isEditMode ? Icons.close_rounded : Icons.edit_rounded,
+                color: Colors.white,
+              ),
+              onPressed: () => setState(() => _isEditMode = !_isEditMode),
             ),
-            onPressed: () => setState(() => _isEditMode = !_isEditMode),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_rounded, color: Colors.white),
-            onPressed: _delete,
+          PermissionGate(
+            moduleId: 'medicineAllocation2',
+            action: 'delete',
+            child: IconButton(
+              icon: const Icon(Icons.delete_rounded, color: Colors.white),
+              onPressed: _delete,
+            ),
           ),
         ],
       ),
