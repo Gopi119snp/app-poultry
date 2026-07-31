@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'dart:convert';
 import 'dart:async'; // ✅ Added for Timer
 import '../../services/company_store.dart';
+import '../../services/permission_service.dart'; // ✅ FIX — Accounts tabs ko permission se gate karne ke liye
 import 'purchase_expense_screen.dart'
     show
         formatHistoryDateTime,
@@ -120,8 +121,21 @@ class AccountsScreen extends StatefulWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 class _AccountsScreenState extends State<AccountsScreen>
     with TickerProviderStateMixin {
-  late TabController _tabController;
+  // ✅ FIX — TabController ab nullable hai, kyunki permission load hone
+  // se pehle hume nahi pata kitne tabs actually dikhne chahiye. Jab tak
+  // permissions load nahi hote, TabBar/TabBarView render hi nahi honge.
+  TabController? _tabController;
   bool _isLoading = true;
+
+  // ✅ FIX — Har tab ka apna permission flag (accountsOverview/Udhaar/
+  // Kharcha/Kharida/Sales) — purchase_expense_screen.dart aur
+  // sales_screen.dart jaisa hi pattern.
+  bool _permissionsLoaded = false;
+  bool _canOverview = false;
+  bool _canUdhaar = false;
+  bool _canKharcha = false;
+  bool _canKharida = false;
+  bool _canSales = false;
 
   // ✅ Real-time permission & data sync variables
   StreamSubscription<void>? _dataChangeSub;
@@ -145,7 +159,6 @@ class _AccountsScreenState extends State<AccountsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
 
     final now = DateTime.now();
     _selectedFilter = AppDateFilter(
@@ -154,11 +167,13 @@ class _AccountsScreenState extends State<AccountsScreen>
       end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
     );
 
+    _loadPermissions(); // ✅ FIX — permission load karo
     _loadAll();
 
     // ✅ Real-time CompanyStore stream listener
     _dataChangeSub = CompanyStore.instance.onDataChanged.listen((_) {
       if (!mounted) return;
+      _loadPermissions(); // ✅ FIX — permission bhi live-refresh ho
       _loadAll();
     });
 
@@ -168,13 +183,54 @@ class _AccountsScreenState extends State<AccountsScreen>
         timer.cancel();
         return;
       }
-      // Agar zaroorat ho toh yahan permissions check ya data refresh laga sakte hain
+      _loadPermissions(); // ✅ FIX — periodic permission refresh
+    });
+  }
+
+  // ✅ FIX — 5 accounts tabs ka view-permission load karo, aur jitne tabs
+  // actually allowed hain utni hi length ka TabController banao. Agar
+  // beech mein Owner koi permission ON/OFF karta hai to tab count badal
+  // sakta hai — isliye purana controller dispose karke naya bana dete hain.
+  Future<void> _loadPermissions() async {
+    final overview = await PermissionService.can('accountsOverview', 'view');
+    final udhaar = await PermissionService.can('accountsUdhaar', 'view');
+    final kharcha = await PermissionService.can('accountsKharcha', 'view');
+    final kharida = await PermissionService.can('accountsKharida', 'view');
+    final sales = await PermissionService.can('accountsSales', 'view');
+    if (!mounted) return;
+
+    final int newVisibleCount = [
+      overview,
+      udhaar,
+      kharcha,
+      kharida,
+      sales,
+    ].where((v) => v).length;
+    final int oldVisibleCount = _tabController?.length ?? -1;
+
+    setState(() {
+      _canOverview = overview;
+      _canUdhaar = udhaar;
+      _canKharcha = kharcha;
+      _canKharida = kharida;
+      _canSales = sales;
+      _permissionsLoaded = true;
+
+      // Tab count change hua to controller recreate karo (warna
+      // "TabController's length != TabBarView's children" crash aayega).
+      if (newVisibleCount != oldVisibleCount) {
+        _tabController?.dispose();
+        _tabController = TabController(
+          length: newVisibleCount == 0 ? 1 : newVisibleCount,
+          vsync: this,
+        );
+      }
     });
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     _dataChangeSub?.cancel();
     _permissionPollTimer?.cancel(); // ✅ Clean up timer
     super.dispose();
@@ -832,6 +888,113 @@ class _AccountsScreenState extends State<AccountsScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ✅ FIX — Permissions load hone tak simple loader dikhao, TabBar/
+    // TabController abhi exist hi nahi karta.
+    if (!_permissionsLoaded || _tabController == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: _accGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
+          ),
+          title: const Row(
+            children: [
+              Text('💼', style: TextStyle(fontSize: 20)),
+              SizedBox(width: 8),
+              Text(
+                'Accounts',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+        body: const Center(child: CircularProgressIndicator(color: _accGreen)),
+      );
+    }
+
+    // ✅ FIX — Sirf wahi tabs banao jinka 'view' permission ON hai
+    // (purchase/sales category-card jaisa hi filtering pattern).
+    final List<Tab> tabs = [];
+    final List<Widget> tabViews = [];
+
+    if (_canOverview) {
+      tabs.add(const Tab(text: '📊 Overview'));
+      tabViews.add(_buildOverviewTab());
+    }
+    if (_canUdhaar) {
+      tabs.add(const Tab(text: '⏳ Udhaar'));
+      tabViews.add(_buildDuesTab());
+    }
+    if (_canKharcha) {
+      tabs.add(const Tab(text: '💸 Kharcha'));
+      tabViews.add(
+        _buildLedgerTab(_filteredExpenses, 'Koi expense record nahi.'),
+      );
+    }
+    if (_canKharida) {
+      tabs.add(const Tab(text: '🛒 Kharida'));
+      tabViews.add(
+        _KharidaTabView(
+          selectedFilter: _selectedFilter,
+          chicksPurchases: _rawChicksPurchases,
+          feedStock: _rawFeedStock,
+          medicineStock: _rawMedicineStock,
+          onRefresh: _loadAll,
+        ),
+      );
+    }
+    if (_canSales) {
+      tabs.add(const Tab(text: '🛍️ Sales'));
+      tabViews.add(
+        _PrivateSalesTabView(
+          selectedFilter: _selectedFilter,
+          chicksPurchases: _rawChicksPurchases,
+          feedSales: _rawFeedSales,
+          medicineSales: _rawMedicineSales,
+          onRefresh: _loadAll,
+        ),
+      );
+    }
+
+    // ✅ FIX — Koi bhi tab allowed nahi hai to "access nahi hai" dikhao,
+    // TabBar bilkul render mat karo (warna empty TabBar crash karegi).
+    if (tabs.isEmpty) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: _accGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
+          ),
+          title: const Text(
+            'Accounts',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+        body: Center(
+          child: Text(
+            'Aapko Accounts ka access nahi diya gaya hai.',
+            style: TextStyle(color: Colors.grey.shade500),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -903,39 +1066,12 @@ class _AccountsScreenState extends State<AccountsScreen>
             fontWeight: FontWeight.bold,
             fontSize: 12.5,
           ),
-          tabs: const [
-            Tab(text: '📊 Overview'),
-            Tab(text: '⏳ Udhaar'),
-            Tab(text: '💸 Kharcha'),
-            Tab(text: '🛒 Kharida'),
-            Tab(text: '🛍️ Sales'),
-          ],
+          tabs: tabs,
         ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: _accGreen))
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildOverviewTab(),
-                _buildDuesTab(),
-                _buildLedgerTab(_filteredExpenses, 'Koi expense record nahi.'),
-                _KharidaTabView(
-                  selectedFilter: _selectedFilter,
-                  chicksPurchases: _rawChicksPurchases,
-                  feedStock: _rawFeedStock,
-                  medicineStock: _rawMedicineStock,
-                  onRefresh: _loadAll,
-                ),
-                _PrivateSalesTabView(
-                  selectedFilter: _selectedFilter,
-                  chicksPurchases: _rawChicksPurchases,
-                  feedSales: _rawFeedSales,
-                  medicineSales: _rawMedicineSales,
-                  onRefresh: _loadAll,
-                ),
-              ],
-            ),
+          : TabBarView(controller: _tabController, children: tabViews),
     );
   }
 

@@ -263,14 +263,35 @@ class PermissionService {
       emoji: '💰',
       isLeaf: false,
       hasPermission: true,
+      // ✅ FIX — purchaseExpense parent jaisa hi pattern: "Sales / Lifting"
+      // ka Overall card khud koi add/edit/delete kaam nahi karta, sirf
+      // category navigate karta hai. Isliye Settings mein bhi sirf "View"
+      // toggle dikhna chahiye — baaki 3 (Add/Edit/Delete) yahan kabhi
+      // istemal hi nahi honge.
+      availableActions: const ['view'],
       children: [
-        PermissionNode(id: 'chicksSale', label: 'Chicks Sale', emoji: '🐣'),
+        PermissionNode(
+          id: 'chicksSale',
+          label: 'Chicks Sale',
+          emoji: '🐣',
+          // ✅ FIX — Ye sirf ChicksSalesView (read-only) khudata hai, jo
+          // chicksPurchaseHistory se auto-derive hoti hai. Add/Edit/Delete
+          // ka koi feature hi nahi hai screen mein, isliye Settings mein
+          // bhi sirf "View" toggle dikhna chahiye (purchase category-card
+          // wala hi pattern).
+          availableActions: const ['view'],
+        ),
         PermissionNode(id: 'feedSale', label: 'Feed Sale', emoji: '🌾'),
         PermissionNode(id: 'medicineSale', label: 'Medicine Sale', emoji: '💊'),
         PermissionNode(
           id: 'chickenLiftingSale',
           label: 'Chicken Sale (Lifting)',
           emoji: '🐔',
+          // ✅ FIX — Abhi ye feature banaya hi nahi gaya (stub onTap hai
+          // sales_screen.dart mein), isliye sirf "View" toggle rakha —
+          // jaise hi ye screen actually banegi, yahan availableActions
+          // hata ke default 4-action wapas kar dena.
+          availableActions: const ['view'],
         ),
       ],
     ),
@@ -280,27 +301,40 @@ class PermissionService {
       emoji: '📊',
       isLeaf: false,
       hasPermission: true,
+      // ✅ FIX — purchaseExpense/sales parent jaisa hi: "Reports" ka Overall
+      // card khud sirf category navigate karta hai, koi add/edit/delete
+      // nahi. Sirf "View" toggle dikhna chahiye Settings mein.
+      availableActions: const ['view'],
       children: [
         PermissionNode(
           id: 'opExpenseRecoveryReport',
           label: 'Operational Expense Recovery',
           emoji: '💹',
+          // ✅ FIX — Ye report poori tarah read-only hai (koi add/edit/
+          // delete/export button reports_screen.dart mein hai hi nahi).
+          availableActions: const ['view'],
         ),
         PermissionNode(
           id: 'batchPerformanceReport',
           label: 'Batch Performance',
           emoji: '📈',
+          // ✅ FIX — Read-only report, sirf View.
+          availableActions: const ['view'],
         ),
         PermissionNode(
           id: 'farmerProfitLossReport',
           label: 'Farmer Profit / Loss',
           emoji: '📉',
+          // ✅ FIX — Read-only report, sirf View.
+          availableActions: const ['view'],
         ),
         // ✅ NAYA ADD KIYA GAYA NODE (Farmer Profit / Loss ke theek neeche)
         PermissionNode(
           id: 'totalIncomeReport',
           label: 'Total Income',
           emoji: '💰',
+          // ✅ FIX — Read-only report, sirf View.
+          availableActions: const ['view'],
         ),
       ],
     ),
@@ -310,12 +344,42 @@ class PermissionService {
       emoji: '🧾',
       isLeaf: false,
       hasPermission: true,
+      // ✅ FIX — reports jaisa hi: Accounts ka Overall card sirf category
+      // navigate karta hai, koi add/edit/delete nahi.
+      availableActions: const ['view'],
       children: [
-        PermissionNode(id: 'accountsOverview', label: 'Overview', emoji: '📊'),
-        PermissionNode(id: 'accountsUdhaar', label: 'Udhaar', emoji: '⏳'),
-        PermissionNode(id: 'accountsKharcha', label: 'Kharcha', emoji: '💸'),
-        PermissionNode(id: 'accountsKharida', label: 'Kharida', emoji: '🛒'),
-        PermissionNode(id: 'accountsSales', label: 'Sales', emoji: '🎁'),
+        PermissionNode(
+          id: 'accountsOverview',
+          label: 'Overview',
+          emoji: '📊',
+          // ✅ FIX — Poora accounts_screen.dart read-only hai (koi edit/
+          // delete button hai hi nahi), sirf View.
+          availableActions: const ['view'],
+        ),
+        PermissionNode(
+          id: 'accountsUdhaar',
+          label: 'Udhaar',
+          emoji: '⏳',
+          availableActions: const ['view'],
+        ),
+        PermissionNode(
+          id: 'accountsKharcha',
+          label: 'Kharcha',
+          emoji: '💸',
+          availableActions: const ['view'],
+        ),
+        PermissionNode(
+          id: 'accountsKharida',
+          label: 'Kharida',
+          emoji: '🛒',
+          availableActions: const ['view'],
+        ),
+        PermissionNode(
+          id: 'accountsSales',
+          label: 'Sales',
+          emoji: '🎁',
+          availableActions: const ['view'],
+        ),
       ],
     ),
     PermissionNode(id: 'settlement', label: 'Settlement Engine', emoji: '⚖️'),

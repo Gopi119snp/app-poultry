@@ -7,6 +7,7 @@ import 'package:poultrypro/services/company_store.dart';
 import 'package:poultrypro/services/session_service.dart';
 import 'package:poultrypro/services/activity_logger.dart';
 import '../../services/permission_service.dart'; // ✏️ EDIT 1
+import '../../widgets/permission_gate.dart'; // ✅ FIX — Detail screen ke Edit/Delete buttons gate karne ke liye
 
 import 'purchase_expense_screen.dart'
     show
@@ -2304,24 +2305,37 @@ class FeedSaleDetailScreen extends StatelessWidget {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_rounded, color: Colors.white),
-            tooltip: 'Edit Sale',
-            onPressed: () async {
-              final result = await Get.to(
-                () => AddPrivateFeedSaleScreen(existingSale: sale),
-              );
-              if (result == true) {
-                Get.back(
-                  result: true,
-                ); // Detail screen bhi band karo refresh ke liye
-              }
-            },
+          // ✅ FIX — Edit button ab sirf tab dikhega jab user ke paas
+          // 'feedSale' module ka 'edit' permission ho (purchase_expense_screen.dart
+          // jaisa hi PermissionGate pattern).
+          PermissionGate(
+            moduleId: 'feedSale',
+            action: 'edit',
+            child: IconButton(
+              icon: const Icon(Icons.edit_rounded, color: Colors.white),
+              tooltip: 'Edit Sale',
+              onPressed: () async {
+                final result = await Get.to(
+                  () => AddPrivateFeedSaleScreen(existingSale: sale),
+                );
+                if (result == true) {
+                  Get.back(
+                    result: true,
+                  ); // Detail screen bhi band karo refresh ke liye
+                }
+              },
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_rounded, color: Colors.white),
-            tooltip: 'Delete Sale',
-            onPressed: () => _confirmDeleteSale(context, sale),
+          // ✅ FIX — Delete button ab sirf tab dikhega jab 'feedSale' module
+          // ka 'delete' permission ho.
+          PermissionGate(
+            moduleId: 'feedSale',
+            action: 'delete',
+            child: IconButton(
+              icon: const Icon(Icons.delete_rounded, color: Colors.white),
+              tooltip: 'Delete Sale',
+              onPressed: () => _confirmDeleteSale(context, sale),
+            ),
           ),
         ],
       ),
@@ -4230,18 +4244,30 @@ class MedicineSaleDetailScreen extends StatelessWidget {
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_rounded, color: Colors.white),
-            onPressed: () async {
-              final r = await Get.to(
-                () => AddPrivateMedicineSaleScreen(existingSale: sale),
-              );
-              if (r == true) Get.back(result: true);
-            },
+          // ✅ FIX — 'medicineSale' module ke 'edit' permission se gated.
+          PermissionGate(
+            moduleId: 'medicineSale',
+            action: 'edit',
+            child: IconButton(
+              icon: const Icon(Icons.edit_rounded, color: Colors.white),
+              tooltip: 'Edit Sale',
+              onPressed: () async {
+                final r = await Get.to(
+                  () => AddPrivateMedicineSaleScreen(existingSale: sale),
+                );
+                if (r == true) Get.back(result: true);
+              },
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_rounded, color: Colors.white),
-            onPressed: () => _delMedSale(context, sale),
+          // ✅ FIX — 'medicineSale' module ke 'delete' permission se gated.
+          PermissionGate(
+            moduleId: 'medicineSale',
+            action: 'delete',
+            child: IconButton(
+              icon: const Icon(Icons.delete_rounded, color: Colors.white),
+              tooltip: 'Delete Sale',
+              onPressed: () => _delMedSale(context, sale),
+            ),
           ),
         ],
       ),
