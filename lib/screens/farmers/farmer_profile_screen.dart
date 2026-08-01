@@ -6,7 +6,7 @@ import '../../services/company_store.dart';
 import '../../services/activity_logger.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import 'package:google_ml_kit/google_ml_kit.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'batch_detail_screen.dart';
 import 'batch_create_screen.dart';
 import 'farmer_report_screen.dart';
@@ -1462,7 +1462,9 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
 
     try {
       final inputImage = InputImage.fromFilePath(selectedFilePath);
-      final textRecognizer = GoogleMlKit.vision.textRecognizer();
+      final textRecognizer = TextRecognizer(
+        script: TextRecognitionScript.latin,
+      );
       final RecognizedText recognizedText = await textRecognizer.processImage(
         inputImage,
       );

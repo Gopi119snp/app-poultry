@@ -21,7 +21,7 @@ import 'performance_alert_rule_screen.dart';
 import 'accounts_screen.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import 'package:google_ml_kit/google_ml_kit.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'reports_screen.dart';
@@ -1890,7 +1890,9 @@ class _HomeScreenState extends State<HomeScreen>
 
               try {
                 final inputImage = InputImage.fromFilePath(filePath);
-                final textRecognizer = GoogleMlKit.vision.textRecognizer();
+                final textRecognizer = TextRecognizer(
+                  script: TextRecognitionScript.latin,
+                );
                 final RecognizedText recognizedText = await textRecognizer
                     .processImage(inputImage);
                 String extractedText = recognizedText.text.toUpperCase().trim();
@@ -7068,7 +7070,9 @@ class _SmartScannerScreenState extends State<SmartScannerScreen> {
         bytes: bytes,
         metadata: inputImageData,
       );
-      final textRecognizer = GoogleMlKit.vision.textRecognizer();
+      final textRecognizer = TextRecognizer(
+        script: TextRecognitionScript.latin,
+      );
       final RecognizedText recognizedText = await textRecognizer.processImage(
         inputImage,
       );
