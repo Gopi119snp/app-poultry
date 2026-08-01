@@ -9,6 +9,7 @@ import '../../../utils/fraud_risk_engine.dart';
 import '../../../utils/performance_alert_engine.dart';
 import '../../../services/activity_logger.dart'; // 🛑 NAYA IMPORT
 import '../../../services/permission_service.dart'; // ✅ FIX — is screen mein row-edit ka koi permission check nahi tha
+import '../../../widgets/permission_gate.dart'; // ✅ FIX — PermissionScreenGate ke liye
 
 // =============================================================================
 // 📅 DAILY UPDATE LIST SCREEN
@@ -144,9 +145,12 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
   }
 
   Future<void> _loadEditPermissionFlags() async {
-    final weight = await PermissionService.can('averageWeight', 'add');
-    final mortality = await PermissionService.can('mortality', 'add');
-    final remainingFeed = await PermissionService.can('remainingFeed', 'add');
+    final weight = await PermissionService.canNested('averageWeight', 'add');
+    final mortality = await PermissionService.canNested('mortality', 'add');
+    final remainingFeed = await PermissionService.canNested(
+      'remainingFeed',
+      'add',
+    );
     if (!mounted) return;
     setState(() {
       _canAddWeight = weight;
@@ -1294,639 +1298,679 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFEFF4EF),
-      extendBodyBehindAppBar: false,
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(kToolbarHeight),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [primaryGreen, accentGreen],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: primaryGreen.withValues(alpha: 0.45),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
+    // ✅ FIX — 'dailyUpdateList' ke 'view' se gated. batch_detail_screen.dart
+    // mein ye button already _canViewDailyUpdateList se gated tha, ab
+    // screen khud bhi apne aap ko protect karti hai (already-open scenario).
+    return PermissionScreenGate(
+      moduleId: 'dailyUpdateList',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFEFF4EF),
+        extendBodyBehindAppBar: false,
+        appBar: PreferredSize(
+          preferredSize: const Size.fromHeight(kToolbarHeight),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [primaryGreen, accentGreen],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-            ],
-          ),
-          child: AppBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            iconTheme: const IconThemeData(color: Colors.white),
-            title: const Text(
-              'Daily Update List',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.3,
-                shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
-              ),
+              boxShadow: [
+                BoxShadow(
+                  color: primaryGreen.withValues(alpha: 0.45),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
             ),
-            actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.15),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.settings_rounded,
-                      color: Colors.white,
-                    ),
-                    tooltip: 'Cost Settings',
-                    onPressed: _showCostConfigSheet,
-                  ),
+            child: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              iconTheme: const IconThemeData(color: Colors.white),
+              title: const Text(
+                'Daily Update List',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.3,
+                  shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
                 ),
               ),
-            ],
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.15),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.settings_rounded,
+                        color: Colors.white,
+                      ),
+                      tooltip: 'Cost Settings',
+                      onPressed: _showCostConfigSheet,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: primaryGreen))
-          : Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFFEFF4EF), Color(0xFFF9FBF9)],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
+        body: _loading
+            ? const Center(
+                child: CircularProgressIndicator(color: primaryGreen),
+              )
+            : Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFFEFF4EF), Color(0xFFF9FBF9)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
                 ),
-              ),
-              child: Column(
-                children: [
-                  // Cost banner
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.blue.shade100.withValues(alpha: 0.9),
-                            blurRadius: 10,
-                            offset: const Offset(0, 5),
-                          ),
-                          const BoxShadow(
-                            color: Colors.white,
-                            blurRadius: 1,
-                            offset: Offset(-1, -1),
-                          ),
-                        ],
-                        border: Border.all(color: Colors.blue.shade100),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 30,
-                            height: 30,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.blue.shade300,
-                                  Colors.blue.shade600,
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
+                child: Column(
+                  children: [
+                    // Cost banner
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.blue.shade100.withValues(
+                                alpha: 0.9,
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.blue.shade200,
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 5),
+                            ),
+                            const BoxShadow(
+                              color: Colors.white,
+                              blurRadius: 1,
+                              offset: Offset(-1, -1),
+                            ),
+                          ],
+                          border: Border.all(color: Colors.blue.shade100),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 30,
+                              height: 30,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.blue.shade300,
+                                    Colors.blue.shade600,
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.blue.shade200,
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  '💰',
+                                  style: TextStyle(fontSize: 15),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _appliedRuleId == 1
+                                    ? 'Cost/Kg abhi "Rule 1 (Big/Small Auto Size)" ke saved rates se aa raha hai (weight ke hisaab se auto).'
+                                    : 'Cost/Kg abhi ⚙️ Fallback Settings se aa raha hai (Rule 2 mein cost fields nahi hain abhi).',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: Colors.blue.shade900,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Zoom control
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.06),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.zoom_in_rounded,
+                                  size: 16,
+                                  color: primaryGreen,
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'List Zoom',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black54,
+                                  ),
                                 ),
                               ],
                             ),
-                            child: const Center(
-                              child: Text('💰', style: TextStyle(fontSize: 15)),
+                            Row(
+                              children: [
+                                _zoomButton(
+                                  icon: Icons.remove_rounded,
+                                  onTap: () => setState(() {
+                                    _tableScale = (_tableScale - 0.1).clamp(
+                                      0.5,
+                                      1.8,
+                                    );
+                                  }),
+                                ),
+                                Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [primaryGreen, accentGreen],
+                                    ),
+                                    borderRadius: BorderRadius.circular(20),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: primaryGreen.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    '${(_tableScale * 100).round()}%',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                _zoomButton(
+                                  icon: Icons.add_rounded,
+                                  onTap: () => setState(() {
+                                    _tableScale = (_tableScale + 0.1).clamp(
+                                      0.5,
+                                      1.8,
+                                    );
+                                  }),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _appliedRuleId == 1
-                                  ? 'Cost/Kg abhi "Rule 1 (Big/Small Auto Size)" ke saved rates se aa raha hai (weight ke hisaab se auto).'
-                                  : 'Cost/Kg abhi ⚙️ Fallback Settings se aa raha hai (Rule 2 mein cost fields nahi hain abhi).',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: Colors.blue.shade900,
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
 
-                  // Zoom control
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.zoom_in_rounded,
-                                size: 16,
-                                color: primaryGreen,
+                    // Tip banner
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                      child: Container(
+                        padding: const EdgeInsets.all(11),
+                        decoration: BoxDecoration(
+                          color: lightGreen,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.green.shade100),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.green.shade100.withValues(
+                                alpha: 0.8,
                               ),
-                              const SizedBox(width: 6),
-                              const Text(
-                                'List Zoom',
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('👉', style: TextStyle(fontSize: 14)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Kisi bhi din ki ROW par TAP karke Mortality/Weight/Feed add karo. '
+                                'Side mein scroll karke saare columns bhi dekh sakte ho.',
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black54,
+                                  fontSize: 11.5,
+                                  color: Colors.green.shade900,
+                                  height: 1.3,
                                 ),
                               ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              _zoomButton(
-                                icon: Icons.remove_rounded,
-                                onTap: () => setState(() {
-                                  _tableScale = (_tableScale - 0.1).clamp(
-                                    0.5,
-                                    1.8,
-                                  );
-                                }),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Table
+                    Expanded(
+                      child: _rows.isEmpty
+                          ? Center(
+                              child: Text(
+                                // #22/#23 fix: honest empty-state messaging
+                                // instead of silently faking a Day 1 or
+                                // silently treating a bad date as "today".
+                                _startDateInvalid
+                                    ? 'Batch ki start date sahi format mein nahi hai — pehle use theek karein.'
+                                    : _batchNotStarted
+                                    ? 'Yeh batch abhi start nahi hua hai.'
+                                    : 'Koi din data nahi hai',
                               ),
-                              Container(
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 5,
-                                ),
+                            )
+                          : Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                              child: Container(
                                 decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [primaryGreen, accentGreen],
-                                  ),
-                                  borderRadius: BorderRadius.circular(20),
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: primaryGreen.withValues(
-                                        alpha: 0.35,
+                                      color: Colors.black.withValues(
+                                        alpha: 0.12,
                                       ),
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 3),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 8),
                                     ),
                                   ],
                                 ),
-                                child: Text(
-                                  '${(_tableScale * 100).round()}%',
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              _zoomButton(
-                                icon: Icons.add_rounded,
-                                onTap: () => setState(() {
-                                  _tableScale = (_tableScale + 0.1).clamp(
-                                    0.5,
-                                    1.8,
-                                  );
-                                }),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // Tip banner
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                    child: Container(
-                      padding: const EdgeInsets.all(11),
-                      decoration: BoxDecoration(
-                        color: lightGreen,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.green.shade100),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.green.shade100.withValues(alpha: 0.8),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('👉', style: TextStyle(fontSize: 14)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Kisi bhi din ki ROW par TAP karke Mortality/Weight/Feed add karo. '
-                              'Side mein scroll karke saare columns bhi dekh sakte ho.',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: Colors.green.shade900,
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // Table
-                  Expanded(
-                    child: _rows.isEmpty
-                        ? Center(
-                            child: Text(
-                              // #22/#23 fix: honest empty-state messaging
-                              // instead of silently faking a Day 1 or
-                              // silently treating a bad date as "today".
-                              _startDateInvalid
-                                  ? 'Batch ki start date sahi format mein nahi hai — pehle use theek karein.'
-                                  : _batchNotStarted
-                                  ? 'Yeh batch abhi start nahi hua hai.'
-                                  : 'Koi din data nahi hai',
-                            ),
-                          )
-                        : Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.12),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
+                                clipBehavior: Clip.antiAlias,
                                 child: SingleChildScrollView(
-                                  child: DataTable(
-                                    showCheckboxColumn: false,
-                                    headingRowColor: WidgetStateProperty.all(
-                                      primaryGreen,
-                                    ),
-                                    headingTextStyle: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 11.5 * _tableScale,
-                                      letterSpacing: 0.2,
-                                    ),
-                                    dataTextStyle: TextStyle(
-                                      fontSize: 11.5 * _tableScale,
-                                    ),
-                                    columnSpacing: 18 * _tableScale,
-                                    horizontalMargin: 12 * _tableScale,
-                                    dataRowMinHeight: 42 * _tableScale,
-                                    dataRowMaxHeight: 58 * _tableScale,
-                                    columns: const [
-                                      DataColumn(label: Text('Edit')),
-                                      DataColumn(label: Text('Risk')),
-                                      DataColumn(label: Text('Date')),
-                                      DataColumn(label: Text('Din')),
-                                      DataColumn(label: Text('Live Chicks')),
-                                      DataColumn(label: Text('Mortality')),
-                                      DataColumn(label: Text('Total Mort.')),
-                                      DataColumn(label: Text('Mort. %')),
-                                      DataColumn(
-                                        label: Text('Daily Feed (kg)'),
+                                  scrollDirection: Axis.horizontal,
+                                  child: SingleChildScrollView(
+                                    child: DataTable(
+                                      showCheckboxColumn: false,
+                                      headingRowColor: WidgetStateProperty.all(
+                                        primaryGreen,
                                       ),
-                                      DataColumn(
-                                        label: Text('Total Feed (kg)'),
+                                      headingTextStyle: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11.5 * _tableScale,
+                                        letterSpacing: 0.2,
                                       ),
-                                      DataColumn(
-                                        label: Text('Feed Stock (kg)'),
+                                      dataTextStyle: TextStyle(
+                                        fontSize: 11.5 * _tableScale,
                                       ),
-                                      DataColumn(
-                                        label: Text('Feed Stock (Manual)'),
-                                      ),
-                                      DataColumn(label: Text('Wt Auto (kg)')),
-                                      DataColumn(label: Text('Wt Manual (kg)')),
-                                      DataColumn(label: Text('FCR Auto')),
-                                      DataColumn(label: Text('FCR Manual')),
-                                      DataColumn(label: Text('Cost/Kg (₹)')),
-                                    ],
-                                    rows: _rows.asMap().entries.map((entry) {
-                                      final i = entry.key;
-                                      final r = entry.value;
-                                      final bool isHigh =
-                                          r.fraud.riskLevel == 'high';
-                                      final bool isEven = i % 2 == 0;
-                                      final bool isEditable = _isEditableDate(
-                                        r.date,
-                                      );
-                                      // ✅ FIX — pehle sirf date-window check
-                                      // hota tha, permission bilkul check
-                                      // nahi hota tha. Ab agar user ke paas
-                                      // teeno mein se koi bhi add-permission
-                                      // nahi hai, to edit icon/tap dikhega
-                                      // hi nahi (neeche _canEditAnyField se).
-                                      return DataRow(
-                                        color: WidgetStateProperty.all(
-                                          r.hasMismatch
-                                              ? Colors.red.shade100
-                                              : (isHigh
-                                                    ? Colors.red.shade50
-                                                    : (isEven
-                                                          ? Colors.white
-                                                          : lightGreen
-                                                                .withValues(
-                                                                  alpha: 0.5,
-                                                                ))),
+                                      columnSpacing: 18 * _tableScale,
+                                      horizontalMargin: 12 * _tableScale,
+                                      dataRowMinHeight: 42 * _tableScale,
+                                      dataRowMaxHeight: 58 * _tableScale,
+                                      columns: const [
+                                        DataColumn(label: Text('Edit')),
+                                        DataColumn(label: Text('Risk')),
+                                        DataColumn(label: Text('Date')),
+                                        DataColumn(label: Text('Din')),
+                                        DataColumn(label: Text('Live Chicks')),
+                                        DataColumn(label: Text('Mortality')),
+                                        DataColumn(label: Text('Total Mort.')),
+                                        DataColumn(label: Text('Mort. %')),
+                                        DataColumn(
+                                          label: Text('Daily Feed (kg)'),
                                         ),
-                                        onSelectChanged: !_canEditAnyField
-                                            ? null
-                                            : (isEditable
-                                                  ? (_) => _showEditDayDialog(r)
-                                                  : (_) {
-                                                      Get.snackbar(
-                                                        'Locked 🔒',
-                                                        'Sirf Aaj + pichle 2 din tak hi entry edit ho sakti hai.',
-                                                        backgroundColor: Colors
-                                                            .grey
-                                                            .shade700,
-                                                        colorText: Colors.white,
-                                                        snackPosition:
-                                                            SnackPosition
-                                                                .BOTTOM,
-                                                      );
-                                                    }),
-                                        cells: [
-                                          DataCell(
-                                            !_canEditAnyField
-                                                ? const SizedBox.shrink()
-                                                : (isEditable
-                                                      ? _editButton(
-                                                          () =>
-                                                              _showEditDayDialog(
-                                                                r,
+                                        DataColumn(
+                                          label: Text('Total Feed (kg)'),
+                                        ),
+                                        DataColumn(
+                                          label: Text('Feed Stock (kg)'),
+                                        ),
+                                        DataColumn(
+                                          label: Text('Feed Stock (Manual)'),
+                                        ),
+                                        DataColumn(label: Text('Wt Auto (kg)')),
+                                        DataColumn(
+                                          label: Text('Wt Manual (kg)'),
+                                        ),
+                                        DataColumn(label: Text('FCR Auto')),
+                                        DataColumn(label: Text('FCR Manual')),
+                                        DataColumn(label: Text('Cost/Kg (₹)')),
+                                      ],
+                                      rows: _rows.asMap().entries.map((entry) {
+                                        final i = entry.key;
+                                        final r = entry.value;
+                                        final bool isHigh =
+                                            r.fraud.riskLevel == 'high';
+                                        final bool isEven = i % 2 == 0;
+                                        final bool isEditable = _isEditableDate(
+                                          r.date,
+                                        );
+                                        // ✅ FIX — pehle sirf date-window check
+                                        // hota tha, permission bilkul check
+                                        // nahi hota tha. Ab agar user ke paas
+                                        // teeno mein se koi bhi add-permission
+                                        // nahi hai, to edit icon/tap dikhega
+                                        // hi nahi (neeche _canEditAnyField se).
+                                        return DataRow(
+                                          color: WidgetStateProperty.all(
+                                            r.hasMismatch
+                                                ? Colors.red.shade100
+                                                : (isHigh
+                                                      ? Colors.red.shade50
+                                                      : (isEven
+                                                            ? Colors.white
+                                                            : lightGreen
+                                                                  .withValues(
+                                                                    alpha: 0.5,
+                                                                  ))),
+                                          ),
+                                          onSelectChanged: !_canEditAnyField
+                                              ? null
+                                              : (isEditable
+                                                    ? (_) =>
+                                                          _showEditDayDialog(r)
+                                                    : (_) {
+                                                        Get.snackbar(
+                                                          'Locked 🔒',
+                                                          'Sirf Aaj + pichle 2 din tak hi entry edit ho sakti hai.',
+                                                          backgroundColor:
+                                                              Colors
+                                                                  .grey
+                                                                  .shade700,
+                                                          colorText:
+                                                              Colors.white,
+                                                          snackPosition:
+                                                              SnackPosition
+                                                                  .BOTTOM,
+                                                        );
+                                                      }),
+                                          cells: [
+                                            DataCell(
+                                              !_canEditAnyField
+                                                  ? const SizedBox.shrink()
+                                                  : (isEditable
+                                                        ? _editButton(
+                                                            () =>
+                                                                _showEditDayDialog(
+                                                                  r,
+                                                                ),
+                                                          )
+                                                        : _lockedButton()),
+                                            ),
+                                            DataCell(_riskBadge(r.fraud)),
+                                            DataCell(
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(_fmtDate(r.date)),
+                                                  if (r.hasMismatch) ...[
+                                                    const SizedBox(width: 4),
+                                                    InkWell(
+                                                      onTap: () {
+                                                        showDialog(
+                                                          context: context,
+                                                          builder: (ctx) => AlertDialog(
+                                                            title: const Text(
+                                                              '⚠️ Photo Mismatch',
+                                                            ),
+                                                            content: Text(
+                                                              r.mismatchReason ??
+                                                                  'Entered value photo se match nahi hui thi.',
+                                                            ),
+                                                            actions: [
+                                                              TextButton(
+                                                                onPressed: () =>
+                                                                    Navigator.pop(
+                                                                      ctx,
+                                                                    ),
+                                                                child:
+                                                                    const Text(
+                                                                      'OK',
+                                                                    ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        );
+                                                      },
+                                                      child: const Icon(
+                                                        Icons
+                                                            .warning_amber_rounded,
+                                                        size: 15,
+                                                        color: Colors.red,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ),
+                                            DataCell(Text('${r.day}')),
+                                            DataCell(Text('${r.liveChicks}')),
+                                            DataCell(
+                                              Text(
+                                                '${r.mortalityToday}',
+                                                style: TextStyle(
+                                                  color: r.mortalityToday > 0
+                                                      ? Colors.red
+                                                      : Colors.black87,
+                                                  fontWeight:
+                                                      r.mortalityToday > 0
+                                                      ? FontWeight.bold
+                                                      : FontWeight.normal,
+                                                ),
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text('${r.totalMortality}'),
+                                            ),
+                                            DataCell(
+                                              _alertText(
+                                                '${r.mortalityPercent.toStringAsFixed(2)}%',
+                                                PerformanceAlertEngine.evaluateMortality(
+                                                  r.mortalityPercent,
+                                                  _performanceConfig,
+                                                  dayNumber: r.day,
+                                                ),
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                r.dailyFeedKg.toStringAsFixed(
+                                                  2,
+                                                ),
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                r.totalFeedKg.toStringAsFixed(
+                                                  2,
+                                                ),
+                                              ),
+                                            ),
+                                            // ── FEED STOCK CELL with shortfall and return marker ──
+                                            DataCell(
+                                              Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  r.feedStockKg < 0
+                                                      ? Text(
+                                                          'Shortfall: ${r.feedStockKg.abs().toStringAsFixed(2)}',
+                                                          style:
+                                                              const TextStyle(
+                                                                color:
+                                                                    Colors.red,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
                                                               ),
                                                         )
-                                                      : _lockedButton()),
-                                          ),
-                                          DataCell(_riskBadge(r.fraud)),
-                                          DataCell(
-                                            Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(_fmtDate(r.date)),
-                                                if (r.hasMismatch) ...[
-                                                  const SizedBox(width: 4),
-                                                  InkWell(
-                                                    onTap: () {
-                                                      showDialog(
-                                                        context: context,
-                                                        builder: (ctx) => AlertDialog(
-                                                          title: const Text(
-                                                            '⚠️ Photo Mismatch',
-                                                          ),
-                                                          content: Text(
-                                                            r.mismatchReason ??
-                                                                'Entered value photo se match nahi hui thi.',
-                                                          ),
-                                                          actions: [
-                                                            TextButton(
-                                                              onPressed: () =>
-                                                                  Navigator.pop(
-                                                                    ctx,
-                                                                  ),
-                                                              child: const Text(
-                                                                'OK',
+                                                      : Text(
+                                                          r.feedStockKg
+                                                              .toStringAsFixed(
+                                                                2,
                                                               ),
-                                                            ),
-                                                          ],
                                                         ),
-                                                      );
-                                                    },
-                                                    child: const Icon(
-                                                      Icons
-                                                          .warning_amber_rounded,
-                                                      size: 15,
-                                                      color: Colors.red,
+                                                  if (r.returnFeedKgToday > 0)
+                                                    Text(
+                                                      '↩️ Return: ${r.returnFeedKgToday.toStringAsFixed(1)} KG',
+                                                      style: const TextStyle(
+                                                        color: Colors.teal,
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
                                                     ),
-                                                  ),
                                                 ],
-                                              ],
-                                            ),
-                                          ),
-                                          DataCell(Text('${r.day}')),
-                                          DataCell(Text('${r.liveChicks}')),
-                                          DataCell(
-                                            Text(
-                                              '${r.mortalityToday}',
-                                              style: TextStyle(
-                                                color: r.mortalityToday > 0
-                                                    ? Colors.red
-                                                    : Colors.black87,
-                                                fontWeight: r.mortalityToday > 0
-                                                    ? FontWeight.bold
-                                                    : FontWeight.normal,
                                               ),
                                             ),
-                                          ),
-                                          DataCell(Text('${r.totalMortality}')),
-                                          DataCell(
-                                            _alertText(
-                                              '${r.mortalityPercent.toStringAsFixed(2)}%',
-                                              PerformanceAlertEngine.evaluateMortality(
-                                                r.mortalityPercent,
-                                                _performanceConfig,
-                                                dayNumber: r.day,
-                                              ),
-                                            ),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              r.dailyFeedKg.toStringAsFixed(2),
-                                            ),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              r.totalFeedKg.toStringAsFixed(2),
-                                            ),
-                                          ),
-                                          // ── FEED STOCK CELL with shortfall and return marker ──
-                                          DataCell(
-                                            Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                r.feedStockKg < 0
-                                                    ? Text(
-                                                        'Shortfall: ${r.feedStockKg.abs().toStringAsFixed(2)}',
-                                                        style: const TextStyle(
-                                                          color: Colors.red,
-                                                          fontWeight:
-                                                              FontWeight.bold,
+                                            // ── FEED STOCK (MANUAL) — farmer-reported vs auto comparison ──
+                                            DataCell(
+                                              r.manualStockReportedToday
+                                                  ? Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          '${r.manualStockReportedKg!.toStringAsFixed(2)} KG',
+                                                          style:
+                                                              const TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color: Colors
+                                                                    .blueGrey,
+                                                              ),
                                                         ),
-                                                      )
-                                                    : Text(
-                                                        r.feedStockKg
-                                                            .toStringAsFixed(2),
-                                                      ),
-                                                if (r.returnFeedKgToday > 0)
-                                                  Text(
-                                                    '↩️ Return: ${r.returnFeedKgToday.toStringAsFixed(1)} KG',
-                                                    style: const TextStyle(
-                                                      color: Colors.teal,
-                                                      fontSize: 10,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                          // ── FEED STOCK (MANUAL) — farmer-reported vs auto comparison ──
-                                          DataCell(
-                                            r.manualStockReportedToday
-                                                ? Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      Text(
-                                                        '${r.manualStockReportedKg!.toStringAsFixed(2)} KG',
-                                                        style: const TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          color:
-                                                              Colors.blueGrey,
+                                                        Text(
+                                                          '${r.manualStockDiffKg! >= 0 ? '+' : ''}'
+                                                          '${r.manualStockDiffKg!.toStringAsFixed(2)} KG'
+                                                          '${r.manualStockDiffPercent != null ? ' (${r.manualStockDiffPercent! >= 0 ? '+' : ''}${r.manualStockDiffPercent!.toStringAsFixed(1)}%)' : ''}',
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            color:
+                                                                r.manualStockDiffKg! <
+                                                                    0
+                                                                ? Colors.red
+                                                                : Colors
+                                                                      .green
+                                                                      .shade700,
+                                                          ),
                                                         ),
-                                                      ),
-                                                      Text(
-                                                        '${r.manualStockDiffKg! >= 0 ? '+' : ''}'
-                                                        '${r.manualStockDiffKg!.toStringAsFixed(2)} KG'
-                                                        '${r.manualStockDiffPercent != null ? ' (${r.manualStockDiffPercent! >= 0 ? '+' : ''}${r.manualStockDiffPercent!.toStringAsFixed(1)}%)' : ''}',
-                                                        style: TextStyle(
-                                                          fontSize: 10,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          color:
-                                                              r.manualStockDiffKg! <
-                                                                  0
-                                                              ? Colors.red
-                                                              : Colors
-                                                                    .green
-                                                                    .shade700,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  )
-                                                : const Text(
-                                                    'Not Reported Yet',
-                                                    style: TextStyle(
-                                                      fontSize: 10.5,
-                                                      color: Colors.grey,
-                                                      fontStyle:
-                                                          FontStyle.italic,
-                                                    ),
-                                                  ),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              r.autoWeightKg.toStringAsFixed(3),
-                                            ),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              r.manualWeightKg != null
-                                                  ? r.manualWeightKg!
-                                                        .toStringAsFixed(3)
-                                                  : '—',
-                                            ),
-                                          ),
-                                          DataCell(
-                                            _alertText(
-                                              r.autoFcr.toStringAsFixed(3),
-                                              r.autoFcr > 0
-                                                  ? PerformanceAlertEngine.evaluateFcr(
-                                                      r.autoFcr,
-                                                      _performanceConfig,
-                                                      dayNumber: r.day,
+                                                      ],
                                                     )
-                                                  : null,
-                                            ),
-                                          ),
-                                          DataCell(
-                                            r.manualFcr != null
-                                                ? _alertText(
-                                                    r.manualFcr!
-                                                        .toStringAsFixed(3),
-                                                    PerformanceAlertEngine.evaluateFcr(
-                                                      r.manualFcr!,
-                                                      _performanceConfig,
-                                                      dayNumber: r.day,
+                                                  : const Text(
+                                                      'Not Reported Yet',
+                                                      style: TextStyle(
+                                                        fontSize: 10.5,
+                                                        color: Colors.grey,
+                                                        fontStyle:
+                                                            FontStyle.italic,
+                                                      ),
                                                     ),
-                                                  )
-                                                : const Text('—'),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              '₹${r.costPerKg.toStringAsFixed(2)}',
                                             ),
-                                          ),
-                                        ],
-                                      );
-                                    }).toList(),
+                                            DataCell(
+                                              Text(
+                                                r.autoWeightKg.toStringAsFixed(
+                                                  3,
+                                                ),
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                r.manualWeightKg != null
+                                                    ? r.manualWeightKg!
+                                                          .toStringAsFixed(3)
+                                                    : '—',
+                                              ),
+                                            ),
+                                            DataCell(
+                                              _alertText(
+                                                r.autoFcr.toStringAsFixed(3),
+                                                r.autoFcr > 0
+                                                    ? PerformanceAlertEngine.evaluateFcr(
+                                                        r.autoFcr,
+                                                        _performanceConfig,
+                                                        dayNumber: r.day,
+                                                      )
+                                                    : null,
+                                              ),
+                                            ),
+                                            DataCell(
+                                              r.manualFcr != null
+                                                  ? _alertText(
+                                                      r.manualFcr!
+                                                          .toStringAsFixed(3),
+                                                      PerformanceAlertEngine.evaluateFcr(
+                                                        r.manualFcr!,
+                                                        _performanceConfig,
+                                                        dayNumber: r.day,
+                                                      ),
+                                                    )
+                                                  : const Text('—'),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                '₹${r.costPerKg.toStringAsFixed(2)}',
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      }).toList(),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-    );
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 
   Widget _zoomButton({required IconData icon, required VoidCallback onTap}) {
