@@ -117,7 +117,10 @@ class _FeedConsumptionRuleScreenState extends State<FeedConsumptionRuleScreen>
 
   // ✅ FIX — 'edit' permission check karo (view-only ya edit-allowed).
   Future<void> _loadPermissions() async {
-    final canEdit = await PermissionService.can('feedConsumptionRule', 'edit');
+    final canEdit = await PermissionService.canNested(
+      'feedConsumptionRule',
+      'edit',
+    );
     if (!mounted) return;
     setState(() => _canEdit = canEdit);
   }

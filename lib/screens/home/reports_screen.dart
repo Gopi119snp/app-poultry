@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:async'; // ✅ Added for Timer
 import '../../services/company_store.dart';
 import '../../services/permission_service.dart';
+import '../../widgets/permission_gate.dart'; // ✅ FIX — PermissionScreenGate ke liye
 import 'batch_performance_screen.dart';
 import 'farmer_profit_loss_screen.dart';
 import 'total_income_report_screen.dart';
@@ -88,167 +89,175 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: _repGreen,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-          ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Row(
-          children: [
-            Text('📊', style: TextStyle(fontSize: 20)),
-            SizedBox(width: 8),
-            Text(
-              'Reports',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+    // ✅ FIX — poori screen 'reports' ke 'view' se gated hai.
+    return PermissionScreenGate(
+      moduleId: 'reports',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: _repGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
             ),
-          ],
+            onPressed: () => Get.back(),
+          ),
+          title: const Row(
+            children: [
+              Text('📊', style: TextStyle(fontSize: 20)),
+              SizedBox(width: 8),
+              Text(
+                'Reports',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _repGreen))
-          : SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-                    decoration: const BoxDecoration(
-                      color: _repGreen,
-                      borderRadius: BorderRadius.only(
-                        bottomLeft: Radius.circular(28),
-                        bottomRight: Radius.circular(28),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: _repGreen))
+            : SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                      decoration: const BoxDecoration(
+                        color: _repGreen,
+                        borderRadius: BorderRadius.only(
+                          bottomLeft: Radius.circular(28),
+                          bottomRight: Radius.circular(28),
+                        ),
                       ),
-                    ),
-                    child: const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Business Insights',
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Report Select Karein',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Available Reports',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-
-                        // 1. Operational Expense Recovery
-                        if (_canViewOpExp) ...[
-                          _ReportCard(
-                            emoji: '🧮',
-                            title: 'Operational Expense Recovery',
-                            subtitle:
-                                'Admin charges collected vs company ka operational kharcha — per KG basis',
-                            color: Colors.indigo,
-                            onTap: () => Get.to(
-                              () => const OperationalExpenseReportScreen(),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Business Insights',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
                             ),
                           ),
-                          const SizedBox(height: 12),
-                        ],
-
-                        // 2. Batch Performance
-                        if (_canViewBatchPerf) ...[
-                          _ReportCard(
-                            emoji: '🐔',
-                            title: 'Batch Performance',
-                            subtitle:
-                                'FCR, Mortality, Weight Growth aur Feed Efficiency — Top/Bottom 5 ke saath',
-                            color: Colors.indigo,
-                            onTap: () =>
-                                Get.to(() => const BatchPerformanceScreen()),
+                          SizedBox(height: 4),
+                          Text(
+                            'Report Select Karein',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                          const SizedBox(height: 12),
                         ],
-
-                        // 3. Farmer Profit / Loss
-                        if (_canViewFarmerPl) ...[
-                          _ReportCard(
-                            emoji: '🧑‍🌾',
-                            title: 'Farmer Profit / Loss',
-                            subtitle:
-                                'Har farmer ka Chicks+Feed+Medicine+Admin margin minus Operational Expense',
-                            color: Colors.indigo,
-                            onTap: () =>
-                                Get.to(() => const FarmerProfitLossScreen()),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Available Reports',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
                           ),
-                          const SizedBox(height: 12),
-                        ],
+                          const SizedBox(height: 14),
 
-                        // 4. Total Income (Farmer Profit / Loss ke theek neeche)[cite: 5]
-                        if (_canViewTotalIncome) ...[
-                          _ReportCard(
-                            emoji: '💰',
-                            title: 'Total Income',
-                            subtitle:
-                                'Company-Farmer aur Private Sales dono ka profit/loss, category-wise',
-                            color: Colors.indigo,
-                            onTap: () =>
-                                Get.to(() => const TotalIncomeReportScreen()),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
+                          // 1. Operational Expense Recovery
+                          if (_canViewOpExp) ...[
+                            _ReportCard(
+                              emoji: '🧮',
+                              title: 'Operational Expense Recovery',
+                              subtitle:
+                                  'Admin charges collected vs company ka operational kharcha — per KG basis',
+                              color: Colors.indigo,
+                              onTap: () => Get.to(
+                                () => const OperationalExpenseReportScreen(),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
 
-                        if (!_canViewOpExp &&
-                            !_canViewBatchPerf &&
-                            !_canViewFarmerPl &&
-                            !_canViewTotalIncome)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 40),
-                            child: Center(
-                              child: Text(
-                                'Aapko kisi bhi Report ko dekhne ki permission nahi hai.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontSize: 13,
+                          // 2. Batch Performance
+                          if (_canViewBatchPerf) ...[
+                            _ReportCard(
+                              emoji: '🐔',
+                              title: 'Batch Performance',
+                              subtitle:
+                                  'FCR, Mortality, Weight Growth aur Feed Efficiency — Top/Bottom 5 ke saath',
+                              color: Colors.indigo,
+                              onTap: () =>
+                                  Get.to(() => const BatchPerformanceScreen()),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // 3. Farmer Profit / Loss
+                          if (_canViewFarmerPl) ...[
+                            _ReportCard(
+                              emoji: '🧑‍🌾',
+                              title: 'Farmer Profit / Loss',
+                              subtitle:
+                                  'Har farmer ka Chicks+Feed+Medicine+Admin margin minus Operational Expense',
+                              color: Colors.indigo,
+                              onTap: () =>
+                                  Get.to(() => const FarmerProfitLossScreen()),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // 4. Total Income (Farmer Profit / Loss ke theek neeche)[cite: 5]
+                          if (_canViewTotalIncome) ...[
+                            _ReportCard(
+                              emoji: '💰',
+                              title: 'Total Income',
+                              subtitle:
+                                  'Company-Farmer aur Private Sales dono ka profit/loss, category-wise',
+                              color: Colors.indigo,
+                              onTap: () =>
+                                  Get.to(() => const TotalIncomeReportScreen()),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          if (!_canViewOpExp &&
+                              !_canViewBatchPerf &&
+                              !_canViewFarmerPl &&
+                              !_canViewTotalIncome)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 40),
+                              child: Center(
+                                child: Text(
+                                  'Aapko kisi bhi Report ko dekhne ki permission nahi hai.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
 
-                        const SizedBox(height: 30),
-                      ],
+                          const SizedBox(height: 30),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-    );
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
@@ -885,299 +894,309 @@ class _OperationalExpenseReportScreenState
       if (worstDay == null || p.net < worstDay.net) worstDay = p;
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: _repGreen,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'opExpenseRecoveryReport',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: _repGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          '🧮 Operational Expense Recovery',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-        ),
-        actions: [
-          InkWell(
-            onTap: _showFilterSheet,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.filter_alt_rounded,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 6),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 90),
-                    child: Text(
-                      _selectedFilter.label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
+          title: const Text(
+            '🧮 Operational Expense Recovery',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
             ),
           ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _repGreen))
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              color: _repGreen,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (_appliedRuleId == null)
-                    _warningBanner(
-                      '⚠️ Koi Settlement Rule Apply Nahi Hua',
-                      'Home → Batch Settlement mein jaake Rule 1 apply karein, tabhi Admin Charges (Accrued) track hoga.',
-                    ),
-                  if (_appliedRuleId == 2)
-                    _warningBanner(
-                      '⚠️ Rule 2 (FCR Matrix) Active Hai',
-                      'Rule 2 mein "Admin Cost ₹/KG" field abhi track nahi hoti. Isliye us period ki Admin Charges calculate nahi hongi (jab Rule 2 active tha). Sirf Operational Expense dikhaya ja raha hai.',
-                    ),
-                  if (totalApprox > 0)
-                    _warningBanner(
-                      '⚠️ Kuch Purani Sales Approximate Hain',
-                      '$totalApprox purani sale entries mein rate snapshot nahi tha (is fix se pehle ki hain), unke liye CURRENT rate se approximate calculate kiya gaya hai — exact nahi ho sakta.',
-                    ),
-                  if (totalMissingWt > 0)
-                    _warningBanner(
-                      '⚠️ Data Quality Issue',
-                      '$totalMissingWt sale entries mein Avg Weight missing/invalid thi — unhe calculation se EXCLUDE kar diya gaya hai (Big/Small assume nahi kiya).',
-                    ),
-                  if (_appliedRuleId == null ||
-                      _appliedRuleId == 2 ||
-                      totalApprox > 0 ||
-                      totalMissingWt > 0)
-                    const SizedBox(height: 14),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _statCard(
-                          '💸',
-                          'Total Operational Expense',
-                          '₹${totalOpExpense.toStringAsFixed(0)}',
-                          Colors.red.shade700,
-                          Colors.red.shade50,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _statCard(
-                          '🏢',
-                          'Admin Charges Accrued',
-                          ruleTracksAdmin || totalApprox > 0
-                              ? '₹${totalAdminCollected.toStringAsFixed(0)}'
-                              : 'N/A',
-                          Colors.green.shade700,
-                          Colors.green.shade50,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _statCard(
-                          '⚖️',
-                          'Per KG Operational Cost',
-                          perKgOpExpense != null
-                              ? '₹${perKgOpExpense.toStringAsFixed(2)}'
-                              : 'N/A',
-                          Colors.blue.shade700,
-                          Colors.blue.shade50,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _statCard(
-                          recoveryPct == null
-                              ? '❓'
-                              : (recoveryPct >= 100 ? '✅' : '🔴'),
-                          'Overall Recovery %',
-                          recoveryPct != null
-                              ? '${recoveryPct.toStringAsFixed(1)}%'
-                              : 'N/A',
-                          recoveryPct == null
-                              ? Colors.grey.shade700
-                              : (recoveryPct >= 100
-                                    ? Colors.green.shade700
-                                    : Colors.red.shade700),
-                          recoveryPct == null
-                              ? Colors.grey.shade100
-                              : (recoveryPct >= 100
-                                    ? Colors.green.shade50
-                                    : Colors.red.shade50),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
+          actions: [
+            InkWell(
+              onTap: _showFilterSheet,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.filter_alt_rounded,
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey.shade200),
+                      size: 18,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Expanded(
-                              child: Wrap(
-                                spacing: 14,
-                                runSpacing: 6,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  _LegendDot(
-                                    color: Colors.red,
-                                    label: 'Op. Expense',
-                                  ),
-                                  _LegendDot(
-                                    color: Colors.green,
-                                    label: 'Admin Accrued',
-                                  ),
-                                ],
-                              ),
-                            ),
-                            _granularityToggle(),
-                          ],
+                    const SizedBox(width: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 90),
+                      child: Text(
+                        _selectedFilter.label,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
                         ),
-                        const SizedBox(height: 16),
-                        points.isEmpty
-                            ? Container(
-                                height: 200,
-                                alignment: Alignment.center,
-                                child: Text(
-                                  'Is period ke liye koi data nahi mila.',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade500,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              )
-                            : SizedBox(
-                                height: 220,
-                                child: _buildLineChart(points),
-                              ),
-                        if (points.isNotEmpty) ...[
-                          const SizedBox(height: 20),
-                          const Text(
-                            'Daily Net Surplus (Admin − Expense)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black54,
-                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: _repGreen))
+            : RefreshIndicator(
+                onRefresh: _loadData,
+                color: _repGreen,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    if (_appliedRuleId == null)
+                      _warningBanner(
+                        '⚠️ Koi Settlement Rule Apply Nahi Hua',
+                        'Home → Batch Settlement mein jaake Rule 1 apply karein, tabhi Admin Charges (Accrued) track hoga.',
+                      ),
+                    if (_appliedRuleId == 2)
+                      _warningBanner(
+                        '⚠️ Rule 2 (FCR Matrix) Active Hai',
+                        'Rule 2 mein "Admin Cost ₹/KG" field abhi track nahi hoti. Isliye us period ki Admin Charges calculate nahi hongi (jab Rule 2 active tha). Sirf Operational Expense dikhaya ja raha hai.',
+                      ),
+                    if (totalApprox > 0)
+                      _warningBanner(
+                        '⚠️ Kuch Purani Sales Approximate Hain',
+                        '$totalApprox purani sale entries mein rate snapshot nahi tha (is fix se pehle ki hain), unke liye CURRENT rate se approximate calculate kiya gaya hai — exact nahi ho sakta.',
+                      ),
+                    if (totalMissingWt > 0)
+                      _warningBanner(
+                        '⚠️ Data Quality Issue',
+                        '$totalMissingWt sale entries mein Avg Weight missing/invalid thi — unhe calculation se EXCLUDE kar diya gaya hai (Big/Small assume nahi kiya).',
+                      ),
+                    if (_appliedRuleId == null ||
+                        _appliedRuleId == 2 ||
+                        totalApprox > 0 ||
+                        totalMissingWt > 0)
+                      const SizedBox(height: 14),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _statCard(
+                            '💸',
+                            'Total Operational Expense',
+                            '₹${totalOpExpense.toStringAsFixed(0)}',
+                            Colors.red.shade700,
+                            Colors.red.shade50,
                           ),
-                          const SizedBox(height: 10),
-                          SizedBox(height: 140, child: _buildBarChart(points)),
-                        ],
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _statCard(
+                            '🏢',
+                            'Admin Charges Accrued',
+                            ruleTracksAdmin || totalApprox > 0
+                                ? '₹${totalAdminCollected.toStringAsFixed(0)}'
+                                : 'N/A',
+                            Colors.green.shade700,
+                            Colors.green.shade50,
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Row(
+                    const SizedBox(height: 10),
+                    Row(
                       children: [
                         Expanded(
-                          child: _bottomStat(
-                            '📈',
-                            'Best Net Surplus Day',
-                            bestDay != null
-                                ? '₹${bestDay.net.toStringAsFixed(0)}'
-                                : '-',
-                            bestDay != null ? _fmtDate(bestDay.date) : '',
-                            Colors.green.shade700,
+                          child: _statCard(
+                            '⚖️',
+                            'Per KG Operational Cost',
+                            perKgOpExpense != null
+                                ? '₹${perKgOpExpense.toStringAsFixed(2)}'
+                                : 'N/A',
+                            Colors.blue.shade700,
+                            Colors.blue.shade50,
                           ),
                         ),
-                        Container(
-                          width: 1,
-                          height: 40,
-                          color: Colors.grey.shade200,
-                        ),
+                        const SizedBox(width: 10),
                         Expanded(
-                          child: _bottomStat(
-                            '📉',
-                            'Worst Net Surplus Day',
-                            worstDay != null
-                                ? '₹${worstDay.net.toStringAsFixed(0)}'
-                                : '-',
-                            worstDay != null ? _fmtDate(worstDay.date) : '',
-                            Colors.red.shade700,
-                          ),
-                        ),
-                        Container(
-                          width: 1,
-                          height: 40,
-                          color: Colors.grey.shade200,
-                        ),
-                        Expanded(
-                          child: _bottomStat(
-                            '📊',
-                            'Overall Recovery',
+                          child: _statCard(
+                            recoveryPct == null
+                                ? '❓'
+                                : (recoveryPct >= 100 ? '✅' : '🔴'),
+                            'Overall Recovery %',
                             recoveryPct != null
                                 ? '${recoveryPct.toStringAsFixed(1)}%'
                                 : 'N/A',
-                            'Total ÷ Total',
-                            Colors.blue.shade700,
+                            recoveryPct == null
+                                ? Colors.grey.shade700
+                                : (recoveryPct >= 100
+                                      ? Colors.green.shade700
+                                      : Colors.red.shade700),
+                            recoveryPct == null
+                                ? Colors.grey.shade100
+                                : (recoveryPct >= 100
+                                      ? Colors.green.shade50
+                                      : Colors.red.shade50),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 20),
 
-                  Text(
-                    'ℹ️ Total KG Chicken Sold (period mein): ${totalKgSold.toStringAsFixed(1)} KG',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: Colors.grey.shade600,
+                    const SizedBox(height: 20),
+
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Expanded(
+                                child: Wrap(
+                                  spacing: 14,
+                                  runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    _LegendDot(
+                                      color: Colors.red,
+                                      label: 'Op. Expense',
+                                    ),
+                                    _LegendDot(
+                                      color: Colors.green,
+                                      label: 'Admin Accrued',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              _granularityToggle(),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          points.isEmpty
+                              ? Container(
+                                  height: 200,
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    'Is period ke liye koi data nahi mila.',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                )
+                              : SizedBox(
+                                  height: 220,
+                                  child: _buildLineChart(points),
+                                ),
+                          if (points.isNotEmpty) ...[
+                            const SizedBox(height: 20),
+                            const Text(
+                              'Daily Net Surplus (Admin − Expense)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black54,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              height: 140,
+                              child: _buildBarChart(points),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 30),
-                ],
+
+                    const SizedBox(height: 20),
+
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _bottomStat(
+                              '📈',
+                              'Best Net Surplus Day',
+                              bestDay != null
+                                  ? '₹${bestDay.net.toStringAsFixed(0)}'
+                                  : '-',
+                              bestDay != null ? _fmtDate(bestDay.date) : '',
+                              Colors.green.shade700,
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            height: 40,
+                            color: Colors.grey.shade200,
+                          ),
+                          Expanded(
+                            child: _bottomStat(
+                              '📉',
+                              'Worst Net Surplus Day',
+                              worstDay != null
+                                  ? '₹${worstDay.net.toStringAsFixed(0)}'
+                                  : '-',
+                              worstDay != null ? _fmtDate(worstDay.date) : '',
+                              Colors.red.shade700,
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            height: 40,
+                            color: Colors.grey.shade200,
+                          ),
+                          Expanded(
+                            child: _bottomStat(
+                              '📊',
+                              'Overall Recovery',
+                              recoveryPct != null
+                                  ? '${recoveryPct.toStringAsFixed(1)}%'
+                                  : 'N/A',
+                              'Total ÷ Total',
+                              Colors.blue.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    Text(
+                      'ℹ️ Total KG Chicken Sold (period mein): ${totalKgSold.toStringAsFixed(1)} KG',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                  ],
+                ),
               ),
-            ),
-    );
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 
   String _fmtDate(DateTime d) =>

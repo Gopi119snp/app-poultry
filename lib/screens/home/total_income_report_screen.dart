@@ -5,6 +5,8 @@ import 'package:get/get.dart';
 import 'package:poultrypro/services/company_store.dart'; // ✅ EDIT: CompanyStore ke liye
 import 'accounts_screen.dart' show AppDateFilter;
 import 'income_engine.dart';
+import '../../services/permission_service.dart'; // ✅ FIX
+import '../../widgets/permission_gate.dart'; // ✅ FIX
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 💰 TOTAL INCOME REPORT — Company-Farmer vs Private Sales, date-filtered
@@ -332,168 +334,176 @@ class _TotalIncomeReportScreenState extends State<TotalIncomeReportScreen> {
     final double privateTotal = _privateSales.total;
     final double grandTotal = companyFarmerTotal + privateTotal;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: _tiGreen,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'totalIncomeReport',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: _tiGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          '💰 Total Income',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
+          title: const Text(
+            '💰 Total Income',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
           ),
         ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _tiGreen))
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ── Period selector chip ──
-                    InkWell(
-                      onTap: _showFilterSheet,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _tiGreen.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _tiGreen.withOpacity(0.25)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.event_note_rounded,
-                              color: _tiGreen,
-                              size: 20,
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: _tiGreen))
+            : RefreshIndicator(
+                onRefresh: _loadData,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Period selector chip ──
+                      InkWell(
+                        onTap: _showFilterSheet,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _tiGreen.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _tiGreen.withOpacity(0.25),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _selectedFilter.label,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: _tiGreen,
-                                  fontSize: 13.5,
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.event_note_rounded,
+                                color: _tiGreen,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _selectedFilter.label,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: _tiGreen,
+                                    fontSize: 13.5,
+                                  ),
                                 ),
                               ),
+                              const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: _tiGreen,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // ── Total Income hero card ──
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: grandTotal >= 0
+                              ? _tiGreen
+                              : Colors.red.shade700,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              grandTotal >= 0
+                                  ? '📈 Total Income (${_selectedFilter.label})'
+                                  : '📉 Total Loss (${_selectedFilter.label})',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12.5,
+                              ),
                             ),
-                            const Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                              color: _tiGreen,
+                            const SizedBox(height: 6),
+                            Text(
+                              '${grandTotal >= 0 ? "+" : "-"}${_fmt(grandTotal.abs())}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 20),
 
-                    // ── Total Income hero card ──
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: grandTotal >= 0 ? _tiGreen : Colors.red.shade700,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            grandTotal >= 0
-                                ? '📈 Total Income (${_selectedFilter.label})'
-                                : '📉 Total Loss (${_selectedFilter.label})',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12.5,
+                      if (companyFarmerTotal == 0 && privateTotal == 0)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 40),
+                          child: Center(
+                            child: Text(
+                              'Is period mein koi data nahi mila.',
+                              style: TextStyle(color: Colors.grey.shade500),
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '${grandTotal >= 0 ? "+" : "-"}${_fmt(grandTotal.abs())}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 26,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        )
+                      else ...[
+                        const Text(
+                          'Kis Se Kitna Kamaya',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14.5,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Slice par tap karo detail dekhne ke liye',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+
+                        _TwoSlicePie(
+                          companyFarmerTotal: companyFarmerTotal,
+                          privateTotal: privateTotal,
+                          selectedIndex: _selectedSide,
+                          onSelect: (i) => setState(
+                            () => _selectedSide = _selectedSide == i ? null : i,
+                          ),
+                        ),
+
+                        if (_selectedSide != null) ...[
+                          const SizedBox(height: 20),
+                          _CategoryBreakdownCard(
+                            title: _selectedSide == 0
+                                ? '🧑‍🌾 Company ↔ Farmer — Kis Bhag Se'
+                                : '🛒 Private Sales — Kis Bhag Se',
+                            breakdown: _selectedSide == 0
+                                ? _companyFarmer
+                                : _privateSales,
+                            showAdminOperational: _selectedSide == 0,
                           ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    if (companyFarmerTotal == 0 && privateTotal == 0)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 40),
-                        child: Center(
-                          child: Text(
-                            'Is period mein koi data nahi mila.',
-                            style: TextStyle(color: Colors.grey.shade500),
-                          ),
-                        ),
-                      )
-                    else ...[
-                      const Text(
-                        'Kis Se Kitna Kamaya',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14.5,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Slice par tap karo detail dekhne ke liye',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-
-                      _TwoSlicePie(
-                        companyFarmerTotal: companyFarmerTotal,
-                        privateTotal: privateTotal,
-                        selectedIndex: _selectedSide,
-                        onSelect: (i) => setState(
-                          () => _selectedSide = _selectedSide == i ? null : i,
-                        ),
-                      ),
-
-                      if (_selectedSide != null) ...[
-                        const SizedBox(height: 20),
-                        _CategoryBreakdownCard(
-                          title: _selectedSide == 0
-                              ? '🧑‍🌾 Company ↔ Farmer — Kis Bhag Se'
-                              : '🛒 Private Sales — Kis Bhag Se',
-                          breakdown: _selectedSide == 0
-                              ? _companyFarmer
-                              : _privateSales,
-                          showAdminOperational: _selectedSide == 0,
-                        ),
                       ],
                     ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-    );
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 

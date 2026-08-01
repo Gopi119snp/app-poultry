@@ -5,6 +5,8 @@ import 'dart:convert';
 import 'dart:async'; // ✅ Timer & Stream ke liye zaroori hai
 import '../../services/company_store.dart';
 import '../../utils/feed_consumption_rule_engine.dart';
+import '../../services/permission_service.dart'; // ✅ FIX
+import '../../widgets/permission_gate.dart'; // ✅ FIX
 
 const Color _bpGreen = Color(0xFF1B5E20);
 
@@ -539,215 +541,219 @@ class _BatchPerformanceScreenState extends State<BatchPerformanceScreen> {
         : _completedTrendSamples;
     final trendPoints = _bucketTrend(trendSamples, _granularity);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: _bpGreen,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'batchPerformanceReport',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: _bpGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          '🐔 Batch Performance',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
+          title: const Text(
+            '🐔 Batch Performance',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
           ),
         ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _bpGreen))
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              color: _bpGreen,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (_hasLoadError)
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: _bpGreen))
+            : RefreshIndicator(
+                onRefresh: _loadData,
+                color: _bpGreen,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    if (_hasLoadError)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.orange.shade800,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Kuch data load karte waqt error aayi — report incomplete ho sakti hai.',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: Colors.orange.shade900,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _loadData,
+                              child: const Text(
+                                'Retry',
+                                style: TextStyle(fontSize: 11.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.orange.shade200),
                       ),
                       child: Row(
                         children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            color: Colors.orange.shade800,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              'Kuch data load karte waqt error aayi — report incomplete ho sakti hai.',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: Colors.orange.shade900,
-                              ),
+                            child: _sectionToggleBtn(
+                              '🟢 Active (${_activeBatches.length})',
+                              true,
                             ),
                           ),
-                          TextButton(
-                            onPressed: _loadData,
-                            child: const Text(
-                              'Retry',
-                              style: TextStyle(fontSize: 11.5),
+                          Expanded(
+                            child: _sectionToggleBtn(
+                              '✅ Completed (${_completedBatches.length})',
+                              false,
                             ),
                           ),
                         ],
                       ),
                     ),
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _sectionToggleBtn(
-                            '🟢 Active (${_activeBatches.length})',
-                            true,
-                          ),
+                    const SizedBox(height: 16),
+                    if (list.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(30),
+                        alignment: Alignment.center,
+                        child: Text(
+                          _showActive
+                              ? 'Koi active batch nahi hai.'
+                              : 'Koi completed batch nahi hai.',
+                          style: TextStyle(color: Colors.grey.shade500),
                         ),
-                        Expanded(
-                          child: _sectionToggleBtn(
-                            '✅ Completed (${_completedBatches.length})',
-                            false,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (list.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(30),
-                      alignment: Alignment.center,
-                      child: Text(
-                        _showActive
-                            ? 'Koi active batch nahi hai.'
-                            : 'Koi completed batch nahi hai.',
-                        style: TextStyle(color: Colors.grey.shade500),
+                      )
+                    else ...[
+                      _buildAverages(list),
+                      const SizedBox(height: 20),
+                      _buildTrendChart(trendPoints),
+                      const SizedBox(height: 20),
+                      _buildRankingSection(
+                        title: '🏆 Top 5 — Best FCR',
+                        list: List.of(list)
+                          ..removeWhere((m) => !m.isFcrValid)
+                          ..sort((a, b) => a.fcr.compareTo(b.fcr)),
+                        valueBuilder: (m) => 'FCR ${m.fcr.toStringAsFixed(2)}',
+                        color: Colors.green,
                       ),
-                    )
-                  else ...[
-                    _buildAverages(list),
-                    const SizedBox(height: 20),
-                    _buildTrendChart(trendPoints),
-                    const SizedBox(height: 20),
-                    _buildRankingSection(
-                      title: '🏆 Top 5 — Best FCR',
-                      list: List.of(list)
-                        ..removeWhere((m) => !m.isFcrValid)
-                        ..sort((a, b) => a.fcr.compareTo(b.fcr)),
-                      valueBuilder: (m) => 'FCR ${m.fcr.toStringAsFixed(2)}',
-                      color: Colors.green,
-                    ),
-                    const SizedBox(height: 14),
-                    _buildRankingSection(
-                      title: '⚠️ Bottom 5 — Worst FCR (Dhyan Do)',
-                      list: List.of(list)
-                        ..removeWhere((m) => !m.isFcrValid)
-                        ..sort((a, b) => b.fcr.compareTo(a.fcr)),
-                      valueBuilder: (m) => 'FCR ${m.fcr.toStringAsFixed(2)}',
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 14),
-                    _buildRankingSection(
-                      title: '🏆 Top 5 — Lowest Mortality',
-                      list: List.of(list)
-                        ..sort(
-                          (a, b) => a.mortalityPct.compareTo(b.mortalityPct),
-                        ),
-                      valueBuilder: (m) =>
-                          '${m.mortalityPct.toStringAsFixed(1)}% (${m.totalMortality} pcs)',
-                      color: Colors.green,
-                    ),
-                    const SizedBox(height: 14),
-                    _buildRankingSection(
-                      title: '⚠️ Bottom 5 — Highest Mortality (Dhyan Do)',
-                      list: List.of(list)
-                        ..sort(
-                          (a, b) => b.mortalityPct.compareTo(a.mortalityPct),
-                        ),
-                      valueBuilder: (m) =>
-                          '${m.mortalityPct.toStringAsFixed(1)}% (${m.totalMortality} pcs)',
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 14),
-                    _buildRankingSection(
-                      title: '🏆 Top 5 — Best Weight Growth',
-                      list: List.of(list)
-                        ..removeWhere((m) => !m.hasWeightData)
-                        ..sort(
-                          (a, b) =>
-                              b.weightGrowthPct.compareTo(a.weightGrowthPct),
-                        ),
-                      valueBuilder: (m) =>
-                          '${m.weightGrowthPct.toStringAsFixed(1)}% of target',
-                      color: Colors.green,
-                    ),
-                    const SizedBox(height: 14),
-                    _buildRankingSection(
-                      title: '⚠️ Bottom 5 — Worst Weight Growth (Dhyan Do)',
-                      list: List.of(list)
-                        ..removeWhere((m) => !m.hasWeightData)
-                        ..sort(
-                          (a, b) =>
-                              a.weightGrowthPct.compareTo(b.weightGrowthPct),
-                        ),
-                      valueBuilder: (m) =>
-                          '${m.weightGrowthPct.toStringAsFixed(1)}% of target',
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 14),
-                    _buildRankingSection(
-                      title: '🏆 Top 5 — Best Feed Efficiency',
-                      list: List.of(list)
-                        ..removeWhere(
-                          (m) =>
-                              !m.hasFeedData ||
-                              !m.hasWeightData ||
-                              m.weightGrowthPct < 85,
-                        )
-                        ..sort(
-                          (a, b) => b.feedEfficiencyPct.compareTo(
-                            a.feedEfficiencyPct,
+                      const SizedBox(height: 14),
+                      _buildRankingSection(
+                        title: '⚠️ Bottom 5 — Worst FCR (Dhyan Do)',
+                        list: List.of(list)
+                          ..removeWhere((m) => !m.isFcrValid)
+                          ..sort((a, b) => b.fcr.compareTo(a.fcr)),
+                        valueBuilder: (m) => 'FCR ${m.fcr.toStringAsFixed(2)}',
+                        color: Colors.red,
+                      ),
+                      const SizedBox(height: 14),
+                      _buildRankingSection(
+                        title: '🏆 Top 5 — Lowest Mortality',
+                        list: List.of(list)
+                          ..sort(
+                            (a, b) => a.mortalityPct.compareTo(b.mortalityPct),
                           ),
-                        ),
-                      valueBuilder: (m) =>
-                          '${m.feedEfficiencyPct.toStringAsFixed(1)}%',
-                      color: Colors.green,
-                    ),
-                    const SizedBox(height: 14),
-                    _buildRankingSection(
-                      title: '⚠️ Bottom 5 — Worst Feed Efficiency (Dhyan Do)',
-                      list: List.of(list)
-                        ..removeWhere((m) => !m.hasFeedData)
-                        ..sort(
-                          (a, b) => a.feedEfficiencyPct.compareTo(
-                            b.feedEfficiencyPct,
+                        valueBuilder: (m) =>
+                            '${m.mortalityPct.toStringAsFixed(1)}% (${m.totalMortality} pcs)',
+                        color: Colors.green,
+                      ),
+                      const SizedBox(height: 14),
+                      _buildRankingSection(
+                        title: '⚠️ Bottom 5 — Highest Mortality (Dhyan Do)',
+                        list: List.of(list)
+                          ..sort(
+                            (a, b) => b.mortalityPct.compareTo(a.mortalityPct),
                           ),
-                        ),
-                      valueBuilder: (m) =>
-                          '${m.feedEfficiencyPct.toStringAsFixed(1)}%',
-                      color: Colors.red,
-                    ),
+                        valueBuilder: (m) =>
+                            '${m.mortalityPct.toStringAsFixed(1)}% (${m.totalMortality} pcs)',
+                        color: Colors.red,
+                      ),
+                      const SizedBox(height: 14),
+                      _buildRankingSection(
+                        title: '🏆 Top 5 — Best Weight Growth',
+                        list: List.of(list)
+                          ..removeWhere((m) => !m.hasWeightData)
+                          ..sort(
+                            (a, b) =>
+                                b.weightGrowthPct.compareTo(a.weightGrowthPct),
+                          ),
+                        valueBuilder: (m) =>
+                            '${m.weightGrowthPct.toStringAsFixed(1)}% of target',
+                        color: Colors.green,
+                      ),
+                      const SizedBox(height: 14),
+                      _buildRankingSection(
+                        title: '⚠️ Bottom 5 — Worst Weight Growth (Dhyan Do)',
+                        list: List.of(list)
+                          ..removeWhere((m) => !m.hasWeightData)
+                          ..sort(
+                            (a, b) =>
+                                a.weightGrowthPct.compareTo(b.weightGrowthPct),
+                          ),
+                        valueBuilder: (m) =>
+                            '${m.weightGrowthPct.toStringAsFixed(1)}% of target',
+                        color: Colors.red,
+                      ),
+                      const SizedBox(height: 14),
+                      _buildRankingSection(
+                        title: '🏆 Top 5 — Best Feed Efficiency',
+                        list: List.of(list)
+                          ..removeWhere(
+                            (m) =>
+                                !m.hasFeedData ||
+                                !m.hasWeightData ||
+                                m.weightGrowthPct < 85,
+                          )
+                          ..sort(
+                            (a, b) => b.feedEfficiencyPct.compareTo(
+                              a.feedEfficiencyPct,
+                            ),
+                          ),
+                        valueBuilder: (m) =>
+                            '${m.feedEfficiencyPct.toStringAsFixed(1)}%',
+                        color: Colors.green,
+                      ),
+                      const SizedBox(height: 14),
+                      _buildRankingSection(
+                        title: '⚠️ Bottom 5 — Worst Feed Efficiency (Dhyan Do)',
+                        list: List.of(list)
+                          ..removeWhere((m) => !m.hasFeedData)
+                          ..sort(
+                            (a, b) => a.feedEfficiencyPct.compareTo(
+                              b.feedEfficiencyPct,
+                            ),
+                          ),
+                        valueBuilder: (m) =>
+                            '${m.feedEfficiencyPct.toStringAsFixed(1)}%',
+                        color: Colors.red,
+                      ),
+                    ],
+                    const SizedBox(height: 30),
                   ],
-                  const SizedBox(height: 30),
-                ],
+                ),
               ),
-            ),
-    );
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 
   Widget _sectionToggleBtn(String label, bool isActiveSection) {

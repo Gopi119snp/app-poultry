@@ -5,6 +5,8 @@ import 'dart:convert';
 import 'dart:async'; // ✅ Timer & Stream ke liye zaroori hai
 import '../../services/company_store.dart';
 import 'purchase_expense_screen.dart' show ensureFeedStockMigrated;
+import '../../services/permission_service.dart'; // ✅ FIX
+import '../../widgets/permission_gate.dart'; // ✅ FIX
 
 const Color _fplGreen = Color(0xFF1B5E20);
 
@@ -661,258 +663,263 @@ class _FarmerProfitLossScreenState extends State<FarmerProfitLossScreen>
         .where((r) => !r.isCompleted)
         .length;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: _fplGreen,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'farmerProfitLossReport',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: _fplGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Text(
-          '🧑‍🌾 Farmer Profit / Loss',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
+          title: const Text(
+            '🧑‍🌾 Farmer Profit / Loss',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
           ),
         ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _fplGreen))
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              color: _fplGreen,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (_allRecords.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(30),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'Koi batch ka data nahi mila.',
-                        style: TextStyle(color: Colors.grey.shade500),
-                      ),
-                    )
-                  else ...[
-                    if (activeBatchCount > 0)
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: _fplGreen))
+            : RefreshIndicator(
+                onRefresh: _loadData,
+                color: _fplGreen,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    if (_allRecords.isEmpty)
                       Container(
-                        margin: const EdgeInsets.only(bottom: 14),
-                        padding: const EdgeInsets.all(14),
+                        padding: const EdgeInsets.all(30),
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Koi batch ka data nahi mila.',
+                          style: TextStyle(color: Colors.grey.shade500),
+                        ),
+                      )
+                    else ...[
+                      if (activeBatchCount > 0)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 14),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.tune_rounded,
+                                    size: 16,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Expanded(
+                                    child: Text(
+                                      'Active batches ka invest bhi minus karke dekhna hai?',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '$activeBatchCount active batch${activeBatchCount == 1 ? '' : 'es'} mein abhi paisa laga hai lekin sale nahi hui — unka investment abhi "loss" jaisa dikhega jab tak sale na ho.',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: Colors.grey.shade500,
+                                  height: 1.3,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _toggleChip(
+                                      label: 'Haan, Minus Karo',
+                                      selected: _includeActiveBatches,
+                                      onTap: () => setState(
+                                        () => _includeActiveBatches = true,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: _toggleChip(
+                                      label: 'Nahi, Sirf Completed',
+                                      selected: !_includeActiveBatches,
+                                      onTap: () => setState(
+                                        () => _includeActiveBatches = false,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      if (anyMissing)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _warningBanner(
+                            '⚠️ Kuch Data Missing Hai',
+                            'Kuch batches ke liye pichle mahine ka Operational Expense data nahi mila — un par expense minus nahi hua.',
+                          ),
+                        ),
+
+                      if (anyAllocMissing)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _warningBanner(
+                            '⚠️ Feed/Medicine Allocation Data Missing',
+                            'Kuch batches mein sale hui hai lekin unka Feed '
+                                'Purchase → Allocate se track nahi hua tha '
+                                '(sirf Flock se record hua hoga) — un batches '
+                                'ka Feed cost is report mein ₹0 dikh sakta hai, '
+                                'jo profit ko galat tarike se badha hua dikhata hai.',
+                          ),
+                        ),
+
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: totalNet >= 0
+                                ? [
+                                    const Color(0xFF0F3D12),
+                                    const Color(0xFF2E7D32),
+                                  ]
+                                : [Colors.red.shade900, Colors.red.shade600],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              totalNet >= 0
+                                  ? '📈 Company Ka Total Profit'
+                                  : '📉 Company Ka Total Loss',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${totalNet >= 0 ? "+" : "-"}₹${totalNet.abs().toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${farmerAggs.length} farmers ka combined result'
+                              '${_includeActiveBatches ? "" : " (sirf completed batches)"}',
+                              style: const TextStyle(
+                                color: Colors.white60,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      Container(
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: Colors.grey.shade200),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Icon(
-                                  Icons.tune_rounded,
-                                  size: 16,
-                                  color: Colors.grey.shade700,
-                                ),
-                                const SizedBox(width: 6),
-                                const Expanded(
-                                  child: Text(
-                                    'Active batches ka invest bhi minus karke dekhna hai?',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                const Text(
+                                  '📊 Net Profit/Loss Trend',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
                                   ),
                                 ),
+                                _granularityToggle(),
                               ],
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '$activeBatchCount active batch${activeBatchCount == 1 ? '' : 'es'} mein abhi paisa laga hai lekin sale nahi hui — unka investment abhi "loss" jaisa dikhega jab tak sale na ho.',
+                              'Har batch ka profit uski last sale date par plot hota hai',
                               style: TextStyle(
-                                fontSize: 10.5,
+                                fontSize: 9.5,
                                 color: Colors.grey.shade500,
-                                height: 1.3,
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _toggleChip(
-                                    label: 'Haan, Minus Karo',
-                                    selected: _includeActiveBatches,
-                                    onTap: () => setState(
-                                      () => _includeActiveBatches = true,
+                            const SizedBox(height: 12),
+                            trend.isEmpty
+                                ? Container(
+                                    height: 180,
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      'Koi trend data nahi mila.',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade500,
+                                        fontSize: 12,
+                                      ),
                                     ),
+                                  )
+                                : SizedBox(
+                                    height: 200,
+                                    child: _buildTrendChart(trend),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: _toggleChip(
-                                    label: 'Nahi, Sirf Completed',
-                                    selected: !_includeActiveBatches,
-                                    onTap: () => setState(
-                                      () => _includeActiveBatches = false,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
                           ],
                         ),
                       ),
 
-                    if (anyMissing)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: _warningBanner(
-                          '⚠️ Kuch Data Missing Hai',
-                          'Kuch batches ke liye pichle mahine ka Operational Expense data nahi mila — un par expense minus nahi hua.',
-                        ),
-                      ),
+                      const SizedBox(height: 20),
 
-                    if (anyAllocMissing)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: _warningBanner(
-                          '⚠️ Feed/Medicine Allocation Data Missing',
-                          'Kuch batches mein sale hui hai lekin unka Feed '
-                              'Purchase → Allocate se track nahi hua tha '
-                              '(sirf Flock se record hua hoga) — un batches '
-                              'ka Feed cost is report mein ₹0 dikh sakta hai, '
-                              'jo profit ko galat tarike se badha hua dikhata hai.',
-                        ),
+                      _rankingSection(
+                        title: '🏆 Top 5 — Sabse Zyada Profit',
+                        list: top5,
+                        color: Colors.green,
                       ),
-
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: totalNet >= 0
-                              ? [
-                                  const Color(0xFF0F3D12),
-                                  const Color(0xFF2E7D32),
-                                ]
-                              : [Colors.red.shade900, Colors.red.shade600],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
+                      const SizedBox(height: 14),
+                      _rankingSection(
+                        title:
+                            '⚠️ Bottom 5 — Sabse Kam Profit / Loss (Dhyan Do)',
+                        list: bottom5,
+                        color: Colors.red,
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            totalNet >= 0
-                                ? '📈 Company Ka Total Profit'
-                                : '📉 Company Ka Total Loss',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '${totalNet >= 0 ? "+" : "-"}₹${totalNet.abs().toStringAsFixed(0)}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 26,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${farmerAggs.length} farmers ka combined result'
-                            '${_includeActiveBatches ? "" : " (sirf completed batches)"}',
-                            style: const TextStyle(
-                              color: Colors.white60,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                '📊 Net Profit/Loss Trend',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              _granularityToggle(),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Har batch ka profit uski last sale date par plot hota hai',
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              color: Colors.grey.shade500,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          trend.isEmpty
-                              ? Container(
-                                  height: 180,
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    'Koi trend data nahi mila.',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade500,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                )
-                              : SizedBox(
-                                  height: 200,
-                                  child: _buildTrendChart(trend),
-                                ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    _rankingSection(
-                      title: '🏆 Top 5 — Sabse Zyada Profit',
-                      list: top5,
-                      color: Colors.green,
-                    ),
-                    const SizedBox(height: 14),
-                    _rankingSection(
-                      title: '⚠️ Bottom 5 — Sabse Kam Profit / Loss (Dhyan Do)',
-                      list: bottom5,
-                      color: Colors.red,
-                    ),
+                    ],
+                    const SizedBox(height: 30),
                   ],
-                  const SizedBox(height: 30),
-                ],
+                ),
               ),
-            ),
-    );
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 
   Widget _toggleChip({

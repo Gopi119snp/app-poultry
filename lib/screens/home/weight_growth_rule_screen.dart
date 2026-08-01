@@ -73,7 +73,10 @@ class _WeightGrowthRuleScreenState extends State<WeightGrowthRuleScreen>
 
   // ✅ FIX — 'edit' permission check karo (view-only ya edit-allowed).
   Future<void> _loadPermissions() async {
-    final canEdit = await PermissionService.can('weightGrowthRule', 'edit');
+    final canEdit = await PermissionService.canNested(
+      'weightGrowthRule',
+      'edit',
+    );
     if (!mounted) return;
     setState(() => _canEdit = canEdit);
   }

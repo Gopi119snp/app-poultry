@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:async'; // ✅ Added for Timer
 import '../../services/company_store.dart';
 import '../../services/permission_service.dart'; // ✅ FIX — Accounts tabs ko permission se gate karne ke liye
+import '../../widgets/permission_gate.dart'; // ✅ FIX — PermissionScreenGate ke liye
 import 'purchase_expense_screen.dart'
     show
         formatHistoryDateTime,
@@ -192,11 +193,20 @@ class _AccountsScreenState extends State<AccountsScreen>
   // beech mein Owner koi permission ON/OFF karta hai to tab count badal
   // sakta hai — isliye purana controller dispose karke naya bana dete hain.
   Future<void> _loadPermissions() async {
-    final overview = await PermissionService.can('accountsOverview', 'view');
-    final udhaar = await PermissionService.can('accountsUdhaar', 'view');
-    final kharcha = await PermissionService.can('accountsKharcha', 'view');
-    final kharida = await PermissionService.can('accountsKharida', 'view');
-    final sales = await PermissionService.can('accountsSales', 'view');
+    final overview = await PermissionService.canNested(
+      'accountsOverview',
+      'view',
+    );
+    final udhaar = await PermissionService.canNested('accountsUdhaar', 'view');
+    final kharcha = await PermissionService.canNested(
+      'accountsKharcha',
+      'view',
+    );
+    final kharida = await PermissionService.canNested(
+      'accountsKharida',
+      'view',
+    );
+    final sales = await PermissionService.canNested('accountsSales', 'view');
     if (!mounted) return;
 
     final int newVisibleCount = [
@@ -888,6 +898,20 @@ class _AccountsScreenState extends State<AccountsScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ✅ FIX — poori screen 'accounts' ke 'view' se gated hai. Isse ek gap
+    // fix hota hai: pehle sirf 5 sub-tabs (accountsOverview/Udhaar/
+    // Kharcha/Kharida/Sales) check hote the, 'accounts' (grandparent)
+    // khud kabhi check hi nahi hota tha — matlab agar Owner sirf
+    // 'accounts' ka Overall Access OFF karta (aur 5 sub-tabs ON hi rehte),
+    // to bhi ye screen open reh jaati. Ab wo bhi cover ho gaya.
+    return PermissionScreenGate(
+      moduleId: 'accounts',
+      action: 'view',
+      child: _buildContent(context),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     // ✅ FIX — Permissions load hone tak simple loader dikhao, TabBar/
     // TabController abhi exist hi nahi karta.
     if (!_permissionsLoaded || _tabController == null) {
@@ -2222,148 +2246,152 @@ class ChicksMonthlyPurchaseListScreen extends StatelessWidget {
       (s, p) => s + ((p['totalAmount'] as num?)?.toDouble() ?? 0.0),
     );
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.orange.shade800,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'accountsKharida',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.orange.shade800,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: Text(
-          '🐣 Chicks — ${selectedFilter.label}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
+          title: Text(
+            '🐣 Chicks — ${selectedFilter.label}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-          overflow: TextOverflow.ellipsis,
         ),
-      ),
-      body: purchases.isEmpty
-          ? Center(
-              child: Text(
-                'Is period mein koi chicks purchase nahi hui.',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: purchases.length + 1,
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${purchases.length} Lots • ${totalQty.toStringAsFixed(0)} pcs',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12.5,
-                            color: Colors.orange.shade900,
+        body: purchases.isEmpty
+            ? Center(
+                child: Text(
+                  'Is period mein koi chicks purchase nahi hui.',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: purchases.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${purchases.length} Lots • ${totalQty.toStringAsFixed(0)} pcs',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                              color: Colors.orange.shade900,
+                            ),
                           ),
-                        ),
-                        Text(
-                          '₹${totalAmt.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.orange.shade900,
+                          Text(
+                            '₹${totalAmt.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.orange.shade900,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                final p = purchases[index - 1];
-                final double qty = (p['quantity'] as num?)?.toDouble() ?? 0.0;
-                final double amt =
-                    (p['totalAmount'] as num?)?.toDouble() ?? 0.0;
-                return GestureDetector(
-                  onTap: () {
-                    Get.to(
-                      () => ChicksLotAllocationBreakdownScreen(purchase: p),
+                        ],
+                      ),
                     );
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                  }
+                  final p = purchases[index - 1];
+                  final double qty = (p['quantity'] as num?)?.toDouble() ?? 0.0;
+                  final double amt =
+                      (p['totalAmount'] as num?)?.toDouble() ?? 0.0;
+                  return GestureDetector(
+                    onTap: () {
+                      Get.to(
+                        () => ChicksLotAllocationBreakdownScreen(purchase: p),
+                      );
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  p['company']?.toString() ?? 'Lot',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  'Breed: ${p['breed'] ?? '-'} • ${qty.toStringAsFixed(0)} pcs',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                                Text(
+                                  formatHistoryDateTime(p['date']?.toString()),
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: Colors.black45,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                p['company']?.toString() ?? 'Lot',
-                                style: const TextStyle(
+                                '₹${amt.toStringAsFixed(2)}',
+                                style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
+                                  color: Colors.orange.shade900,
                                 ),
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                'Breed: ${p['breed'] ?? '-'} • ${qty.toStringAsFixed(0)} pcs',
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  color: Colors.black54,
-                                ),
-                              ),
-                              Text(
-                                formatHistoryDateTime(p['date']?.toString()),
-                                style: const TextStyle(
-                                  fontSize: 10.5,
-                                  color: Colors.black45,
-                                ),
+                              const SizedBox(height: 4),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                size: 18,
+                                color: Colors.grey.shade400,
                               ),
                             ],
                           ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '₹${amt.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: Colors.orange.shade900,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              size: 18,
-                              color: Colors.grey.shade400,
-                            ),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-    );
+                  );
+                },
+              ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
@@ -2415,123 +2443,127 @@ class ChicksLotAllocationBreakdownScreen extends StatelessWidget {
       double.infinity,
     );
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.orange.shade800,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-          ),
-          onPressed: () => Get.back(),
-        ),
-        title: Text(
-          '📦 $lotName',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.orange.shade800,
-              borderRadius: BorderRadius.circular(16),
+    return PermissionScreenGate(
+      moduleId: 'accountsKharida',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.orange.shade800,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Total Kharida: ${totalQty.toStringAsFixed(0)} pcs',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '₹${totalAmt.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20,
+            onPressed: () => Get.back(),
+          ),
+          title: Text(
+            '📦 $lotName',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade800,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Total Kharida: ${totalQty.toStringAsFixed(0)} pcs',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          _breakdownSummaryCard(
-            emoji: '🏢',
-            title: 'Company Farmers Ko Gaya',
-            qty: companyQty,
-            amount: companyAmt,
-            color: Colors.blue.shade700,
-          ),
-          const SizedBox(height: 12),
-
-          _breakdownSummaryCard(
-            emoji: '🛒',
-            title: 'Private Mein Becha',
-            qty: privateQty,
-            amount: privateAmt,
-            color: Colors.green.shade700,
-          ),
-
-          if (pendingQty > 0.01) ...[
-            const SizedBox(height: 12),
-            _breakdownSummaryCard(
-              emoji: '⏳',
-              title: 'Abhi Bhi Pending (Allocate Nahi Hua)',
-              qty: pendingQty,
-              amount: 0,
-              color: Colors.grey.shade600,
-              showAmount: false,
-            ),
-          ],
-
-          const SizedBox(height: 24),
-
-          if (companyAllocs.isNotEmpty) ...[
-            const Text(
-              '🏢 Farmer-Wise List',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            ...companyAllocs.map(
-              (a) => _allocListTile(
-                name: a['name']?.toString() ?? '-',
-                qty: (a['qty'] as num?)?.toDouble() ?? 0.0,
-                rate: (a['rate'] as num?)?.toDouble() ?? 0.0,
-                color: Colors.blue.shade700,
+                  const SizedBox(height: 4),
+                  Text(
+                    '₹${totalAmt.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 20),
-          ],
 
-          if (privateAllocs.isNotEmpty) ...[
-            const Text(
-              '🛒 Private Buyer-Wise List',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            _breakdownSummaryCard(
+              emoji: '🏢',
+              title: 'Company Farmers Ko Gaya',
+              qty: companyQty,
+              amount: companyAmt,
+              color: Colors.blue.shade700,
             ),
-            const SizedBox(height: 10),
-            ...privateAllocs.map(
-              (a) => _allocListTile(
-                name: a['name']?.toString() ?? '-',
-                qty: (a['qty'] as num?)?.toDouble() ?? 0.0,
-                rate: (a['rate'] as num?)?.toDouble() ?? 0.0,
-                color: Colors.green.shade700,
+            const SizedBox(height: 12),
+
+            _breakdownSummaryCard(
+              emoji: '🛒',
+              title: 'Private Mein Becha',
+              qty: privateQty,
+              amount: privateAmt,
+              color: Colors.green.shade700,
+            ),
+
+            if (pendingQty > 0.01) ...[
+              const SizedBox(height: 12),
+              _breakdownSummaryCard(
+                emoji: '⏳',
+                title: 'Abhi Bhi Pending (Allocate Nahi Hua)',
+                qty: pendingQty,
+                amount: 0,
+                color: Colors.grey.shade600,
+                showAmount: false,
               ),
-            ),
+            ],
+
+            const SizedBox(height: 24),
+
+            if (companyAllocs.isNotEmpty) ...[
+              const Text(
+                '🏢 Farmer-Wise List',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              ...companyAllocs.map(
+                (a) => _allocListTile(
+                  name: a['name']?.toString() ?? '-',
+                  qty: (a['qty'] as num?)?.toDouble() ?? 0.0,
+                  rate: (a['rate'] as num?)?.toDouble() ?? 0.0,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            if (privateAllocs.isNotEmpty) ...[
+              const Text(
+                '🛒 Private Buyer-Wise List',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              ...privateAllocs.map(
+                (a) => _allocListTile(
+                  name: a['name']?.toString() ?? '-',
+                  qty: (a['qty'] as num?)?.toDouble() ?? 0.0,
+                  rate: (a['rate'] as num?)?.toDouble() ?? 0.0,
+                  color: Colors.green.shade700,
+                ),
+              ),
+            ],
           ],
-        ],
-      ),
-    );
+        ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 
   Widget _breakdownSummaryCard({
@@ -2649,147 +2681,152 @@ class FeedTypesOverviewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.blue.shade700,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'accountsKharida',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.blue.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: Text(
-          '🌾 Feed — ${selectedFilter.label}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
+          title: Text(
+            '🌾 Feed — ${selectedFilter.label}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-          overflow: TextOverflow.ellipsis,
         ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: kFeedTypeIds.map((id) {
-          final Map<String, dynamic> typeData = feedStock.firstWhere(
-            (s) => s['id'] == id,
-            orElse: () => <String, dynamic>{},
-          );
-          final String name = kFeedTypeNames[id] ?? id;
-          final String emoji = kFeedTypeEmoji[id] ?? '🌾';
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: kFeedTypeIds.map((id) {
+            final Map<String, dynamic> typeData = feedStock.firstWhere(
+              (s) => s['id'] == id,
+              orElse: () => <String, dynamic>{},
+            );
+            final String name = kFeedTypeNames[id] ?? id;
+            final String emoji = kFeedTypeEmoji[id] ?? '🌾';
 
-          final List<dynamic> hist =
-              (typeData['purchaseHistory'] as List?) ?? [];
-          double bags = 0, amount = 0;
-          int count = 0;
-          for (final rawH in hist) {
-            final h = Map<String, dynamic>.from(rawH);
-            if (!isDateInFilter(h['date']?.toString(), selectedFilter))
-              continue;
-            final double b = (h['bags'] as num?)?.toDouble() ?? 0.0;
-            final double perBag = (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
-            bags += b;
-            amount += b * perBag;
-            count++;
-          }
+            final List<dynamic> hist =
+                (typeData['purchaseHistory'] as List?) ?? [];
+            double bags = 0, amount = 0;
+            int count = 0;
+            for (final rawH in hist) {
+              final h = Map<String, dynamic>.from(rawH);
+              if (!isDateInFilter(h['date']?.toString(), selectedFilter))
+                continue;
+              final double b = (h['bags'] as num?)?.toDouble() ?? 0.0;
+              final double perBag =
+                  (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+              bags += b;
+              amount += b * perBag;
+              count++;
+            }
 
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: GestureDetector(
-              onTap: () {
-                Get.to(
-                  () => FeedTypeMonthlyDetailScreen(
-                    selectedFilter: selectedFilter,
-                    feedTypeData: typeData,
-                    typeId: id,
-                    typeName: name,
-                    emoji: emoji,
-                  ),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.blue.shade200),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: GestureDetector(
+                onTap: () {
+                  Get.to(
+                    () => FeedTypeMonthlyDetailScreen(
+                      selectedFilter: selectedFilter,
+                      feedTypeData: typeData,
+                      typeId: id,
+                      typeName: name,
+                      emoji: emoji,
                     ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(14),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.blue.shade200),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
                       ),
-                      child: Center(
-                        child: Text(
-                          emoji,
-                          style: const TextStyle(fontSize: 24),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Center(
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 24),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '$count purchases • ${bags.toStringAsFixed(0)} bag',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            name,
-                            style: const TextStyle(
-                              fontSize: 15,
+                            '₹${amount.toStringAsFixed(0)}',
+                            style: TextStyle(
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                              color: Colors.blue.shade700,
                             ),
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            '$count purchases • ${bags.toStringAsFixed(0)} bag',
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              color: Colors.black54,
-                            ),
+                          const SizedBox(height: 4),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            color: Colors.grey.shade400,
+                            size: 20,
                           ),
                         ],
                       ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          '₹${amount.toStringAsFixed(0)}',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue.shade700,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          color: Colors.grey.shade400,
-                          size: 20,
-                        ),
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
+            );
+          }).toList(),
+        ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
@@ -2862,173 +2899,177 @@ class FeedTypeMonthlyDetailScreen extends StatelessWidget {
       saleAmt += q * r;
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.blue.shade700,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'accountsKharida',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.blue.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
+          title: Text(
+            '$emoji $typeName — ${selectedFilter.label}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-        title: Text(
-          '$emoji $typeName — ${selectedFilter.label}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade700,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Total Kharida (${purchases.length} purchase${purchases.length == 1 ? '' : 's'})',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${totalBags.toStringAsFixed(0)} Bag  •  ₹${totalAmount.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          _feedBreakdownCard(
-            emoji: '🏢',
-            title: 'Company Farmers Ko Diya',
-            qty: allocQty,
-            amount: allocAmt,
-            color: Colors.blue.shade700,
-          ),
-          const SizedBox(height: 12),
-          _feedBreakdownCard(
-            emoji: '🛒',
-            title: 'Private Mein Becha',
-            qty: saleQty,
-            amount: saleAmt,
-            color: Colors.green.shade700,
-          ),
-          const SizedBox(height: 24),
-
-          const Text(
-            '📜 Purchase History',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          if (purchases.isEmpty)
-            _emptyMsg('Is period mein koi purchase nahi hui.')
-          else
-            ...purchases.map((h) {
-              final double b = (h['bags'] as num?)?.toDouble() ?? 0.0;
-              final double perBag =
-                  (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.blue.shade100),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            h['company']?.toString() ?? '-',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                          Text(
-                            '${b.toStringAsFixed(0)} bag @ ₹${perBag.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              color: Colors.black54,
-                            ),
-                          ),
-                          Text(
-                            formatHistoryDateTime(h['date']?.toString()),
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              color: Colors.black45,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '₹${(b * perBag).toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade800,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-
-          const SizedBox(height: 20),
-
-          if (allocs.isNotEmpty) ...[
-            const Text(
-              '🏢 Farmer-Wise List',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            ...allocs.map(
-              (a) => _feedAllocTile(
-                name: a['farmerName']?.toString() ?? '-',
-                qty: (a['qty'] as num?)?.toDouble() ?? 0.0,
-                rate: (a['rate'] as num?)?.toDouble() ?? 0.0,
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
                 color: Colors.blue.shade700,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Total Kharida (${purchases.length} purchase${purchases.length == 1 ? '' : 's'})',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${totalBags.toStringAsFixed(0)} Bag  •  ₹${totalAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 20),
-          ],
 
-          if (sales.isNotEmpty) ...[
+            _feedBreakdownCard(
+              emoji: '🏢',
+              title: 'Company Farmers Ko Diya',
+              qty: allocQty,
+              amount: allocAmt,
+              color: Colors.blue.shade700,
+            ),
+            const SizedBox(height: 12),
+            _feedBreakdownCard(
+              emoji: '🛒',
+              title: 'Private Mein Becha',
+              qty: saleQty,
+              amount: saleAmt,
+              color: Colors.green.shade700,
+            ),
+            const SizedBox(height: 24),
+
             const Text(
-              '🛒 Private Buyer-Wise List',
+              '📜 Purchase History',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-            ...sales.map(
-              (s) => _feedAllocTile(
-                name: s['buyerName']?.toString() ?? '-',
-                qty: (s['qty'] as num?)?.toDouble() ?? 0.0,
-                rate: (s['rate'] as num?)?.toDouble() ?? 0.0,
-                color: Colors.green.shade700,
+            if (purchases.isEmpty)
+              _emptyMsg('Is period mein koi purchase nahi hui.')
+            else
+              ...purchases.map((h) {
+                final double b = (h['bags'] as num?)?.toDouble() ?? 0.0;
+                final double perBag =
+                    (h['perBagPrice'] as num?)?.toDouble() ?? 0.0;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.blue.shade100),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              h['company']?.toString() ?? '-',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              '${b.toStringAsFixed(0)} bag @ ₹${perBag.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.black54,
+                              ),
+                            ),
+                            Text(
+                              formatHistoryDateTime(h['date']?.toString()),
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: Colors.black45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '₹${(b * perBag).toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+            const SizedBox(height: 20),
+
+            if (allocs.isNotEmpty) ...[
+              const Text(
+                '🏢 Farmer-Wise List',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
               ),
-            ),
+              const SizedBox(height: 10),
+              ...allocs.map(
+                (a) => _feedAllocTile(
+                  name: a['farmerName']?.toString() ?? '-',
+                  qty: (a['qty'] as num?)?.toDouble() ?? 0.0,
+                  rate: (a['rate'] as num?)?.toDouble() ?? 0.0,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            if (sales.isNotEmpty) ...[
+              const Text(
+                '🛒 Private Buyer-Wise List',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              ...sales.map(
+                (s) => _feedAllocTile(
+                  name: s['buyerName']?.toString() ?? '-',
+                  qty: (s['qty'] as num?)?.toDouble() ?? 0.0,
+                  rate: (s['rate'] as num?)?.toDouble() ?? 0.0,
+                  color: Colors.green.shade700,
+                ),
+              ),
+            ],
           ],
-        ],
-      ),
-    );
+        ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 
   Widget _feedBreakdownCard({
@@ -3189,136 +3230,143 @@ class MedicineOverviewScreen extends StatelessWidget {
       (a, b) => (b['amount'] as double).compareTo(a['amount'] as double),
     );
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.teal.shade700,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'accountsKharida',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.teal.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: Text(
-          '💊 Medicine — ${selectedFilter.label}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
+          title: Text(
+            '💊 Medicine — ${selectedFilter.label}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-          overflow: TextOverflow.ellipsis,
         ),
-      ),
-      body: filtered.isEmpty
-          ? Center(
-              child: Text(
-                'Is period mein koi medicine purchase nahi hui.',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: filtered.length,
-              itemBuilder: (context, index) {
-                final row = filtered[index];
-                final Map<String, dynamic> med =
-                    row['med'] as Map<String, dynamic>;
-                final double qtyBase = row['qtyBase'] as double;
-                final double amount = row['amount'] as double;
-                final int count = row['count'] as int;
-                final String name = med['name']?.toString() ?? '-';
-                final String baseUnit = med['unit']?.toString() ?? '';
+        body: filtered.isEmpty
+            ? Center(
+                child: Text(
+                  'Is period mein koi medicine purchase nahi hui.',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: filtered.length,
+                itemBuilder: (context, index) {
+                  final row = filtered[index];
+                  final Map<String, dynamic> med =
+                      row['med'] as Map<String, dynamic>;
+                  final double qtyBase = row['qtyBase'] as double;
+                  final double amount = row['amount'] as double;
+                  final int count = row['count'] as int;
+                  final String name = med['name']?.toString() ?? '-';
+                  final String baseUnit = med['unit']?.toString() ?? '';
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: GestureDetector(
-                    onTap: () {
-                      Get.to(
-                        () => MedicineMonthlyDetailScreen(
-                          selectedFilter: selectedFilter,
-                          medicineData: med,
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: GestureDetector(
+                      onTap: () {
+                        Get.to(
+                          () => MedicineMonthlyDetailScreen(
+                            selectedFilter: selectedFilter,
+                            medicineData: med,
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.teal.shade200),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
                         ),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.teal.shade200),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 50,
-                            height: 50,
-                            decoration: BoxDecoration(
-                              color: Colors.teal.shade50,
-                              borderRadius: BorderRadius.circular(14),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: Colors.teal.shade50,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  '💊',
+                                  style: TextStyle(fontSize: 24),
+                                ),
+                              ),
                             ),
-                            child: const Center(
-                              child: Text('💊', style: TextStyle(fontSize: 24)),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    '$count purchase${count == 1 ? '' : 's'} • ${qtyBase.toStringAsFixed(2)} $baseUnit',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  name,
-                                  style: const TextStyle(
-                                    fontSize: 15,
+                                  '₹${amount.toStringAsFixed(0)}',
+                                  style: TextStyle(
+                                    fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.black87,
+                                    color: Colors.teal.shade700,
                                   ),
                                 ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  '$count purchase${count == 1 ? '' : 's'} • ${qtyBase.toStringAsFixed(2)} $baseUnit',
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    color: Colors.black54,
-                                  ),
+                                const SizedBox(height: 4),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Colors.grey.shade400,
+                                  size: 20,
                                 ),
                               ],
                             ),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                '₹${amount.toStringAsFixed(0)}',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.teal.shade700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                color: Colors.grey.shade400,
-                                size: 20,
-                              ),
-                            ],
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
-            ),
-    );
+                  );
+                },
+              ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
@@ -3458,180 +3506,184 @@ class _MedicineMonthlyDetailScreenState
       saleAmt += (s['totalSale'] as num?)?.toDouble() ?? 0.0;
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.teal.shade700,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'accountsKharida',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.teal.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
+          title: Text(
+            '💊 $name — ${widget.selectedFilter.label}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-        title: Text(
-          '💊 $name — ${widget.selectedFilter.label}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.teal.shade700,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Total Kharida (${purchases.length} purchase${purchases.length == 1 ? '' : 's'})',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${totalPurchasedBase.toStringAsFixed(2)} $baseUnit  •  ₹${totalAmount.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          _medBreakdownCard(
-            emoji: '🏢',
-            title: 'Company Farmers Ko Diya',
-            qty: allocQtyBase,
-            unit: baseUnit,
-            amount: allocAmt,
-            color: Colors.teal.shade700,
-          ),
-          const SizedBox(height: 12),
-          _medBreakdownCard(
-            emoji: '🛒',
-            title: 'Private Mein Becha',
-            qty: saleQtyBase,
-            unit: baseUnit,
-            amount: saleAmt,
-            color: Colors.green.shade700,
-          ),
-          const SizedBox(height: 24),
-
-          const Text(
-            '📜 Purchase History',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          if (purchases.isEmpty)
-            _emptyMsg('Is period mein koi purchase nahi hui.')
-          else
-            ...purchases.map((h) {
-              final double qb =
-                  (h['qtyInBaseUnit'] as num?)?.toDouble() ??
-                  (h['qty'] as num?)?.toDouble() ??
-                  0.0;
-              final double actPrice =
-                  (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.teal.shade100),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${qb.toStringAsFixed(2)} $baseUnit',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                          Text(
-                            formatHistoryDateTime(h['date']?.toString()),
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              color: Colors.black45,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '₹${actPrice.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.teal.shade800,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-
-          const SizedBox(height: 20),
-
-          if (allocs.isNotEmpty) ...[
-            const Text(
-              '🏢 Farmer-Wise List',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            ...allocs.map(
-              (a) => _medAllocTile(
-                name: a['farmerName']?.toString() ?? '-',
-                qty:
-                    (a['qtyInBaseUnit'] as num?)?.toDouble() ??
-                    (a['qty'] as num?)?.toDouble() ??
-                    0.0,
-                unit: baseUnit,
-                amount:
-                    ((a['qtyInBaseUnit'] as num?)?.toDouble() ??
-                        (a['qty'] as num?)?.toDouble() ??
-                        0.0) *
-                    _allocRatePerBase(a),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
                 color: Colors.teal.shade700,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Total Kharida (${purchases.length} purchase${purchases.length == 1 ? '' : 's'})',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${totalPurchasedBase.toStringAsFixed(2)} $baseUnit  •  ₹${totalAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 20),
-          ],
 
-          if (_privateSales.isNotEmpty) ...[
+            _medBreakdownCard(
+              emoji: '🏢',
+              title: 'Company Farmers Ko Diya',
+              qty: allocQtyBase,
+              unit: baseUnit,
+              amount: allocAmt,
+              color: Colors.teal.shade700,
+            ),
+            const SizedBox(height: 12),
+            _medBreakdownCard(
+              emoji: '🛒',
+              title: 'Private Mein Becha',
+              qty: saleQtyBase,
+              unit: baseUnit,
+              amount: saleAmt,
+              color: Colors.green.shade700,
+            ),
+            const SizedBox(height: 24),
+
             const Text(
-              '🛒 Private Buyer-Wise List',
+              '📜 Purchase History',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-            ..._privateSales.map(
-              (s) => _medAllocTile(
-                name: s['buyerName']?.toString() ?? '-',
-                qty: (s['qtyInBaseUnit'] as num?)?.toDouble() ?? 0.0,
-                unit: baseUnit,
-                amount: (s['totalSale'] as num?)?.toDouble() ?? 0.0,
-                color: Colors.green.shade700,
+            if (purchases.isEmpty)
+              _emptyMsg('Is period mein koi purchase nahi hui.')
+            else
+              ...purchases.map((h) {
+                final double qb =
+                    (h['qtyInBaseUnit'] as num?)?.toDouble() ??
+                    (h['qty'] as num?)?.toDouble() ??
+                    0.0;
+                final double actPrice =
+                    (h['actualPrice'] as num?)?.toDouble() ?? 0.0;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.teal.shade100),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${qb.toStringAsFixed(2)} $baseUnit',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              formatHistoryDateTime(h['date']?.toString()),
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: Colors.black45,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '₹${actPrice.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.teal.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+            const SizedBox(height: 20),
+
+            if (allocs.isNotEmpty) ...[
+              const Text(
+                '🏢 Farmer-Wise List',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
               ),
-            ),
+              const SizedBox(height: 10),
+              ...allocs.map(
+                (a) => _medAllocTile(
+                  name: a['farmerName']?.toString() ?? '-',
+                  qty:
+                      (a['qtyInBaseUnit'] as num?)?.toDouble() ??
+                      (a['qty'] as num?)?.toDouble() ??
+                      0.0,
+                  unit: baseUnit,
+                  amount:
+                      ((a['qtyInBaseUnit'] as num?)?.toDouble() ??
+                          (a['qty'] as num?)?.toDouble() ??
+                          0.0) *
+                      _allocRatePerBase(a),
+                  color: Colors.teal.shade700,
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            if (_privateSales.isNotEmpty) ...[
+              const Text(
+                '🛒 Private Buyer-Wise List',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              ..._privateSales.map(
+                (s) => _medAllocTile(
+                  name: s['buyerName']?.toString() ?? '-',
+                  qty: (s['qtyInBaseUnit'] as num?)?.toDouble() ?? 0.0,
+                  unit: baseUnit,
+                  amount: (s['totalSale'] as num?)?.toDouble() ?? 0.0,
+                  color: Colors.green.shade700,
+                ),
+              ),
+            ],
           ],
-        ],
-      ),
-    );
+        ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 
   Widget _medBreakdownCard({
@@ -3777,156 +3829,161 @@ class ChicksPrivateSalesMonthlyListScreen extends StatelessWidget {
               ((p['rate'] as num?)?.toDouble() ?? 0.0)),
     );
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.orange.shade800,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'accountsSales',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.orange.shade800,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: Text(
-          '🐣 Chicks Sales — ${selectedFilter.label}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
+          title: Text(
+            '🐣 Chicks Sales — ${selectedFilter.label}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-          overflow: TextOverflow.ellipsis,
         ),
-      ),
-      body: sales.isEmpty
-          ? Center(
-              child: Text(
-                'Is period mein koi sale nahi hui.',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: sales.length + 1,
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${sales.length} Sales • ${totalQty.toStringAsFixed(0)} pcs',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12.5,
-                            color: Colors.orange.shade900,
+        body: sales.isEmpty
+            ? Center(
+                child: Text(
+                  'Is period mein koi sale nahi hui.',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: sales.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${sales.length} Sales • ${totalQty.toStringAsFixed(0)} pcs',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                              color: Colors.orange.shade900,
+                            ),
                           ),
-                        ),
-                        Text(
-                          '₹${totalAmt.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.orange.shade900,
+                          Text(
+                            '₹${totalAmt.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.orange.shade900,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                final p = sales[index - 1];
-                final double qty = (p['qty'] as num?)?.toDouble() ?? 0.0;
-                final double rate = (p['rate'] as num?)?.toDouble() ?? 0.0;
-                final double amt = qty * rate;
-                return GestureDetector(
-                  onTap: () {
-                    Get.to(
-                      () => ChicksPrivateSaleDetailScreen(
-                        alloc: p,
-                        lotName: p['lotName']?.toString() ?? 'Lot',
-                        purchaseEffectiveRate:
-                            (p['purchaseEffectiveRate'] as num?)?.toDouble() ??
-                            0.0,
+                        ],
                       ),
                     );
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                  }
+                  final p = sales[index - 1];
+                  final double qty = (p['qty'] as num?)?.toDouble() ?? 0.0;
+                  final double rate = (p['rate'] as num?)?.toDouble() ?? 0.0;
+                  final double amt = qty * rate;
+                  return GestureDetector(
+                    onTap: () {
+                      Get.to(
+                        () => ChicksPrivateSaleDetailScreen(
+                          alloc: p,
+                          lotName: p['lotName']?.toString() ?? 'Lot',
+                          purchaseEffectiveRate:
+                              (p['purchaseEffectiveRate'] as num?)
+                                  ?.toDouble() ??
+                              0.0,
+                        ),
+                      );
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  p['name']?.toString() ?? '-',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '${qty.toStringAsFixed(0)} pcs @ ₹${rate.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    color: Colors.black54,
+                                  ),
+                                ),
+                                Text(
+                                  formatHistoryDateTime(
+                                    p['allocatedOn']?.toString(),
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: Colors.black45,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                p['name']?.toString() ?? '-',
-                                style: const TextStyle(
+                                '₹${amt.toStringAsFixed(2)}',
+                                style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
+                                  color: Colors.orange.shade900,
                                 ),
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                '${qty.toStringAsFixed(0)} pcs @ ₹${rate.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  color: Colors.black54,
-                                ),
-                              ),
-                              Text(
-                                formatHistoryDateTime(
-                                  p['allocatedOn']?.toString(),
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 10.5,
-                                  color: Colors.black45,
-                                ),
+                              const SizedBox(height: 4),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                size: 18,
+                                color: Colors.grey.shade400,
                               ),
                             ],
                           ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '₹${amt.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: Colors.orange.shade900,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              size: 18,
-                              color: Colors.grey.shade400,
-                            ),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-    );
+                  );
+                },
+              ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
@@ -3950,138 +4007,142 @@ class FeedPrivateSalesMonthlyListScreen extends StatelessWidget {
       (s, p) => s + ((p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0),
     );
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.blue.shade700,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'accountsSales',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.blue.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: Text(
-          '🌾 Feed Sales — ${selectedFilter.label}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
+          title: Text(
+            '🌾 Feed Sales — ${selectedFilter.label}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-          overflow: TextOverflow.ellipsis,
         ),
-      ),
-      body: sales.isEmpty
-          ? Center(
-              child: Text(
-                'Is period mein koi sale nahi hui.',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: sales.length + 1,
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.blue.shade200),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${sales.length} Sales',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12.5,
-                            color: Colors.blue.shade900,
+        body: sales.isEmpty
+            ? Center(
+                child: Text(
+                  'Is period mein koi sale nahi hui.',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: sales.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${sales.length} Sales',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                              color: Colors.blue.shade900,
+                            ),
                           ),
-                        ),
-                        Text(
-                          '₹${totalAmt.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.blue.shade900,
+                          Text(
+                            '₹${totalAmt.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.blue.shade900,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                final p = sales[index - 1];
-                final double amt =
-                    (p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0;
-                return GestureDetector(
-                  onTap: () {
-                    Get.to(() => FeedSaleDetailScreen(sale: p));
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.blue.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        ],
+                      ),
+                    );
+                  }
+                  final p = sales[index - 1];
+                  final double amt =
+                      (p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0;
+                  return GestureDetector(
+                    onTap: () {
+                      Get.to(() => FeedSaleDetailScreen(sale: p));
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  p['buyerName']?.toString() ?? '-',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  formatHistoryDateTime(p['date']?.toString()),
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: Colors.black45,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                p['buyerName']?.toString() ?? '-',
-                                style: const TextStyle(
+                                '₹${amt.toStringAsFixed(2)}',
+                                style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
+                                  color: Colors.blue.shade900,
                                 ),
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                formatHistoryDateTime(p['date']?.toString()),
-                                style: const TextStyle(
-                                  fontSize: 10.5,
-                                  color: Colors.black45,
-                                ),
+                              const SizedBox(height: 4),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                size: 18,
+                                color: Colors.grey.shade400,
                               ),
                             ],
                           ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '₹${amt.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: Colors.blue.shade900,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              size: 18,
-                              color: Colors.grey.shade400,
-                            ),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-    );
+                  );
+                },
+              ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
@@ -4105,137 +4166,141 @@ class MedicinePrivateSalesMonthlyListScreen extends StatelessWidget {
       (s, p) => s + ((p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0),
     );
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.teal.shade700,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    return PermissionScreenGate(
+      moduleId: 'accountsSales',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.teal.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: Text(
-          '💊 Medicine Sales — ${selectedFilter.label}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
+          title: Text(
+            '💊 Medicine Sales — ${selectedFilter.label}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-          overflow: TextOverflow.ellipsis,
         ),
-      ),
-      body: sales.isEmpty
-          ? Center(
-              child: Text(
-                'Is period mein koi sale nahi hui.',
-                style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: sales.length + 1,
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.shade50,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.teal.shade200),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${sales.length} Sales',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12.5,
-                            color: Colors.teal.shade900,
+        body: sales.isEmpty
+            ? Center(
+                child: Text(
+                  'Is period mein koi sale nahi hui.',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: sales.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.teal.shade200),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${sales.length} Sales',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                              color: Colors.teal.shade900,
+                            ),
                           ),
-                        ),
-                        Text(
-                          '₹${totalAmt.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.teal.shade900,
+                          Text(
+                            '₹${totalAmt.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.teal.shade900,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                final p = sales[index - 1];
-                final double amt =
-                    (p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0;
-                return GestureDetector(
-                  onTap: () {
-                    Get.to(() => MedicineSaleDetailScreen(sale: p));
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.teal.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        ],
+                      ),
+                    );
+                  }
+                  final p = sales[index - 1];
+                  final double amt =
+                      (p['totalSaleAmount'] as num?)?.toDouble() ?? 0.0;
+                  return GestureDetector(
+                    onTap: () {
+                      Get.to(() => MedicineSaleDetailScreen(sale: p));
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.teal.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  p['buyerName']?.toString() ?? '-',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  formatHistoryDateTime(p['date']?.toString()),
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: Colors.black45,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                p['buyerName']?.toString() ?? '-',
-                                style: const TextStyle(
+                                '₹${amt.toStringAsFixed(2)}',
+                                style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
+                                  color: Colors.teal.shade900,
                                 ),
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                formatHistoryDateTime(p['date']?.toString()),
-                                style: const TextStyle(
-                                  fontSize: 10.5,
-                                  color: Colors.black45,
-                                ),
+                              const SizedBox(height: 4),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                size: 18,
+                                color: Colors.grey.shade400,
                               ),
                             ],
                           ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '₹${amt.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: Colors.teal.shade900,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              size: 18,
-                              color: Colors.grey.shade400,
-                            ),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-    );
+                  );
+                },
+              ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }

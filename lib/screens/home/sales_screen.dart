@@ -100,96 +100,102 @@ class _SalesScreenState extends State<SalesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: primaryGreen,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-          ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Row(
-          children: [
-            Text('💰', style: TextStyle(fontSize: 20)),
-            SizedBox(width: 8),
-            Text(
-              'Sales / Bikri',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+    // ✅ FIX — poori screen 'sales' ke 'view' se gated hai; canNested() ke
+    // through iske upar koi aur ancestor nahi hai to ye top-level check hai.
+    return PermissionScreenGate(
+      moduleId: 'sales',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: primaryGreen,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
             ),
-          ],
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-              decoration: const BoxDecoration(
-                color: primaryGreen,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(28),
-                  bottomRight: Radius.circular(28),
+            onPressed: () => Get.back(),
+          ),
+          title: const Row(
+            children: [
+              Text('💰', style: TextStyle(fontSize: 20)),
+              SizedBox(width: 8),
+              Text(
+                'Sales / Bikri',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Kya becha aaj?',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Category select karein',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Categories',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  if (!_loaded)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 40),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else
-                    _buildCategoryGrid(),
-                  const SizedBox(height: 30),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
+        body: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                decoration: const BoxDecoration(
+                  color: primaryGreen,
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(28),
+                    bottomRight: Radius.circular(28),
+                  ),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Kya becha aaj?',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Category select karein',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Categories',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    if (!_loaded)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else
+                      _buildCategoryGrid(),
+                    const SizedBox(height: 30),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 
   Widget _buildCategoryGrid() {
@@ -339,56 +345,65 @@ class _ChicksSalesViewState extends State<ChicksSalesView> with CloudSyncMixin {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.orange.shade800,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+    // ✅ FIX — 'chicksSale' ke 'view' se gated, aur canNested() ke through
+    // grandparent 'sales' bhi automatically cascade hota hai.
+    return PermissionScreenGate(
+      moduleId: 'chicksSale',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.orange.shade800,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () => Get.back(),
           ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Row(
-          children: [
-            Text('🐣', style: TextStyle(fontSize: 18)),
-            SizedBox(width: 8),
-            Text(
-              'Chicks Sales',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
+          title: const Row(
+            children: [
+              Text('🐣', style: TextStyle(fontSize: 18)),
+              SizedBox(width: 8),
+              Text(
+                'Chicks Sales',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _purchaseEntries.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('🐣', style: TextStyle(fontSize: 52)),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Koi chicks purchase record nahi.',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-                  ),
-                ],
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _purchaseEntries.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('🐣', style: TextStyle(fontSize: 52)),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Koi chicks purchase record nahi.',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _purchaseEntries.length,
+                itemBuilder: (context, index) {
+                  return _ChicksSalesLotCard(entry: _purchaseEntries[index]);
+                },
               ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _purchaseEntries.length,
-              itemBuilder: (context, index) {
-                return _ChicksSalesLotCard(entry: _purchaseEntries[index]);
-              },
-            ),
-    );
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
@@ -1302,94 +1317,104 @@ class _FeedSalesHistoryScreenState extends State<FeedSalesHistoryScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.blue.shade700,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-          ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Row(
-          children: [
-            Text('🌾', style: TextStyle(fontSize: 18)),
-            SizedBox(width: 8),
-            Text(
-              'Feed Sales',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
+    // ✅ FIX — 'feedSale' ke 'view' se gated, aur canNested() ke through
+    // grandparent 'sales' bhi automatically cascade hota hai.
+    return PermissionScreenGate(
+      moduleId: 'feedSale',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.blue.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
             ),
-          ],
+            onPressed: () => Get.back(),
+          ),
+          title: const Row(
+            children: [
+              Text('🌾', style: TextStyle(fontSize: 18)),
+              SizedBox(width: 8),
+              Text(
+                'Feed Sales',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      body: Column(
-        children: [
-          if (_canAdd) // ✏️ EDIT 4
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    await Get.to(() => const AddPrivateFeedSaleScreen());
-                    _loadSales();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade800,
-                  ),
-                  icon: const Icon(
-                    Icons.add_shopping_cart_rounded,
-                    color: Colors.white,
-                  ),
-                  label: const Text(
-                    'Private Feed Sale',
-                    style: TextStyle(
+        body: Column(
+          children: [
+            // ✅ FIX — cached bool ki jagah reactive PermissionGate
+            PermissionGate(
+              moduleId: 'feedSale',
+              action: 'add',
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      await Get.to(() => const AddPrivateFeedSaleScreen());
+                      _loadSales();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade800,
+                    ),
+                    icon: const Icon(
+                      Icons.add_shopping_cart_rounded,
                       color: Colors.white,
-                      fontWeight: FontWeight.bold,
+                    ),
+                    label: const Text(
+                      'Private Feed Sale',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _feedSales.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('🌾', style: TextStyle(fontSize: 52)),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Koi feed sale record nahi.',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 14,
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _feedSales.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('🌾', style: TextStyle(fontSize: 52)),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Koi feed sale record nahi.',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _feedSales.length,
+                      itemBuilder: (context, index) {
+                        final sale = _feedSales[index];
+                        return _FeedSaleCard(sale: sale, onRefresh: _loadSales);
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _feedSales.length,
-                    itemBuilder: (context, index) {
-                      final sale = _feedSales[index];
-                      return _FeedSaleCard(sale: sale, onRefresh: _loadSales);
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
+            ),
+          ],
+        ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 
@@ -2956,91 +2981,101 @@ class _MedicineSalesHistoryScreenState extends State<MedicineSalesHistoryScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.teal.shade700,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
-          ),
-          onPressed: () => Get.back(),
-        ),
-        title: const Row(
-          children: [
-            Text('💊', style: TextStyle(fontSize: 18)),
-            SizedBox(width: 8),
-            Text(
-              'Medicine Sales',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+    // ✅ FIX — 'medicineSale' ke 'view' se gated, aur canNested() ke through
+    // grandparent 'sales' bhi automatically cascade hota hai.
+    return PermissionScreenGate(
+      moduleId: 'medicineSale',
+      action: 'view',
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          backgroundColor: Colors.teal.shade700,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
             ),
-          ],
+            onPressed: () => Get.back(),
+          ),
+          title: const Row(
+            children: [
+              Text('💊', style: TextStyle(fontSize: 18)),
+              SizedBox(width: 8),
+              Text(
+                'Medicine Sales',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      body: Column(
-        children: [
-          if (_canAdd) // ✏️ EDIT 5
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    await Get.to(() => const AddPrivateMedicineSaleScreen());
-                    _load();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal.shade700,
-                  ),
-                  icon: const Icon(
-                    Icons.add_shopping_cart_rounded,
-                    color: Colors.white,
-                  ),
-                  label: const Text(
-                    'Private Medicine Sale',
-                    style: TextStyle(
+        body: Column(
+          children: [
+            // ✅ FIX — cached bool ki jagah reactive PermissionGate
+            PermissionGate(
+              moduleId: 'medicineSale',
+              action: 'add',
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      await Get.to(() => const AddPrivateMedicineSaleScreen());
+                      _load();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal.shade700,
+                    ),
+                    icon: const Icon(
+                      Icons.add_shopping_cart_rounded,
                       color: Colors.white,
-                      fontWeight: FontWeight.bold,
+                    ),
+                    label: const Text(
+                      'Private Medicine Sale',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _sales.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('💊', style: TextStyle(fontSize: 52)),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Koi medicine sale nahi.',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 14,
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _sales.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('💊', style: TextStyle(fontSize: 52)),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Koi medicine sale nahi.',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _sales.length,
+                      itemBuilder: (ctx, i) =>
+                          _MedSaleCard(sale: _sales[i], onRefresh: _load),
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _sales.length,
-                    itemBuilder: (ctx, i) =>
-                        _MedSaleCard(sale: _sales[i], onRefresh: _load),
-                  ),
-          ),
-        ],
-      ),
-    );
+            ),
+          ],
+        ),
+      ), // Scaffold
+    ); // PermissionScreenGate
   }
 }
 

@@ -523,16 +523,17 @@ class PermissionService {
       id: 'feedConsumptionRule',
       label: 'Feed Consumption Rule',
       emoji: '🌿',
-      // ✅ FIX — Ye ek single rule-config screen hai (view current rule +
-      // edit karke save). Koi separate "Add new rule" ya "Delete rule"
-      // feature hai hi nahi — season add/remove sirf edit ka hissa hai.
+      // ✅ FIX — Ye ek company-wide config/rule screen hai (view + edit
+      // karke save karna), Add/Delete ka koi feature hi nahi hai.
       availableActions: const ['view', 'edit'],
     ),
     PermissionNode(
       id: 'weightGrowthRule',
       label: 'Weight Growth Rule',
       emoji: '📈',
-      // ✅ FIX — Same reasoning: sirf View + Edit, no Add/Delete at top level.
+      // ✅ FIX — Ye bhi feedConsumptionRule jaisa hi ek config/rule screen
+      // hai (view + edit karke save karna, "Din Add Karo" bhi edit ke
+      // andar hi hai) — Add/Delete alag se koi standalone feature nahi hai.
       availableActions: const ['view', 'edit'],
     ),
     PermissionNode(
