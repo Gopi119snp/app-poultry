@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../services/otp_service.dart';
+import '../../services/auth_service.dart';
+import 'login_screen.dart';
 
 class PersonalRegisterScreen extends StatefulWidget {
   final String industry;
@@ -20,6 +23,8 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
   bool _isTransitionDone = false;
   bool _isLoadingPin = false;
   bool _isLoadingVerification = false;
+  bool _isVerifyingOtp = false;
+  bool _isRegistering = false;
 
   // Background Location Analytics (Analytics ke liye data collect hoga)
   Map<String, dynamic> _ipAnalyticsData = {};
@@ -266,39 +271,66 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
           'region': ipData['region'] ?? 'Unknown',
           'device': 'Personal_Farmer_Flow',
         };
-        print('Background Analytics Logged: $_ipAnalyticsData');
+        debugPrint('Background Analytics Logged: $_ipAnalyticsData');
       }
     } catch (e) {
-      print('Network Analytics bypassed: $e');
+      debugPrint('Network Analytics bypassed: $e');
     }
 
+    // 3. Real SMS OTP bhejna — Firebase Phone Auth
     if (!mounted) return;
-    setState(() {
-      _isLoadingVerification = false;
-      _otpSent = true;
-      _currentStep = 2; // Move to verification
-    });
+    await OtpService.instance.sendOtp(
+      phone: _phoneController.text.trim(),
+      onCodeSent: () {
+        if (!mounted) return;
+        setState(() {
+          _isLoadingVerification = false;
+          _otpSent = true;
+          _currentStep = 2; // Move to verification
+        });
 
-    Get.snackbar(
-      'OTP Sent!',
-      'Verification code aapke number ${_phoneController.text} par bheja gaya hai',
-      backgroundColor: const Color(0xFF1B5E20),
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
+        Get.snackbar(
+          'OTP Sent!',
+          'Verification code aapke number ${_phoneController.text} par bheja gaya hai',
+          backgroundColor: const Color(0xFF1B5E20),
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(15),
+        );
+      },
+      onError: (msg) {
+        if (!mounted) return;
+        setState(() => _isLoadingVerification = false);
+        _showError(msg);
+      },
     );
   }
 
-  void _verifyOTP() {
-    /* -------------------------------------------------------------------------
-    // ORIGINAL VERIFICATION LOGIC (Uncomment for Production)
-    if (_otpController.text.length != 6 || !RegExp(r'^\d{6}$').hasMatch(_otpController.text)) {
+  Future<void> _verifyOTP() async {
+    if (_otpController.text.length != 6 ||
+        !RegExp(r'^\d{6}$').hasMatch(_otpController.text)) {
       _showError('6 digit numeric OTP daalo');
       return;
     }
-    ------------------------------------------------------------------------- */
 
-    // --- TEST MODE BYPASS (Bina OTP check kiye aage badhega) ---
+    if (!mounted) return;
+    setState(() => _isVerifyingOtp = true);
+
+    final ok = await OtpService.instance.verifyOtp(_otpController.text.trim());
+
+    if (!mounted) return;
+    setState(() => _isVerifyingOtp = false);
+
+    if (!ok) {
+      _showError('OTP galat hai — dobara try karo');
+      return;
+    }
+
+    // Sirf phone ownership verify karni thi — session ko clean karo taaki
+    // baad mein _register() ka createUserWithEmailAndPassword clean state
+    // se ho (koi purana signed-in phone session conflict na kare).
+    await OtpService.instance.signOutOtpSession();
+
     if (!mounted) return;
     setState(() {
       _otpVerified = true;
@@ -315,25 +347,56 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
     );
   }
 
-  void _register() {
+  Future<void> _register() async {
     if (_passwordController.text.length < 6) {
       _showError('Password kam se kam 6 characters ka hona chahiye');
       return;
     }
-    if (!RegExp(r'^(?=.*[A-Za-z])(?=.*\d).+$')
-        .hasMatch(_passwordController.text)) {
+    if (!RegExp(
+      r'^(?=.*[A-Za-z])(?=.*\d).+$',
+    ).hasMatch(_passwordController.text)) {
       _showError(
-          'Password mein kam se kam ek letter aur ek number hona chahiye');
+        'Password mein kam se kam ek letter aur ek number hona chahiye',
+      );
       return;
     }
     if (_passwordController.text != _confirmPasswordController.text) {
       _showError('Confirm password match nahi kar raha');
       return;
     }
+    if (!_otpVerified) {
+      _showError('Pehle Mobile OTP verify karo');
+      return;
+    }
 
-    // Prepare final dataset
-    print('Registering Farmer Profile:');
-    print('Name: ${_nameController.text}, Analytics: $_ipAnalyticsData');
+    if (!mounted) return;
+    setState(() => _isRegistering = true);
+
+    final result = await AuthService.instance.registerPersonalFarmer(
+      farmerName: _nameController.text.trim(),
+      phone: _phoneController.text.trim(),
+      password: _passwordController.text,
+      industry: widget.industry,
+      email: _emailController.text.trim().isEmpty
+          ? null
+          : _emailController.text.trim(),
+      extraProfile: {
+        'street': _streetController.text.trim(),
+        'village': _villageController.text.trim(),
+        'district': _districtController.text.trim(),
+        'state': _selectedState ?? _stateController.text.trim(),
+        'pin': _pinController.text.trim(),
+        if (_ipAnalyticsData.isNotEmpty) 'signupAnalytics': _ipAnalyticsData,
+      },
+    );
+
+    if (!mounted) return;
+    setState(() => _isRegistering = false);
+
+    if (!result.success) {
+      _showError(result.errorMessage ?? 'Registration fail ho gayi');
+      return;
+    }
 
     Get.snackbar(
       '🎉 Registered!',
@@ -345,7 +408,10 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
       margin: const EdgeInsets.all(15),
     );
 
-    // Future sequence to Home Dashboard
+    // Account ban gaya — ab login screen par bhejo (session already saved
+    // hai AuthService.registerPersonalFarmer ke andar, isliye chaho to
+    // seedha HomeScreen par bhi navigate kar sakte ho).
+    Get.offAll(() => const LoginScreen());
   }
 
   // ---------------------------------------------------------------------------
@@ -522,7 +588,7 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                       ),
                     ],
 
-                    // STEP 2 — MOBILE VERIFICATION PHASE (Test Mode)
+                    // STEP 2 — MOBILE VERIFICATION PHASE (Real Firebase Phone OTP)
                     if (_currentStep >= 2) ...[
                       const SizedBox(height: 32),
                       _sectionLabel('🔐 SECURITY VERIFICATION', '2'),
@@ -535,7 +601,7 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                               child: _buildInput(
                                 controller: _otpController,
                                 label: '6 Digit OTP *',
-                                hint: 'Test Mode: Type anything',
+                                hint: 'SMS se aaya hua code daalo',
                                 icon: Icons.lock_clock_rounded,
                                 keyboardType: TextInputType.number,
                                 maxLength: 6,
@@ -545,10 +611,11 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                             Padding(
                               padding: const EdgeInsets.only(bottom: 2),
                               child: ElevatedButton(
-                                onPressed: _verifyOTP,
+                                onPressed: _isVerifyingOtp ? null : _verifyOTP,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF1B5E20),
                                   foregroundColor: Colors.white,
+                                  disabledBackgroundColor: Colors.grey.shade300,
                                   elevation: 0,
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 24,
@@ -558,10 +625,21 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                child: const Text(
-                                  'Verify',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
+                                child: _isVerifyingOtp
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text(
+                                        'Verify',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                               ),
                             ),
                           ],
@@ -569,7 +647,7 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                         Padding(
                           padding: const EdgeInsets.only(top: 14),
                           child: Text(
-                            'Note: Abhi test mode hai, Verify button dabate hi bypass ho jayega.',
+                            'Aapke number par 6 digit ka SMS code bheja gaya hai.',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade600,
@@ -634,26 +712,39 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _register,
+                          onPressed: _isRegistering ? null : _register,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF1B5E20),
                             foregroundColor: Colors.white,
+                            disabledBackgroundColor: const Color(
+                              0xFF1B5E20,
+                            ).withOpacity(0.5),
                             padding: const EdgeInsets.symmetric(vertical: 20),
                             elevation: 4,
-                            shadowColor:
-                                const Color(0xFF1B5E20).withOpacity(0.3),
+                            shadowColor: const Color(
+                              0xFF1B5E20,
+                            ).withOpacity(0.3),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                             ),
                           ),
-                          child: const Text(
-                            'Farmer Account Banao — Start FREE →',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
+                          child: _isRegistering
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.5,
+                                  ),
+                                )
+                              : const Text(
+                                  'Farmer Account Banao — Start FREE →',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
                         ),
                       ),
                       const SizedBox(height: 40),
@@ -706,8 +797,10 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(0xFF1B5E20), width: 1.5),
+                borderSide: const BorderSide(
+                  color: Color(0xFF1B5E20),
+                  width: 1.5,
+                ),
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 14,
@@ -796,8 +889,9 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
             boxShadow: isActive
                 ? [
                     BoxShadow(
-                        color: const Color(0xFF1B5E20).withOpacity(0.2),
-                        blurRadius: 8)
+                      color: const Color(0xFF1B5E20).withOpacity(0.2),
+                      blurRadius: 8,
+                    ),
                   ]
                 : null,
           ),
@@ -931,8 +1025,10 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(0xFF1B5E20), width: 1.5),
+                borderSide: const BorderSide(
+                  color: Color(0xFF1B5E20),
+                  width: 1.5,
+                ),
               ),
               disabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1003,8 +1099,10 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(0xFF1B5E20), width: 1.5),
+                borderSide: const BorderSide(
+                  color: Color(0xFF1B5E20),
+                  width: 1.5,
+                ),
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../home/home_screen.dart';
 import '../../services/auth_service.dart';
 import '../../services/company_store.dart';
+import '../../services/otp_service.dart';
 
 class CompanyRegisterScreen extends StatefulWidget {
   final String industry;
@@ -31,6 +32,7 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
   bool _isTransitionDone = false;
   bool _isLoadingPin = false;
   bool _isLoadingVerification = false;
+  bool _isVerifyingMobileOtp = false;
 
   // Background Location Analytics Data (Database mein store karne ke liye)
   Map<String, dynamic> _ipAnalyticsData = {};
@@ -303,53 +305,81 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
       debugPrint('Network tracing safely skipped: $e');
     }
 
-    // 3. Move to Step 2 (Verification)
+    // 3. Real Mobile OTP bhejna — Firebase Phone Auth
+    // (Email OTP abhi bhi simulated hai — real email verification alag
+    // service maangta hai, isliye scope se bahar hai.)
     if (!mounted) return;
-    setState(() {
-      _isLoadingVerification = false;
-      _otpSent = true;
-      _emailOtpSent = true;
-      _currentStep = 2;
-    });
+    await OtpService.instance.sendOtp(
+      phone: _phoneController.text.trim(),
+      onCodeSent: () {
+        if (!mounted) return;
+        setState(() {
+          _isLoadingVerification = false;
+          _otpSent = true;
+          _emailOtpSent = true; // Email OTP abhi test-mode hai
+          _currentStep = 2;
+        });
 
-    Get.snackbar(
-      'Sent!',
-      'Mobile aur Email dono par verification codes bheje gaye hain',
-      backgroundColor: widget.industryColor,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
+        Get.snackbar(
+          'Sent!',
+          'Mobile par verification code bheja gaya hai',
+          backgroundColor: widget.industryColor,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(15),
+        );
+      },
+      onError: (msg) {
+        if (!mounted) return;
+        setState(() => _isLoadingVerification = false);
+        _showError(msg);
+      },
     );
   }
 
-  // Mobile OTP Verification Handler
-  void _verifyMobileOTP() {
-    /* // ORIGINAL LOGIC (Uncomment when going live)
-    if (_otpController.text.length != 6 || !RegExp(r'^\d{6}$').hasMatch(_otpController.text)) {
+  // Mobile OTP Verification Handler — REAL Firebase Phone Auth
+  void _verifyMobileOTP() async {
+    if (_otpController.text.length != 6 ||
+        !RegExp(r'^\d{6}$').hasMatch(_otpController.text)) {
       _showError('6 digit numeric Mobile OTP daalo');
       return;
     }
-    */
 
-    // --- TEST MODE BYPASS ---
+    if (!mounted) return;
+    setState(() => _isVerifyingMobileOtp = true);
+
+    final ok = await OtpService.instance.verifyOtp(_otpController.text.trim());
+
+    if (!mounted) return;
+    setState(() => _isVerifyingMobileOtp = false);
+
+    if (!ok) {
+      _showError('OTP galat hai — dobara try karo');
+      return;
+    }
+
+    // Sirf ownership verify karni thi — session clean karo taaki
+    // baad mein _register() ka createUserWithEmailAndPassword clean
+    // state se ho (koi purana signed-in phone session conflict na kare).
+    await OtpService.instance.signOutOtpSession();
+
     if (!mounted) return;
     setState(() {
       _otpVerified = true;
     });
     _checkIfAllVerified();
-    // ------------------------
   }
 
-  // Email OTP Verification Handler
+  // Email OTP Verification Handler (abhi test-mode — real email service scope se bahar)
   void _verifyEmailOTP() {
-    /* // ORIGINAL LOGIC (Uncomment when going live)
+    /* // ORIGINAL LOGIC (Uncomment when going live with real email OTP)
     if (_emailOtpController.text.length != 6 || !RegExp(r'^\d{6}$').hasMatch(_emailOtpController.text)) {
       _showError('6 digit numeric Email OTP daalo');
       return;
     }
     */
 
-    // --- TEST MODE BYPASS ---
+    // --- TEST MODE BYPASS (email verification abhi implement nahi hui) ---
     if (!mounted) return;
     setState(() {
       _emailVerified = true;
@@ -417,7 +447,10 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
       try {
         final bytes = await _signatureFile!.readAsBytes();
         final base64Signature = base64Encode(bytes);
-        await CompanyStore.instance.setString('ownerSignature', base64Signature);
+        await CompanyStore.instance.setString(
+          'ownerSignature',
+          base64Signature,
+        );
       } catch (e) {
         debugPrint('Signature save karte waqt error: $e');
       }
@@ -635,8 +668,11 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
                         _buildVerificationRow(
                           controller: _otpController,
                           label: 'Mobile OTP *',
-                          hint: 'Type anything (Test Mode)',
-                          onVerify: _verifyMobileOTP,
+                          hint: 'SMS se aaya hua code',
+                          onVerify: _isVerifyingMobileOtp
+                              ? null
+                              : _verifyMobileOTP,
+                          isLoading: _isVerifyingMobileOtp,
                         ),
                       ] else
                         _verifiedBox(
@@ -660,11 +696,11 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
                           widget.industryColor,
                         ),
 
-                      if (!_otpVerified || !_emailVerified)
+                      if (!_emailVerified)
                         Padding(
                           padding: const EdgeInsets.only(top: 14),
                           child: Text(
-                            'Kripya dhyan dein: Abhi app development phase (Test Mode) mein hai, isliye sirf Verify button dabane se bypass ho jayega.',
+                            'Note: Email verification abhi Test Mode mein hai — koi bhi 6 digit daal ke Verify dabao. Mobile OTP real SMS se aata hai.',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade600,
@@ -855,7 +891,8 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
     required TextEditingController controller,
     required String label,
     required String hint,
-    required VoidCallback onVerify,
+    required VoidCallback? onVerify,
+    bool isLoading = false,
   }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -878,16 +915,26 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: widget.industryColor,
               foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.grey.shade300,
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text(
-              'Verify',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            child: isLoading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Text(
+                    'Verify',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
           ),
         ),
       ],

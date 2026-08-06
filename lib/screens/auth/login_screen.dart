@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import '../home/home_screen.dart';
 import '../../services/auth_service.dart';
 import '../../services/company_store.dart';
+import '../../services/otp_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -113,7 +112,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ----------------------------------------------------------------
-  // OTP LOGIN — Company Farmer
+  // OTP LOGIN — Company Farmer (REAL Firebase Phone Auth)
   // ----------------------------------------------------------------
   Future<void> _sendFarmerOtp() async {
     final phone = _otpPhoneController.text.trim();
@@ -133,35 +132,66 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      setState(() => _otpSent = true);
-      Get.snackbar(
-        'OTP Bheja Gaya!',
-        '$phone pe OTP bheja gaya (Test Mode — koi bhi 6 digit daalo)',
-        backgroundColor: primaryGreen,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(15),
+      setState(() => _isLoading = true);
+      await OtpService.instance.sendOtp(
+        phone: phone,
+        onCodeSent: () {
+          if (!mounted) return;
+          setState(() {
+            _isLoading = false;
+            _otpSent = true;
+          });
+          Get.snackbar(
+            'OTP Bheja Gaya!',
+            '$phone pe OTP bheja gaya',
+            backgroundColor: primaryGreen,
+            colorText: Colors.white,
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(15),
+          );
+        },
+        onError: (msg) {
+          if (!mounted) return;
+          setState(() => _isLoading = false);
+          _showError(msg);
+        },
       );
     } catch (e) {
+      setState(() => _isLoading = false);
       _showError('Error checking farmer: ${e.toString()}');
     }
   }
 
   Future<void> _verifyFarmerOtp() async {
-    if (_otpController.text.length < 4) {
-      _showError('OTP daalo');
+    if (_otpController.text.length != 6) {
+      _showError('6 digit OTP daalo');
       return;
     }
 
     setState(() => _isLoading = true);
 
+    final otpOk = await OtpService.instance.verifyOtp(
+      _otpController.text.trim(),
+    );
+
+    if (!otpOk) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showError('OTP galat hai');
+      return;
+    }
+
     try {
+      // Session signed-in HI rakho (sign out mat karo) — isse farmer ka
+      // real Firebase UID mil jayega jo linkAuthUser use karega.
       final result = await AuthService.instance.loginCompanyFarmer(
         phone: _otpPhoneController.text.trim(),
       );
+      if (!mounted) return;
       setState(() => _isLoading = false);
 
       if (!result.success) {
+        await OtpService.instance.signOutOtpSession();
         _showError(result.errorMessage ?? 'Login fail');
         return;
       }
@@ -182,13 +212,14 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
       _showError('OTP verification error: ${e.toString()}');
     }
   }
 
   // ----------------------------------------------------------------
-  // FORGOT PASSWORD — Owner / Personal Farmer only
+  // FORGOT PASSWORD — Owner / Personal Farmer only (REAL OTP + Cloud Function)
   // ----------------------------------------------------------------
   Future<void> _sendForgotOtp() async {
     final phone = _forgotPhoneController.text.trim();
@@ -198,48 +229,53 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final lookup = await CompanyStore.instance.lookupPhone(phone);
+      final role = lookup?['role'] as String?;
 
-      // Owner check
-      final ownerPhone = prefs.getString('phone') ?? '';
-
-      // Personal Farmer check
-      final personalFarmersJson = prefs.getString('personalFarmers');
-      bool isPersonalFarmer = false;
-      if (personalFarmersJson != null) {
-        final personalFarmers = List<Map<String, dynamic>>.from(
-          json.decode(personalFarmersJson),
-        );
-        isPersonalFarmer = personalFarmers.any((f) => f['phone'] == phone);
-      }
-
-      if (phone != ownerPhone && !isPersonalFarmer) {
+      if (role != 'Owner' && role != 'Personal Farmer') {
         _showError(
           'Yeh number Owner ya Personal Farmer ka nahi hai.\nManager ka password Owner ke paas hota hai — unse puchein.',
         );
         return;
       }
 
-      setState(() => _forgotOtpSent = true);
-      Get.snackbar(
-        'OTP Bheja Gaya!',
-        '$phone pe OTP bheja gaya (Test Mode — koi bhi 6 digit daalo)',
-        backgroundColor: primaryGreen,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(15),
+      await OtpService.instance.sendOtp(
+        phone: phone,
+        onCodeSent: () {
+          if (!mounted) return;
+          setState(() => _forgotOtpSent = true);
+          Get.snackbar(
+            'OTP Bheja Gaya!',
+            '$phone pe OTP bheja gaya',
+            backgroundColor: primaryGreen,
+            colorText: Colors.white,
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(15),
+          );
+        },
+        onError: (msg) => _showError(msg),
       );
     } catch (e) {
       _showError('Error sending OTP: ${e.toString()}');
     }
   }
 
-  void _verifyForgotOtp() {
-    if (_forgotOtpController.text.length < 4) {
-      _showError('OTP daalo');
+  Future<void> _verifyForgotOtp() async {
+    if (_forgotOtpController.text.length != 6) {
+      _showError('6 digit OTP daalo');
       return;
     }
-    // Test mode — bypass
+
+    final ok = await OtpService.instance.verifyOtp(
+      _forgotOtpController.text.trim(),
+    );
+
+    if (!ok) {
+      _showError('OTP galat hai');
+      return;
+    }
+
+    if (!mounted) return;
     setState(() {
       _forgotOtpVerified = true;
       _showForgotNewPass = true;
@@ -265,29 +301,16 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final phone = _forgotPhoneController.text.trim();
-      final ownerPhone = prefs.getString('phone') ?? '';
+      // Server-side Cloud Function — verified phone-auth session se hi kaam karti hai
+      final error = await OtpService.instance.resetPasswordAfterOtp(
+        _forgotNewPassController.text,
+      );
+      // Temporary phone-auth session ab band karo
+      await OtpService.instance.signOutOtpSession();
 
-      if (phone == ownerPhone) {
-        // Owner password update
-        await prefs.setString('password', _forgotNewPassController.text);
-      } else {
-        // Personal Farmer password update
-        final personalFarmersJson = prefs.getString('personalFarmers');
-        if (personalFarmersJson != null) {
-          final personalFarmers = List<Map<String, dynamic>>.from(
-            json.decode(personalFarmersJson),
-          );
-          final index = personalFarmers.indexWhere((f) => f['phone'] == phone);
-          if (index != -1) {
-            personalFarmers[index]['password'] = _forgotNewPassController.text;
-            await prefs.setString(
-              'personalFarmers',
-              json.encode(personalFarmers),
-            );
-          }
-        }
+      if (error != null) {
+        _showError(error);
+        return;
       }
 
       Get.snackbar(
@@ -540,8 +563,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     setDialogState(() {});
                   });
                 } else if (!_forgotOtpVerified) {
-                  _verifyForgotOtp();
-                  setDialogState(() {});
+                  _verifyForgotOtp().then((_) {
+                    setDialogState(() {});
+                  });
                 } else {
                   _setNewPassword();
                 }
@@ -988,7 +1012,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(width: 10),
             ElevatedButton(
-              onPressed: _otpSent ? null : _sendFarmerOtp,
+              onPressed: (_otpSent || _isLoading) ? null : _sendFarmerOtp,
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryGreen,
                 foregroundColor: Colors.white,
@@ -1001,13 +1025,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: Text(
-                _otpSent ? '✓ Sent' : 'OTP Bhejo',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              child: (_isLoading && !_otpSent)
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text(
+                      _otpSent ? '✓ Sent' : 'OTP Bhejo',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
             ),
           ],
         ),
@@ -1037,7 +1070,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     fontWeight: FontWeight.w500,
                   ),
                   decoration: InputDecoration(
-                    hintText: 'e.g. 123456 (Test Mode)',
+                    hintText: 'SMS se aaya hua code',
                     hintStyle: TextStyle(
                       color: Colors.grey.shade400,
                       fontSize: 13,
@@ -1073,10 +1106,11 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(width: 10),
               ElevatedButton(
-                onPressed: _verifyFarmerOtp,
+                onPressed: _isLoading ? null : _verifyFarmerOtp,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryGreen,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey.shade300,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 18,
@@ -1085,10 +1119,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text(
-                  'Verify',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        'Verify',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
             ],
           ),

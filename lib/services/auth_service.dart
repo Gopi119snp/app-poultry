@@ -145,6 +145,107 @@ class AuthService {
     }
   }
 
+  /// Personal Farmer registration — akela farmer apna khud ka farm chalata
+  /// hai, koi doosra staff nahi hota. Company jaisa hi Firestore schema
+  /// reuse hota hai — bas `companyId` khud farmer ka apna `uid` hota hai
+  /// (single-farmer "company"), isliye baaki saara app (farmers_screen,
+  /// batch screens, waghera) bina kisi change ke iske saath kaam karta hai.
+  ///
+  /// [email] optional hai — personal register screen mein email field
+  /// optional hai. Agar nahi diya to phone-based synthetic email banta hai
+  /// (jaise staff members ke liye already ban raha hai), taaki
+  /// Firebase Auth ke liye email+password ki zaroorat poori ho jaye.
+  Future<AuthResult> registerPersonalFarmer({
+    required String farmerName,
+    required String phone,
+    required String password,
+    required String industry,
+    String? email,
+    Map<String, dynamic>? extraProfile,
+  }) async {
+    final normalized = _normalizePhone(phone);
+    final authEmail = (email != null && email.trim().isNotEmpty)
+        ? email.trim().toLowerCase()
+        : 'personal.$normalized@poultrypro.app';
+
+    if (!FirebaseBootstrap.isReady) {
+      return _registerCompanyLocalOnly(
+        email: authEmail,
+        password: password,
+        ownerName: farmerName,
+        companyName: farmerName,
+        phone: normalized,
+        industry: industry,
+      );
+    }
+
+    try {
+      final cred = await _auth.createUserWithEmailAndPassword(
+        email: authEmail,
+        password: password,
+      );
+
+      final uid = cred.user!.uid;
+      final profile = {
+        'ownerName': farmerName,
+        'companyName': farmerName,
+        'phone': normalized,
+        'email': authEmail,
+        'authEmail': authEmail,
+        'industry': industry,
+        'accountType': 'personal',
+        if (extraProfile != null) ...extraProfile,
+      };
+
+      await CompanyStore.instance.createCompanyInCloud(
+        companyId: uid,
+        profile: profile,
+      );
+
+      await CompanyStore.instance.linkAuthUser(
+        authUid: uid,
+        companyId: uid,
+        role: 'Personal Farmer',
+        phone: normalized,
+        displayName: farmerName,
+      );
+
+      await CompanyStore.instance.registerPhoneLookup(
+        phone: normalized,
+        companyId: uid,
+        role: 'Personal Farmer',
+        authEmail: authEmail,
+        displayName: farmerName,
+      );
+
+      await SessionService.saveLoginSession(
+        companyId: uid,
+        role: 'Personal Farmer',
+        displayName: farmerName,
+        ownerName: farmerName,
+        companyName: farmerName,
+        phone: normalized,
+        industry: industry,
+        authEmail: authEmail,
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('password', password);
+
+      return AuthResult.ok(
+        companyId: uid,
+        role: 'Personal Farmer',
+        displayName: farmerName,
+        ownerName: farmerName,
+        companyName: farmerName,
+      );
+    } on FirebaseAuthException catch (e) {
+      return AuthResult.fail(_authErrorMessage(e));
+    } catch (e) {
+      return AuthResult.fail('Registration fail: $e');
+    }
+  }
+
   /// Phone + password login — Owner, Manager, Personal Farmer.
   Future<AuthResult> loginWithPhonePassword({
     required String phone,
