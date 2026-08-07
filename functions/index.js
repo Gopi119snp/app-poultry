@@ -1,8 +1,24 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
+const nodemailer = require("nodemailer");
 
 if (admin.apps.length === 0) {
   admin.initializeApp();
+}
+
+/**
+ * Gmail SMTP transporter — GMAIL_USER aur GMAIL_APP_PASSWORD
+ * `functions/.env` file se aate hain (Firebase CLI khud load kar leta hai,
+ * .env commit mat karna — .gitignore mein daal do).
+ */
+function getMailTransporter() {
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
+    },
+  });
 }
 
 /**
@@ -104,4 +120,107 @@ exports.resetPasswordAfterOtp = functions.https.onCall(async (data, context) => 
       "Password update karne mein error: " + err.message
     );
   }
+});
+
+/**
+ * ============================================================================
+ * sendEmailOtp — Company registration ke waqt email verify karne ke liye
+ * ============================================================================
+ * 6-digit code generate karti hai, Firestore mein 5-minute expiry ke saath
+ * store karti hai, aur Gmail SMTP se real email bhejti hai.
+ */
+exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
+  const email = ((data && data.email) || "").trim().toLowerCase();
+
+  if (!email || !/^[\w.-]+@[\w-]+\.[a-zA-Z]{2,}$/.test(email)) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Sahi email address daalo."
+    );
+  }
+
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const db = admin.firestore();
+
+  await db.collection("email_otps").doc(email).set({
+    code,
+    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 5 * 60 * 1000),
+    attempts: 0,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  try {
+    const transporter = getMailTransporter();
+    await transporter.sendMail({
+      from: `"PoultryPro" <${process.env.GMAIL_USER}>`,
+      to: email,
+      subject: "PoultryPro — Aapka Verification Code",
+      text: `Aapka verification code hai: ${code}\n\nYe code 5 minute mein expire ho jayega. Agar aapne ye request nahi ki, to is email ko ignore kar dein.`,
+      html: `<div style="font-family:sans-serif;">
+        <p>Namaste,</p>
+        <p>Aapka PoultryPro verification code hai:</p>
+        <p style="font-size:28px;font-weight:bold;letter-spacing:4px;">${code}</p>
+        <p>Ye code 5 minute mein expire ho jayega.</p>
+        <p style="color:#888;font-size:12px;">Agar aapne ye request nahi ki, to is email ko ignore kar dein.</p>
+      </div>`,
+    });
+  } catch (err) {
+    console.error("[sendEmailOtp] mail send failed:", err);
+    throw new functions.https.HttpsError(
+      "internal",
+      "Email bhejne mein error: " + err.message
+    );
+  }
+
+  return { success: true };
+});
+
+/**
+ * ============================================================================
+ * verifyEmailOtp — user ne jo code type kiya, use Firestore se match karti hai
+ * ============================================================================
+ */
+exports.verifyEmailOtp = functions.https.onCall(async (data, context) => {
+  const email = ((data && data.email) || "").trim().toLowerCase();
+  const code = ((data && data.code) || "").trim();
+
+  if (!email || !code) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Email aur code dono chahiye."
+    );
+  }
+
+  const db = admin.firestore();
+  const docRef = db.collection("email_otps").doc(email);
+  const snap = await docRef.get();
+
+  if (!snap.exists) {
+    return { success: false, message: "Pehle OTP mangwao." };
+  }
+
+  const otpData = snap.data();
+
+  if (Date.now() > otpData.expiresAt.toMillis()) {
+    await docRef.delete();
+    return { success: false, message: "OTP expire ho gaya — dobara mangwao." };
+  }
+
+  if ((otpData.attempts || 0) >= 5) {
+    await docRef.delete();
+    return {
+      success: false,
+      message: "Bahut zyada galat attempts — dobara OTP mangwao.",
+    };
+  }
+
+  if (otpData.code !== code) {
+    await docRef.update({
+      attempts: admin.firestore.FieldValue.increment(1),
+    });
+    return { success: false, message: "OTP galat hai." };
+  }
+
+  await docRef.delete();
+  return { success: true };
 });

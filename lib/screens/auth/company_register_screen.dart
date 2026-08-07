@@ -33,6 +33,7 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
   bool _isLoadingPin = false;
   bool _isLoadingVerification = false;
   bool _isVerifyingMobileOtp = false;
+  bool _isVerifyingEmailOtp = false;
 
   // Background Location Analytics Data (Database mein store karne ke liye)
   Map<String, dynamic> _ipAnalyticsData = {};
@@ -305,29 +306,39 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
       debugPrint('Network tracing safely skipped: $e');
     }
 
-    // 3. Real Mobile OTP bhejna — Firebase Phone Auth
-    // (Email OTP abhi bhi simulated hai — real email verification alag
-    // service maangta hai, isliye scope se bahar hai.)
+    // 3. Real Mobile OTP (Firebase SMS) + Real Email OTP (Cloud Function
+    // se Gmail SMTP), dono ek ke baad ek bhejo.
     if (!mounted) return;
     await OtpService.instance.sendOtp(
       phone: _phoneController.text.trim(),
-      onCodeSent: () {
+      onCodeSent: () async {
+        // Mobile OTP bhej diya — ab Email OTP bhi bhejo (real)
+        final emailError = await OtpService.instance.sendEmailOtp(
+          _emailController.text.trim(),
+        );
+
         if (!mounted) return;
         setState(() {
           _isLoadingVerification = false;
           _otpSent = true;
-          _emailOtpSent = true; // Email OTP abhi test-mode hai
           _currentStep = 2;
+          if (emailError == null) _emailOtpSent = true;
         });
 
-        Get.snackbar(
-          'Sent!',
-          'Mobile par verification code bheja gaya hai',
-          backgroundColor: widget.industryColor,
-          colorText: Colors.white,
-          snackPosition: SnackPosition.BOTTOM,
-          margin: const EdgeInsets.all(15),
-        );
+        if (emailError != null) {
+          _showError(
+            'Mobile par OTP bhej diya, lekin Email OTP mein dikkat: $emailError',
+          );
+        } else {
+          Get.snackbar(
+            'Sent!',
+            'Mobile aur Email dono par verification codes bheje gaye hain',
+            backgroundColor: widget.industryColor,
+            colorText: Colors.white,
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(15),
+          );
+        }
       },
       onError: (msg) {
         if (!mounted) return;
@@ -370,22 +381,34 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
     _checkIfAllVerified();
   }
 
-  // Email OTP Verification Handler (abhi test-mode — real email service scope se bahar)
-  void _verifyEmailOTP() {
-    /* // ORIGINAL LOGIC (Uncomment when going live with real email OTP)
-    if (_emailOtpController.text.length != 6 || !RegExp(r'^\d{6}$').hasMatch(_emailOtpController.text)) {
+  // Email OTP Verification Handler — REAL (Cloud Function se verify hota hai)
+  void _verifyEmailOTP() async {
+    if (_emailOtpController.text.length != 6 ||
+        !RegExp(r'^\d{6}$').hasMatch(_emailOtpController.text)) {
       _showError('6 digit numeric Email OTP daalo');
       return;
     }
-    */
 
-    // --- TEST MODE BYPASS (email verification abhi implement nahi hui) ---
     if (!mounted) return;
+    setState(() => _isVerifyingEmailOtp = true);
+
+    final ok = await OtpService.instance.verifyEmailOtp(
+      _emailController.text.trim(),
+      _emailOtpController.text.trim(),
+    );
+
+    if (!mounted) return;
+    setState(() => _isVerifyingEmailOtp = false);
+
+    if (!ok) {
+      _showError('Email OTP galat ya expire ho gaya — dobara try karo');
+      return;
+    }
+
     setState(() {
       _emailVerified = true;
     });
     _checkIfAllVerified();
-    // ------------------------
   }
 
   void _checkIfAllVerified() {
@@ -687,8 +710,11 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
                         _buildVerificationRow(
                           controller: _emailOtpController,
                           label: 'Email OTP *',
-                          hint: 'Type anything (Test Mode)',
-                          onVerify: _verifyEmailOTP,
+                          hint: 'Email mein aaya hua code',
+                          onVerify: _isVerifyingEmailOtp
+                              ? null
+                              : _verifyEmailOTP,
+                          isLoading: _isVerifyingEmailOtp,
                         ),
                       ] else
                         _verifiedBox(
@@ -696,11 +722,11 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
                           widget.industryColor,
                         ),
 
-                      if (!_emailVerified)
+                      if (!_otpVerified || !_emailVerified)
                         Padding(
                           padding: const EdgeInsets.only(top: 14),
                           child: Text(
-                            'Note: Email verification abhi Test Mode mein hai — koi bhi 6 digit daal ke Verify dabao. Mobile OTP real SMS se aata hai.',
+                            'Mobile OTP SMS se aata hai, Email OTP aapke email inbox mein.',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade600,

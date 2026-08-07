@@ -68,6 +68,9 @@ class OtpService {
           }
         },
         verificationFailed: (FirebaseAuthException e) {
+          debugPrint(
+            '[OtpService] verificationFailed → code: ${e.code}, message: ${e.message}',
+          );
           onError(_friendlyError(e));
         },
         codeSent: (String verificationId, int? resendToken) {
@@ -82,6 +85,7 @@ class OtpService {
         },
       );
     } catch (e) {
+      debugPrint('[OtpService] sendOtp catch → $e');
       onError(_friendlyError(e));
     }
   }
@@ -147,6 +151,46 @@ class OtpService {
       return e.message ?? 'Password reset error (${e.code})';
     } catch (e) {
       return 'Password reset error: $e';
+    }
+  }
+
+  /// Email OTP bhejta hai — Cloud Function (`sendEmailOtp`) ke through,
+  /// jo Gmail SMTP se real email bhejti hai. Company registration ke
+  /// email-verification step ke liye use hota hai.
+  ///
+  /// Return: `null` = success, warna error message.
+  Future<String?> sendEmailOtp(String email) async {
+    final trimmed = email.trim().toLowerCase();
+    if (trimmed.isEmpty) return 'Email address daalo';
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable('sendEmailOtp');
+      final result = await callable.call(<String, dynamic>{'email': trimmed});
+      final data = result.data;
+      if (data is Map && data['success'] == true) return null;
+      return 'Email OTP bhejne mein fail ho gaya';
+    } on FirebaseFunctionsException catch (e) {
+      return e.message ?? 'Email OTP error (${e.code})';
+    } catch (e) {
+      return 'Email OTP error: $e';
+    }
+  }
+
+  /// Email OTP verify karta hai — Cloud Function (`verifyEmailOtp`) se.
+  /// Return `true` = code sahi tha, `false` = galat/expire ho gaya.
+  Future<bool> verifyEmailOtp(String email, String code) async {
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'verifyEmailOtp',
+      );
+      final result = await callable.call(<String, dynamic>{
+        'email': email.trim().toLowerCase(),
+        'code': code.trim(),
+      });
+      final data = result.data;
+      return data is Map && data['success'] == true;
+    } catch (e) {
+      debugPrint('[OtpService] verifyEmailOtp failed: $e');
+      return false;
     }
   }
 
