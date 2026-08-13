@@ -5,6 +5,18 @@ import '../../main.dart';
 import '../../services/session_service.dart';
 import '../../services/company_store.dart';
 import '../welcome_screen.dart';
+import '../farmers/batch_detail_screen.dart';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FARMER DASHBOARD — Company Farmer ka home. Sirf VIEW + apna Settlement
+// Rasid dekhna/download karna — koi bhi add/edit/delete access nahi hai
+// (wo lock batch_detail_screen.dart mein already ho chuka hai).
+//
+// 3 tabs:
+//   Home     → profile + current active batch ka summary + quick access
+//   My Batch → current active batch — BatchDetailScreen (read-only) khulti hai
+//   Earnings → sabhi COMPLETED batches ki list, tap karke Settlement Rasid
+// ═══════════════════════════════════════════════════════════════════════════
 
 class FarmerDashboard extends StatefulWidget {
   final String ownerName;
@@ -19,7 +31,6 @@ class FarmerDashboard extends StatefulWidget {
   State<FarmerDashboard> createState() => _FarmerDashboardState();
 }
 
-// ✅ FIX 1: Added CloudSyncMixin
 class _FarmerDashboardState extends State<FarmerDashboard> with CloudSyncMixin {
   int _currentIndex = 0;
   Map<String, dynamic>? _myFarmerData;
@@ -29,18 +40,17 @@ class _FarmerDashboardState extends State<FarmerDashboard> with CloudSyncMixin {
   void initState() {
     super.initState();
     _loadMyData();
-    startCloudSync(); // ✅ FIX 2
+    startCloudSync();
   }
 
   @override
   void dispose() {
-    stopCloudSync(); // ✅ FIX 4
+    stopCloudSync();
     super.dispose();
   }
 
   @override
   void onCloudDataChanged() {
-    // ✅ FIX 3
     _loadMyData();
   }
 
@@ -64,6 +74,10 @@ class _FarmerDashboardState extends State<FarmerDashboard> with CloudSyncMixin {
     }
   }
 
+  void _goToTab(int index) {
+    setState(() => _currentIndex = index);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -78,6 +92,8 @@ class _FarmerDashboardState extends State<FarmerDashboard> with CloudSyncMixin {
             farmerData: _myFarmerData,
             companyName: widget.companyName,
             ownerName: widget.ownerName,
+            onGoToMyBatch: () => _goToTab(1),
+            onGoToEarnings: () => _goToTab(2),
           ),
           _FarmerBatchTab(farmerData: _myFarmerData),
           _FarmerEarningsTab(farmerData: _myFarmerData),
@@ -85,7 +101,7 @@ class _FarmerDashboardState extends State<FarmerDashboard> with CloudSyncMixin {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (i) => setState(() => _currentIndex = i),
+        onTap: _goToTab,
         selectedItemColor: AppColors.poultryColor,
         unselectedItemColor: Colors.grey.shade500,
         backgroundColor: Colors.white,
@@ -110,14 +126,137 @@ class _FarmerDashboardState extends State<FarmerDashboard> with CloudSyncMixin {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SHARED HELPERS — batch data se active/completed batch nikalna, date parse
+// karna waghera. (Ye batch_detail_screen.dart ki calculation formula se
+// duplicate NAHI hai — sirf halki summary ke liye hai, poora accurate FCR/
+// cost breakdown "My Batch" tab mein BatchDetailScreen khud dikhata hai.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+Map<String, dynamic>? _findActiveBatch(Map<String, dynamic>? farmerData) {
+  final batches = farmerData?['batches'];
+  if (batches is! List) return null;
+  for (final b in batches) {
+    if (b is! Map) continue;
+    final status = (b['status'] ?? '').toString().toUpperCase();
+    if (status != 'COMPLETED' && status != 'CLOSED') {
+      return Map<String, dynamic>.from(b);
+    }
+  }
+  return null;
+}
+
+List<Map<String, dynamic>> _findCompletedBatches(
+  Map<String, dynamic>? farmerData,
+) {
+  final batches = farmerData?['batches'];
+  if (batches is! List) return [];
+  final result = <Map<String, dynamic>>[];
+  for (final b in batches) {
+    if (b is! Map) continue;
+    final status = (b['status'] ?? '').toString().toUpperCase();
+    if (status == 'COMPLETED' || status == 'CLOSED') {
+      result.add(Map<String, dynamic>.from(b));
+    }
+  }
+  return result.reversed.toList(); // sabse naya sabse upar
+}
+
+int _calcDaysOld(String? startDateStr) {
+  if (startDateStr == null || startDateStr.trim().isEmpty) return 0;
+  try {
+    final parts = startDateStr.split('/');
+    if (parts.length == 3) {
+      final startDate = DateTime(
+        int.parse(parts[2]),
+        int.parse(parts[1]),
+        int.parse(parts[0]),
+      );
+      final days = DateTime.now().difference(startDate).inDays;
+      return days < 0 ? 0 : days;
+    }
+    final iso = DateTime.parse(startDateStr);
+    final days = DateTime.now().difference(iso).inDays;
+    return days < 0 ? 0 : days;
+  } catch (_) {
+    return 0;
+  }
+}
+
+/// Batch ke dailyEntries se halka summary nikalta hai — sirf Home tab ke
+/// stat-cards ke liye (poora/accurate FCR "My Batch" mein hi hai).
+class _BatchQuickStats {
+  final int liveChicks;
+  final int totalMortality;
+  final double mortalityPercent;
+  final double latestWeight;
+  const _BatchQuickStats({
+    required this.liveChicks,
+    required this.totalMortality,
+    required this.mortalityPercent,
+    required this.latestWeight,
+  });
+}
+
+_BatchQuickStats _computeQuickStats(Map<String, dynamic> batch) {
+  final int initialChicks = (batch['chicksCount'] as num?)?.toInt() ?? 0;
+  final entries = (batch['dailyEntries'] as List?) ?? [];
+  int mortality = 0;
+  int sold = 0;
+  double latestWeight = 0;
+
+  for (final raw in entries) {
+    if (raw is! Map) continue;
+    final type = (raw['type'] ?? '').toString().toLowerCase();
+    if (type == 'cost') {
+      mortality += int.tryParse((raw['mortality'] ?? '0').toString()) ?? 0;
+      final wt = double.tryParse((raw['weight'] ?? '0').toString()) ?? 0;
+      if (wt > 0)
+        latestWeight = wt; // list order — approx, theek hai summary ke liye
+    } else if (type == 'sale') {
+      sold += int.tryParse((raw['chicksSold'] ?? '0').toString()) ?? 0;
+    }
+  }
+
+  final live = initialChicks - mortality - sold;
+  final pct = initialChicks > 0 ? (mortality / initialChicks) * 100 : 0.0;
+
+  return _BatchQuickStats(
+    liveChicks: live < 0 ? 0 : live,
+    totalMortality: mortality,
+    mortalityPercent: pct,
+    latestWeight: latestWeight,
+  );
+}
+
+/// Batch ke finalSettlementSnapshot se net payout nikalta hai (Rule 1 ka
+/// 'netPayout', ya Rule 2 approve hone par 'approvedPayout') — Rule 2 jab
+/// tak Owner approve na kare tab tak null rehta hai.
+double _batchNetPayout(Map<String, dynamic> batch) {
+  final snap = batch['finalSettlementSnapshot'];
+  if (snap is! Map) return 0.0;
+  final netPayout = (snap['netPayout'] as num?)?.toDouble();
+  if (netPayout != null) return netPayout;
+  final approved = (snap['approvedPayout'] as num?)?.toDouble();
+  return approved ?? 0.0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HOME TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
 class _FarmerHomeTab extends StatelessWidget {
   final Map<String, dynamic>? farmerData;
   final String companyName;
   final String ownerName;
+  final VoidCallback onGoToMyBatch;
+  final VoidCallback onGoToEarnings;
   const _FarmerHomeTab({
     required this.farmerData,
     required this.companyName,
     required this.ownerName,
+    required this.onGoToMyBatch,
+    required this.onGoToEarnings,
   });
 
   @override
@@ -125,6 +264,19 @@ class _FarmerHomeTab extends StatelessWidget {
     final name = farmerData?['name'] as String? ?? ownerName;
     final phone = farmerData?['phone'] as String? ?? '';
     final accountNumber = farmerData?['accountNumber'] as String? ?? '';
+
+    final activeBatch = _findActiveBatch(farmerData);
+    final completed = _findCompletedBatches(farmerData);
+    final lastPayment = completed.isNotEmpty
+        ? _batchNetPayout(completed.first)
+        : 0.0;
+
+    _BatchQuickStats? stats;
+    int? daysOld;
+    if (activeBatch != null) {
+      stats = _computeQuickStats(activeBatch);
+      daysOld = _calcDaysOld(activeBatch['startDate']?.toString());
+    }
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
@@ -160,6 +312,7 @@ class _FarmerHomeTab extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // ── Profile card ──────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -221,51 +374,151 @@ class _FarmerHomeTab extends StatelessWidget {
               ],
             ),
           ),
+
           const SizedBox(height: 20),
-          const Text(
+
+          // ── Feed Confirm — RESERVED placeholder (feature abhi nahi bana,
+          // jaisa decide kiya tha — sirf jagah reserve hai) ─────────────
+          Container(
+            padding: const EdgeInsets.all(14),
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.blue.shade100),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.local_shipping_outlined,
+                  color: Colors.blue.shade700,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Feed Receive Confirm',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Jald aayega — jab feed dispatch hoga to yahan confirm kar sakoge',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Text(
             'Mera Batch',
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
               color: Colors.black87,
             ),
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              _FarmerStatCard(
-                icon: Icons.egg_rounded,
-                label: 'Active Batch',
-                value: '—',
-                color: AppColors.poultryColor,
+
+          if (activeBatch == null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.shade100),
               ),
-              const SizedBox(width: 12),
-              _FarmerStatCard(
-                icon: Icons.trending_up_rounded,
-                label: 'Current FCR',
-                value: '—',
-                color: Colors.blue.shade700,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.hourglass_empty_rounded,
+                    color: Colors.orange.shade300,
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Abhi koi batch assign nahi hua hai. Office Manager se sampark karein.',
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            )
+          else ...[
+            Row(
+              children: [
+                _FarmerStatCard(
+                  icon: Icons.egg_rounded,
+                  label: 'Batch — $daysOld din',
+                  value: (activeBatch['batchId'] ?? activeBatch['id'] ?? '-')
+                      .toString(),
+                  color: AppColors.poultryColor,
+                ),
+                const SizedBox(width: 12),
+                _FarmerStatCard(
+                  icon: Icons.pets_rounded,
+                  label: 'Live Chicks',
+                  value: '${stats!.liveChicks}',
+                  color: Colors.blue.shade700,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _FarmerStatCard(
+                  icon: Icons.warning_amber_rounded,
+                  label: 'Mortality',
+                  value:
+                      '${stats.totalMortality} (${stats.mortalityPercent.toStringAsFixed(1)}%)',
+                  color: Colors.red.shade700,
+                ),
+                const SizedBox(width: 12),
+                _FarmerStatCard(
+                  icon: Icons.monitor_weight_outlined,
+                  label: 'Last Weight',
+                  value: stats.latestWeight > 0
+                      ? '${stats.latestWeight.toStringAsFixed(2)} kg'
+                      : '—',
+                  color: Colors.purple.shade700,
+                ),
+              ],
+            ),
+          ],
+
           const SizedBox(height: 12),
           Row(
             children: [
               _FarmerStatCard(
                 icon: Icons.currency_rupee_rounded,
                 label: 'Last Payment',
-                value: '—',
+                value: lastPayment > 0
+                    ? '₹${lastPayment.toStringAsFixed(0)}'
+                    : '—',
                 color: Colors.orange.shade700,
               ),
               const SizedBox(width: 12),
               _FarmerStatCard(
                 icon: Icons.receipt_rounded,
                 label: 'Receipts',
-                value: '0',
-                color: Colors.purple.shade700,
+                value: '${completed.length}',
+                color: Colors.teal.shade700,
               ),
             ],
           ),
+
           const SizedBox(height: 20),
           const Text(
             'Quick Access',
@@ -279,20 +532,14 @@ class _FarmerHomeTab extends StatelessWidget {
           _FarmerActionTile(
             icon: Icons.egg_rounded,
             label: 'Mera Batch Dekho',
-            sub: 'Current batch ki jankari',
-            onTap: () {},
+            sub: 'Current batch ki poori jankari',
+            onTap: onGoToMyBatch,
           ),
           _FarmerActionTile(
-            icon: Icons.trending_up_rounded,
-            label: 'FCR Report',
-            sub: 'Feed Conversion Ratio dekhein',
-            onTap: () {},
-          ),
-          _FarmerActionTile(
-            icon: Icons.receipt_long_rounded,
-            label: 'Settlement Receipt',
-            sub: 'Apni payment receipt',
-            onTap: () {},
+            icon: Icons.account_balance_wallet_rounded,
+            label: 'Meri Earnings Dekho',
+            sub: 'Purane settlement receipts',
+            onTap: onGoToEarnings,
           ),
         ],
       ),
@@ -300,12 +547,20 @@ class _FarmerHomeTab extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// MY BATCH TAB — active batch ka summary card, tap/button se poori
+// BatchDetailScreen (read-only) khulti hai.
+// ═══════════════════════════════════════════════════════════════════════════
+
 class _FarmerBatchTab extends StatelessWidget {
   final Map<String, dynamic>? farmerData;
   const _FarmerBatchTab({required this.farmerData});
 
   @override
   Widget build(BuildContext context) {
+    final activeBatch = _findActiveBatch(farmerData);
+    final farmerId = farmerData?['id']?.toString() ?? '';
+
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
@@ -316,47 +571,187 @@ class _FarmerBatchTab extends StatelessWidget {
         ),
         automaticallyImplyLeading: false,
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.egg_rounded,
-              size: 72,
-              color: AppColors.poultryColor.withOpacity(0.3),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Batch detail yahan aayega',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey,
+      body: activeBatch == null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.egg_rounded,
+                      size: 72,
+                      color: AppColors.poultryColor.withOpacity(0.3),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Abhi koi active batch nahi hai',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Office Manager batch assign karega, tab yahan dikhega.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _buildActiveBatchCard(context, activeBatch, farmerId),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.egg_rounded),
-              label: const Text('Batch Dekho'),
+    );
+  }
+
+  Widget _buildActiveBatchCard(
+    BuildContext context,
+    Map<String, dynamic> batch,
+    String farmerId,
+  ) {
+    final stats = _computeQuickStats(batch);
+    final daysOld = _calcDaysOld(batch['startDate']?.toString());
+    final batchId = (batch['batchId'] ?? batch['id'] ?? '-').toString();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.poultryColor.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: const Text('🐣', style: TextStyle(fontSize: 20)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      batchId,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    Text(
+                      '$daysOld din se chal raha hai',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _miniStatBox('Live Chicks', '${stats.liveChicks}'),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _miniStatBox(
+                  'Mortality',
+                  '${stats.mortalityPercent.toStringAsFixed(1)}%',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.visibility_rounded),
+              label: const Text('Poora Batch Detail Dekho'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.poultryColor,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 28,
-                  vertical: 14,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
               ),
               onPressed: () {
-                // TODO: BatchDetailScreen navigate karo
-                // Get.to(() => BatchDetailScreen(farmerData: farmerData, userRole: 'farmer'));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => BatchDetailScreen(
+                      farmerId: farmerId,
+                      batchData: batch,
+                      userRole: 'Company Farmer',
+                    ),
+                  ),
+                );
               },
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniStatBox(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+        ],
       ),
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EARNINGS TAB — sabhi COMPLETED batches ki list, tap karke Settlement
+// Rasid (BatchDetailScreen ke andar) khulti hai.
+// ═══════════════════════════════════════════════════════════════════════════
 
 class _FarmerEarningsTab extends StatelessWidget {
   final Map<String, dynamic>? farmerData;
@@ -364,6 +759,13 @@ class _FarmerEarningsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final completed = _findCompletedBatches(farmerData);
+    final farmerId = farmerData?['id']?.toString() ?? '';
+    final totalEarnings = completed.fold<double>(
+      0.0,
+      (sum, b) => sum + _batchNetPayout(b),
+    );
+
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
@@ -383,25 +785,25 @@ class _FarmerEarningsTab extends StatelessWidget {
               color: AppColors.poultryColor,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Column(
+            child: Column(
               children: [
-                Text(
+                const Text(
                   'Total Earnings',
                   style: TextStyle(color: Colors.white70, fontSize: 13),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Text(
-                  '₹ —',
-                  style: TextStyle(
+                  '₹${totalEarnings.toStringAsFixed(0)}',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 32,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
-                  'Abhi tak',
-                  style: TextStyle(color: Colors.white60, fontSize: 11),
+                  '${completed.length} settled batch${completed.length == 1 ? '' : 'es'}',
+                  style: const TextStyle(color: Colors.white60, fontSize: 11),
                 ),
               ],
             ),
@@ -416,45 +818,89 @@ class _FarmerEarningsTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.account_balance_wallet_outlined,
-                  size: 48,
-                  color: Colors.grey.shade300,
+          if (completed.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.account_balance_wallet_outlined,
+                    size: 48,
+                    color: Colors.grey.shade300,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Koi payment record nahi',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Jab bhi batch settle hoga, yahan dikhega',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...completed.map((batch) {
+              final batchId = (batch['batchId'] ?? batch['id'] ?? '-')
+                  .toString();
+              final payout = _batchNetPayout(batch);
+              final completedOn = (batch['completedOn'] ?? '').toString();
+              String dateLabel = '';
+              if (completedOn.isNotEmpty) {
+                try {
+                  final d = DateTime.parse(completedOn);
+                  dateLabel =
+                      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+                } catch (_) {}
+              }
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Koi payment record nahi',
-                  style: TextStyle(color: Colors.grey),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.poultryColor.withOpacity(0.12),
+                    child: const Text('🧾'),
+                  ),
+                  title: Text(
+                    batchId,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    dateLabel.isNotEmpty ? 'Settled: $dateLabel' : 'Settled',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  trailing: Text(
+                    payout > 0 ? '₹${payout.toStringAsFixed(0)}' : '—',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: AppColors.poultryColor,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => BatchDetailScreen(
+                          farmerId: farmerId,
+                          batchData: batch,
+                          userRole: 'Company Farmer',
+                        ),
+                      ),
+                    );
+                  },
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Jab bhi payment hogi, yahan dikhegi',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.receipt_long_rounded),
-            label: const Text('Settlement Receipt Download'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.poultryColor,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 50),
-            ),
-            onPressed: () {
-              /* TODO */
-            },
-          ),
+              );
+            }),
         ],
       ),
     );
@@ -498,7 +944,7 @@ class _FarmerStatCard extends StatelessWidget {
             Text(
               value,
               style: TextStyle(
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: color,
               ),

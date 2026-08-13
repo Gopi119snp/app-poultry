@@ -125,6 +125,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   bool _canAddReturnFeed = false;
   bool _canAddBatchEnd = false;
 
+  // ✅ Company Farmer ke liye ye screen HAMESHA read-only hai — permission_
+  // service ke tree mein Company Farmer role exist nahi karta, isliye
+  // ye hardcoded safe-default check hai.
+  bool get _isReadOnlyFarmerView => widget.userRole == 'Company Farmer';
+
   bool get _canShowFlockRecordButton =>
       _canAddFeedEntry ||
       _canAddWeight ||
@@ -217,7 +222,26 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     });
   }
 
+  // ========================================================================
+  // EDIT 2: Force read-only for Company Farmer at the very start of this method
+  // ========================================================================
   Future<void> _loadPermissionFlags() async {
+    if (_isReadOnlyFarmerView) {
+      if (!mounted) return;
+      setState(() {
+        _canAddFeedEntry = false;
+        _canAddWeight = false;
+        _canAddMortality = false;
+        _canAddRemainingFeed = false;
+        _canAddSale = false;
+        _canAddMedicine = false;
+        _canViewDailyUpdateList = true; // read-only history dekhna theek hai
+        _canAddReturnFeed = false;
+        _canAddBatchEnd = false;
+      });
+      return;
+    }
+
     final feedEntry = await PermissionService.can('feedEntry', 'add');
     final weight = await PermissionService.can('averageWeight', 'add');
     final mortality = await PermissionService.can('mortality', 'add');
@@ -900,7 +924,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     return 0;
   }
 
+  // ========================================================================
+  // EDIT 3: Add early return for read‑only farmer so reminder never shows
+  // ========================================================================
   void _checkWeightUpdateReminder(int daysOld) {
+    if (_isReadOnlyFarmerView)
+      return; // Farmer ko ye reminder kabhi nahi dikhna chahiye
     if (_weightReminderShown) return;
     String status = (_liveBatchData['status'] ?? '').toString().toUpperCase();
     if (status == 'COMPLETED' || status == 'CLOSED') return;

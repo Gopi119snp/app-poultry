@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../services/otp_service.dart';
 import '../../services/auth_service.dart';
-import 'login_screen.dart';
+import '../../services/company_store.dart';
+import '../../services/app_lock_service.dart';
+import '../home/home_screen.dart';
 
 class PersonalRegisterScreen extends StatefulWidget {
   final String industry;
@@ -24,6 +27,8 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
   bool _isLoadingPin = false;
   bool _isLoadingVerification = false;
   bool _isVerifyingOtp = false;
+  int _resendCooldown = 0;
+  Timer? _resendTimer;
   bool _isRegistering = false;
 
   // Background Location Analytics (Analytics ke liye data collect hoga)
@@ -124,6 +129,7 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
     // Memory cleanup
     _pinController.removeListener(_onPinChanged);
     _nameController.dispose();
@@ -190,14 +196,28 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
   // VALIDATION HELPERS
   // ---------------------------------------------------------------------------
 
-  bool _isValidPhone(String p) => RegExp(r'^[6-9]\d{9}$').hasMatch(p);
+  bool _isValidPhone(String p) {
+    // 1. Format check — 10 digit, 6/7/8/9 se shuru
+    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(p)) return false;
+    // 2. Fake pattern check — sabhi digit same (9999999999, 0000000000, etc.)
+    if (RegExp(r'^(\d)\1{9}$').hasMatch(p)) return false;
+    // 3. Fake pattern check — simple ascending/descending sequence
+    const fakeSequences = {
+      '0123456789',
+      '1234567890',
+      '9876543210',
+      '0987654321',
+    };
+    if (fakeSequences.contains(p)) return false;
+    return true;
+  }
 
   bool _isValidPin(String p) => RegExp(r'^\d{6}$').hasMatch(p);
 
-  bool _isValidEmail(String e) {
-    if (e.isEmpty) return true; // Keep optional as requested
-    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(e);
-  }
+  // ✅ Email ab COMPULSORY hai — isi se account verify hota hai
+  // (mobile OTP hata diya gaya hai, email hi asli verification gatekeeper hai)
+  bool _isValidEmail(String e) =>
+      RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(e.trim());
 
   bool _isValidName(String n) {
     return n.trim().length >= 3 && RegExp(r'^[a-zA-Z\s]+$').hasMatch(n.trim());
@@ -246,6 +266,10 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
       _showError('PIN code 6 digit ka hona chahiye');
       return;
     }
+    if (_emailController.text.trim().isEmpty) {
+      _showError('Email ID daalo — verification isi se hoga');
+      return;
+    }
     if (!_isValidEmail(_emailController.text)) {
       _showError('Email format galat hai');
       return;
@@ -259,6 +283,22 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
     setState(() {
       _isLoadingVerification = true;
     });
+
+    // ✅ Mobile number duplicate check — free, koi OTP nahi lagta.
+    // Agar ye number already kisi account se linked hai to yahi rok do.
+    try {
+      final existing = await CompanyStore.instance.lookupPhone(
+        _phoneController.text.trim(),
+      );
+      if (existing != null) {
+        if (!mounted) return;
+        setState(() => _isLoadingVerification = false);
+        _showError('Ye mobile number pehle se kisi account se registered hai');
+        return;
+      }
+    } catch (e) {
+      debugPrint('Phone duplicate check skipped: $e');
+    }
 
     // 2. IP Analytics Capture (Silent background logging)
     try {
@@ -277,32 +317,74 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
       debugPrint('Network Analytics bypassed: $e');
     }
 
-    // 3. Real SMS OTP bhejna — Firebase Phone Auth
+    // 3. Real Email OTP bhejna (Cloud Function → Gmail SMTP se).
+    // Mobile number ab sirf format + duplicate validate hota hai, koi
+    // SMS/paisa nahi lagta — email hi asli verification hai.
     if (!mounted) return;
-    await OtpService.instance.sendOtp(
-      phone: _phoneController.text.trim(),
-      onCodeSent: () {
-        if (!mounted) return;
-        setState(() {
-          _isLoadingVerification = false;
-          _otpSent = true;
-          _currentStep = 2; // Move to verification
-        });
+    final emailError = await OtpService.instance.sendEmailOtp(
+      _emailController.text.trim(),
+    );
 
-        Get.snackbar(
-          'OTP Sent!',
-          'Verification code aapke number ${_phoneController.text} par bheja gaya hai',
-          backgroundColor: const Color(0xFF1B5E20),
-          colorText: Colors.white,
-          snackPosition: SnackPosition.BOTTOM,
-          margin: const EdgeInsets.all(15),
-        );
-      },
-      onError: (msg) {
-        if (!mounted) return;
-        setState(() => _isLoadingVerification = false);
-        _showError(msg);
-      },
+    if (!mounted) return;
+    setState(() => _isLoadingVerification = false);
+
+    if (emailError != null) {
+      _showError(emailError);
+      return;
+    }
+
+    setState(() {
+      _otpSent = true;
+      _currentStep = 2; // Move to verification
+    });
+    _startResendCooldown();
+
+    Get.snackbar(
+      'OTP Sent!',
+      'Verification code aapke email ${_emailController.text} par bheja gaya hai',
+      backgroundColor: const Color(0xFF1B5E20),
+      colorText: Colors.white,
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(15),
+    );
+  }
+
+  // ✅ Resend OTP — 30-second cooldown, spam-click se bachne ke liye.
+  void _startResendCooldown() {
+    _resendTimer?.cancel();
+    setState(() => _resendCooldown = 30);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendCooldown <= 1) {
+        timer.cancel();
+        setState(() => _resendCooldown = 0);
+      } else {
+        setState(() => _resendCooldown--);
+      }
+    });
+  }
+
+  Future<void> _resendEmailOtp() async {
+    if (_resendCooldown > 0) return;
+    final error = await OtpService.instance.sendEmailOtp(
+      _emailController.text.trim(),
+    );
+    if (!mounted) return;
+    if (error != null) {
+      _showError('Resend fail: $error');
+      return;
+    }
+    _startResendCooldown();
+    Get.snackbar(
+      'Naya OTP Bheja Gaya!',
+      'Email check karo',
+      backgroundColor: const Color(0xFF1B5E20),
+      colorText: Colors.white,
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(15),
     );
   }
 
@@ -316,20 +398,18 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
     if (!mounted) return;
     setState(() => _isVerifyingOtp = true);
 
-    final ok = await OtpService.instance.verifyOtp(_otpController.text.trim());
+    final ok = await OtpService.instance.verifyEmailOtp(
+      _emailController.text.trim(),
+      _otpController.text.trim(),
+    );
 
     if (!mounted) return;
     setState(() => _isVerifyingOtp = false);
 
     if (!ok) {
-      _showError('OTP galat hai — dobara try karo');
+      _showError('OTP galat ya expire ho gaya — dobara try karo');
       return;
     }
-
-    // Sirf phone ownership verify karni thi — session ko clean karo taaki
-    // baad mein _register() ka createUserWithEmailAndPassword clean state
-    // se ho (koi purana signed-in phone session conflict na kare).
-    await OtpService.instance.signOutOtpSession();
 
     if (!mounted) return;
     setState(() {
@@ -339,7 +419,7 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
 
     Get.snackbar(
       'Verified! ✅',
-      'Phone number verify ho gaya. Ab apna password set karein.',
+      'Email verify ho gaya. Ab apna password set karein.',
       backgroundColor: const Color(0xFF1B5E20),
       colorText: Colors.white,
       snackPosition: SnackPosition.BOTTOM,
@@ -365,7 +445,7 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
       return;
     }
     if (!_otpVerified) {
-      _showError('Pehle Mobile OTP verify karo');
+      _showError('Pehle Email OTP verify karo');
       return;
     }
 
@@ -377,9 +457,7 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
       phone: _phoneController.text.trim(),
       password: _passwordController.text,
       industry: widget.industry,
-      email: _emailController.text.trim().isEmpty
-          ? null
-          : _emailController.text.trim(),
+      email: _emailController.text.trim(),
       extraProfile: {
         'street': _streetController.text.trim(),
         'village': _villageController.text.trim(),
@@ -408,10 +486,12 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
       margin: const EdgeInsets.all(15),
     );
 
-    // Account ban gaya — ab login screen par bhejo (session already saved
-    // hai AuthService.registerPersonalFarmer ke andar, isliye chaho to
-    // seedha HomeScreen par bhi navigate kar sakte ho).
-    Get.offAll(() => const LoginScreen());
+    // Account ban gaya aur session already save ho chuka hai — ab seedha
+    // HomeScreen par bhejo, lekin pehle App Lock (PIN/Biometric) mandatory
+    // setup karwao.
+    await AppLockService.instance.routeAfterAuth(
+      HomeScreen(ownerName: _nameController.text.trim(), companyName: ''),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -469,11 +549,22 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                       ),
                       _buildInput(
                         controller: _emailController,
-                        label: 'Email ID (Optional)',
+                        label: 'Email ID *',
                         hint: 'e.g. rajesh@gmail.com',
                         icon: Icons.email_rounded,
                         keyboardType: TextInputType.emailAddress,
                         enabled: !_otpSent,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          'Verification isi email par milega, isliye sahi email daalo.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade500,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 12),
                       _sectionLabel('📍 AAPKA ADDRESS', ''),
@@ -576,7 +667,7 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                                       ),
                                     )
                                   : Text(
-                                      _otpSent ? '✓ Sent' : 'Verify No.',
+                                      _otpSent ? '✓ Sent' : 'Send OTP',
                                       style: const TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
@@ -588,7 +679,7 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                       ),
                     ],
 
-                    // STEP 2 — MOBILE VERIFICATION PHASE (Real Firebase Phone OTP)
+                    // STEP 2 — EMAIL VERIFICATION PHASE (Cloud Function Email OTP)
                     if (_currentStep >= 2) ...[
                       const SizedBox(height: 32),
                       _sectionLabel('🔐 SECURITY VERIFICATION', '2'),
@@ -601,7 +692,7 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                               child: _buildInput(
                                 controller: _otpController,
                                 label: '6 Digit OTP *',
-                                hint: 'SMS se aaya hua code daalo',
+                                hint: 'Email se aaya hua code daalo',
                                 icon: Icons.lock_clock_rounded,
                                 keyboardType: TextInputType.number,
                                 maxLength: 6,
@@ -647,16 +738,36 @@ class _PersonalRegisterScreenState extends State<PersonalRegisterScreen> {
                         Padding(
                           padding: const EdgeInsets.only(top: 14),
                           child: Text(
-                            'Aapke number par 6 digit ka SMS code bheja gaya hai.',
+                            'Aapke email par 6 digit ka code bheja gaya hai.',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade600,
                             ),
                           ),
                         ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: TextButton(
+                            onPressed: _resendCooldown > 0
+                                ? null
+                                : _resendEmailOtp,
+                            child: Text(
+                              _resendCooldown > 0
+                                  ? 'Resend OTP ($_resendCooldown s)'
+                                  : 'Resend OTP',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: _resendCooldown > 0
+                                    ? Colors.grey
+                                    : const Color(0xFF1B5E20),
+                              ),
+                            ),
+                          ),
+                        ),
                       ] else
                         _verifiedBox(
-                          'Mobile verified successfully! ✓',
+                          'Email verified successfully! ✓',
                           const Color(0xFF1B5E20),
                         ),
                     ],

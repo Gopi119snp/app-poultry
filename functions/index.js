@@ -23,7 +23,7 @@ function getMailTransporter() {
 
 /**
  * ============================================================================
- * resetPasswordAfterOtp — Secure server-side password reset
+ * resetPasswordAfterOtp — Secure server-side password reset (EMAIL OTP based)
  * ============================================================================
  *
  * Kyun zaroori hai: Firebase ka client-side SDK sirf CURRENTLY SIGNED-IN
@@ -33,42 +33,36 @@ function getMailTransporter() {
  * karta. Isiliye ye server-side Cloud Function (Admin SDK use karke)
  * chahiye, jo kisi bhi user ka password force-update kar sakti hai.
  *
- * Security: Ye function TRUST karta hai `context.auth.token.phone_number`
- * — jo sirf Firebase khud set karta hai jab client ne successfully Phone
- * OTP verify kiya ho (signInWithCredential). Client kabhi bhi ye phone
- * number field khud se spoof/fake nahi kar sakta — Firebase server-side
- * ise verify karke token mein daalta hai. Isliye humein client se phone
- * number ALAG se bhejwane/trust karne ki zaroorat nahi — humesha
- * context.auth.token.phone_number hi authoritative source hai.
- *
- * Flow (Flutter side se):
- *   1. User "Forgot Password" mein apna phone daalta hai
- *   2. OtpService.sendOtp(phone) → Firebase SMS bhejta hai
- *   3. OtpService.verifyOtp(code) → user Firebase Auth mein
- *      PHONE-VERIFIED signed-in ho jata hai (temporary session)
- *   4. Isi signed-in state mein ye Cloud Function call hoti hai
- *      (Firebase Functions SDK automatically ID token attach karta hai)
- *   5. Function verify karti hai ki caller genuinely us phone se verified
- *      hai, phir uska ASLI (email-based) account dhundke password badalti hai
- *   6. Flutter side OtpService.signOutOtpSession() call karke temporary
- *      phone-session se signout kar deta hai
- *   7. User naye password se normal login karta hai
+ * Security: Mobile OTP (Phone Auth) ki jagah ab Email OTP + ek short-lived
+ * "resetToken" use hota hai — koi Firebase phone-auth session ki zaroorat
+ * nahi. Flow:
+ *   1. User "Forgot Password" mein apna email daalta hai
+ *   2. sendEmailOtp(email) → 6-digit code email par jata hai
+ *   3. verifyEmailOtpForReset(email, code) → code sahi hone par server
+ *      ek random `resetToken` generate karke Firestore mein 10-minute
+ *      expiry ke saath store karta hai, aur usi token ko client ko
+ *      wapas bhejta hai (client isse spoof nahi kar sakta kyunki server
+ *      hi generate karta hai)
+ *   4. Client isi resetToken + newPassword ke saath resetPasswordAfterOtp
+ *      call karta hai
+ *   5. Function token verify karti hai (exists + expire nahi hua +
+ *      email match), phir email se asli Firebase Auth user dhundke
+ *      password update karti hai, aur token consume (delete) kar deti hai
  */
 exports.resetPasswordAfterOtp = functions.https.onCall(async (data, context) => {
-  // ── 1. Caller genuinely Phone-OTP-verified hai? ──────────────────────
-  if (!context.auth || !context.auth.token || !context.auth.token.phone_number) {
+  const email = ((data && data.email) || "").trim().toLowerCase();
+  const resetToken = ((data && data.resetToken) || "").trim();
+  const newPassword = data && data.newPassword;
+
+  if (!email) {
+    throw new functions.https.HttpsError("invalid-argument", "Email chahiye.");
+  }
+  if (!resetToken) {
     throw new functions.https.HttpsError(
       "unauthenticated",
-      "Phone verify nahi hua hai. Pehle OTP verify karo."
+      "Email OTP verify nahi hua hai. Pehle OTP verify karo."
     );
   }
-
-  // Firebase E.164 format mein deta hai: "+919661371205"
-  const verifiedPhoneE164 = context.auth.token.phone_number;
-  const verifiedPhone10Digit = verifiedPhoneE164.replace(/\D/g, "").slice(-10);
-
-  // ── 2. Naya password valid hai? ──────────────────────────────────────
-  const newPassword = data && data.newPassword;
   if (!newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
     throw new functions.https.HttpsError(
       "invalid-argument",
@@ -76,41 +70,60 @@ exports.resetPasswordAfterOtp = functions.https.onCall(async (data, context) => 
     );
   }
 
-  // ── 3. phone_lookup se is number ka asli (email-based) account dhundo ──
   const db = admin.firestore();
-  const lookupSnap = await db.collection("phone_lookup").doc(verifiedPhone10Digit).get();
 
-  if (!lookupSnap.exists) {
+  // ── 1. resetToken valid hai? ──────────────────────────────────────────
+  const tokenRef = db.collection("password_reset_tokens").doc(resetToken);
+  const tokenSnap = await tokenRef.get();
+
+  if (!tokenSnap.exists) {
     throw new functions.https.HttpsError(
-      "not-found",
-      "Yeh number kisi account se linked nahi hai."
+      "unauthenticated",
+      "Reset session expire ho gaya — email OTP dobara verify karo."
     );
   }
 
-  const lookupData = lookupSnap.data();
-  const authEmail = lookupData.authEmail;
-  const role = lookupData.role || "";
+  const tokenData = tokenSnap.data();
 
-  // ✅ Sirf Owner aur Personal Farmer apna password reset kar sakte hain
-  // (existing app rule — Manager ka password Owner ke paas hota hai)
-  if (role !== "Owner" && role !== "Personal Farmer") {
+  if (Date.now() > tokenData.expiresAt.toMillis()) {
+    await tokenRef.delete();
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Reset session expire ho gaya — email OTP dobara verify karo."
+    );
+  }
+
+  if (tokenData.email !== email) {
     throw new functions.https.HttpsError(
       "permission-denied",
-      "Sirf Owner ya Personal Farmer apna password reset kar sakte hain."
+      "Ye reset session is email ka nahi hai."
     );
   }
 
-  if (!authEmail) {
-    throw new functions.https.HttpsError(
-      "failed-precondition",
-      "Is account ka email record nahi mila."
-    );
+  // ── 2. phone_lookup se is email wale account ka role check karo ────────
+  // (existing app rule — sirf Owner/Personal Farmer khud reset kar sakte
+  // hain, Manager ka password Owner set/reset karta hai)
+  const lookupSnap = await db
+    .collection("phone_lookup")
+    .where("authEmail", "==", email)
+    .limit(1)
+    .get();
+
+  if (!lookupSnap.empty) {
+    const role = lookupSnap.docs[0].data().role || "";
+    if (role !== "Owner" && role !== "Personal Farmer") {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Sirf Owner ya Personal Farmer apna password reset kar sakte hain."
+      );
+    }
   }
 
-  // ── 4. Asli Firebase Auth user dhundo aur password update karo ──────
+  // ── 3. Asli Firebase Auth user dhundo aur password update karo ────────
   try {
-    const targetUser = await admin.auth().getUserByEmail(authEmail);
+    const targetUser = await admin.auth().getUserByEmail(email);
     await admin.auth().updateUser(targetUser.uid, { password: newPassword });
+    await tokenRef.delete(); // token ek hi baar use ho sakta hai
 
     return { success: true, message: "Password successfully update ho gaya." };
   } catch (err) {
@@ -149,19 +162,36 @@ exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
+  // ✅ Har email ka time IST mein saaf dikhana + subject line mein bhi
+  // time daalna — taaki Gmail purane/naye OTP emails ko ek hi thread mein
+  // group na kare (jisse confusion hota tha ki konsa email latest hai).
+  // Isse har naya OTP email ALAG dikhega, inbox mein sabse upar (sabse
+  // naya time), aur email ke andar bhi explicit warning hai ki agar isse
+  // purana koi email dikhe to use ignore karo.
+  const sentTimeIST = new Date().toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+
   try {
     const transporter = getMailTransporter();
     await transporter.sendMail({
       from: `"PoultryPro" <${process.env.GMAIL_USER}>`,
       to: email,
-      subject: "PoultryPro — Aapka Verification Code",
-      text: `Aapka verification code hai: ${code}\n\nYe code 5 minute mein expire ho jayega. Agar aapne ye request nahi ki, to is email ko ignore kar dein.`,
+      subject: `PoultryPro — Verification Code (${sentTimeIST})`,
+      text: `Aapka NAYA verification code hai: ${code}\n\nYe code ${sentTimeIST} par bheja gaya hai aur 5 minute mein expire ho jayega.\n\n⚠️ Agar aapke inbox mein isse PURANA koi PoultryPro OTP email hai, use IGNORE karein — sirf yahi (sabse naya) code use karein.\n\nAgar aapne ye request nahi ki, to is email ko ignore kar dein.`,
       html: `<div style="font-family:sans-serif;">
         <p>Namaste,</p>
-        <p>Aapka PoultryPro verification code hai:</p>
+        <p>Aapka <b>NAYA</b> PoultryPro verification code hai:</p>
         <p style="font-size:28px;font-weight:bold;letter-spacing:4px;">${code}</p>
-        <p>Ye code 5 minute mein expire ho jayega.</p>
-        <p style="color:#888;font-size:12px;">Agar aapne ye request nahi ki, to is email ko ignore kar dein.</p>
+        <p style="color:#555;font-size:13px;">Bheja gaya: <b>${sentTimeIST}</b> · 5 minute mein expire hoga.</p>
+        <div style="background:#FFF3E0;border:1px solid #FFCC80;border-radius:8px;padding:10px 14px;margin-top:12px;">
+          <p style="margin:0;font-size:12.5px;color:#E65100;">⚠️ Agar aapke inbox mein isse <b>purana</b> koi PoultryPro OTP email hai, use <b>ignore</b> karein — sirf yehi (sabse naya, upar wala) code use karein.</p>
+        </div>
+        <p style="color:#888;font-size:12px;margin-top:14px;">Agar aapne ye request nahi ki, to is email ko ignore kar dein.</p>
       </div>`,
     });
   } catch (err) {
@@ -223,4 +253,71 @@ exports.verifyEmailOtp = functions.https.onCall(async (data, context) => {
 
   await docRef.delete();
   return { success: true };
+});
+
+/**
+ * ============================================================================
+ * verifyEmailOtpForReset — Forgot Password ke liye Email OTP verify karta hai
+ * ============================================================================
+ * verifyEmailOtp jaisa hi hai, bas success hone par ek short-lived
+ * `resetToken` bhi generate karke Firestore mein 10-minute expiry ke saath
+ * store karta hai aur client ko wapas bhejta hai. Ye token hi
+ * resetPasswordAfterOtp mein "main genuinely OTP-verified hoon" prove karta
+ * hai — client kabhi khud se ye token fake nahi bana sakta.
+ */
+exports.verifyEmailOtpForReset = functions.https.onCall(async (data, context) => {
+  const email = ((data && data.email) || "").trim().toLowerCase();
+  const code = ((data && data.code) || "").trim();
+
+  if (!email || !code) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Email aur code dono chahiye."
+    );
+  }
+
+  const db = admin.firestore();
+  const docRef = db.collection("email_otps").doc(email);
+  const snap = await docRef.get();
+
+  if (!snap.exists) {
+    return { success: false, message: "Pehle OTP mangwao." };
+  }
+
+  const otpData = snap.data();
+
+  if (Date.now() > otpData.expiresAt.toMillis()) {
+    await docRef.delete();
+    return { success: false, message: "OTP expire ho gaya — dobara mangwao." };
+  }
+
+  if ((otpData.attempts || 0) >= 5) {
+    await docRef.delete();
+    return {
+      success: false,
+      message: "Bahut zyada galat attempts — dobara OTP mangwao.",
+    };
+  }
+
+  if (otpData.code !== code) {
+    await docRef.update({
+      attempts: admin.firestore.FieldValue.increment(1),
+    });
+    return { success: false, message: "OTP galat hai." };
+  }
+
+  await docRef.delete();
+
+  // Reset token generate karo — random 32-char hex string
+  const resetToken = Array.from({ length: 32 }, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  ).join("");
+
+  await db.collection("password_reset_tokens").doc(resetToken).set({
+    email,
+    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { success: true, resetToken };
 });

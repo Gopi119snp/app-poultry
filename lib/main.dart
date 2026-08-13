@@ -6,9 +6,11 @@ import 'screens/home/home_screen.dart';
 import 'screens/dashboards/office_manager_dashboard.dart';
 import 'screens/dashboards/field_manager_dashboard.dart';
 import 'screens/dashboards/farmer_dashboard.dart';
+import 'screens/auth/app_lock_screen.dart';
 import 'services/company_store.dart';
 import 'services/firebase_bootstrap.dart';
 import 'services/session_service.dart';
+import 'services/app_lock_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,8 +25,38 @@ class AppColors {
   static const textileColor = Color(0xFF4A148C);
 }
 
-class TrackoApp extends StatelessWidget {
+class TrackoApp extends StatefulWidget {
   const TrackoApp({super.key});
+
+  @override
+  State<TrackoApp> createState() => _TrackoAppState();
+}
+
+/// ✅ App Lock ke liye WidgetsBindingObserver — app minimize (paused) aur
+/// wapas khulne (resumed) par AppLockService ko batata hai, taaki zaroorat
+/// padne par lock-screen automatically overlay ho jaye.
+class _TrackoAppState extends State<TrackoApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      AppLockService.instance.onAppPaused();
+    } else if (state == AppLifecycleState.resumed) {
+      AppLockService.instance.onAppResumed();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +68,23 @@ class TrackoApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const SplashScreen(),
+      // ✅ App Lock Overlay — jab bhi AppLockService.isLocked true ho, ye
+      // poori app ke upar ek full-screen lock-screen dikha deta hai. Isse
+      // koi bhi screen (jahan bhi user ho) turant lock ho jaati hai.
+      builder: (context, child) {
+        return Stack(
+          children: [
+            child ?? const SizedBox.shrink(),
+            ValueListenableBuilder<bool>(
+              valueListenable: AppLockService.instance.isLocked,
+              builder: (context, locked, _) {
+                if (!locked) return const SizedBox.shrink();
+                return const AppLockScreen();
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -68,13 +117,27 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     if (isLoggedIn && ownerName.isNotEmpty) {
-      switch (role) {
-        case 'owner':
+      // ✅ Already logged-in hai — cold start pe bhi App Lock lagegi
+      // (agar setup ho chuka hai). Setup nahi hua ho (purana user, naya
+      // update aaya hai) to lockIfNeeded() kuch nahi karega, seedha
+      // dashboard khulega — agli baar login/register pe setup mandatory
+      // ho jayega.
+      await AppLockService.instance.lockIfNeeded();
+
+      // ✅ FIX — role SessionService mein exactly jaisa save hua tha
+      // waisa hi milta hai (e.g. "Owner", "Office Manager",
+      // "Field Manager", "Company Farmer") — camelCase/lowercase nahi.
+      // Pehle yahan 'officeManager'/'fieldManager'/'farmer' jaise galat
+      // keys the jo kabhi match hi nahi karte the, isliye app band karke
+      // dobara kholne par (cold start) Manager/Farmer sab galti se
+      // HomeScreen (Owner ki screen) pe chale jaate the.
+      switch (role.trim()) {
+        case 'Owner':
           Get.off(
             () => HomeScreen(ownerName: ownerName, companyName: companyName),
           );
           break;
-        case 'officeManager':
+        case 'Office Manager':
           Get.off(
             () => OfficeManagerDashboard(
               ownerName: ownerName,
@@ -82,7 +145,7 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
           );
           break;
-        case 'fieldManager':
+        case 'Field Manager':
           Get.off(
             () => FieldManagerDashboard(
               ownerName: ownerName,
@@ -90,7 +153,7 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
           );
           break;
-        case 'farmer':
+        case 'Company Farmer':
           Get.off(
             () =>
                 FarmerDashboard(ownerName: ownerName, companyName: companyName),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -8,6 +9,7 @@ import '../home/home_screen.dart';
 import '../../services/auth_service.dart';
 import '../../services/company_store.dart';
 import '../../services/otp_service.dart';
+import '../../services/app_lock_service.dart';
 
 class CompanyRegisterScreen extends StatefulWidget {
   final String industry;
@@ -32,8 +34,9 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
   bool _isTransitionDone = false;
   bool _isLoadingPin = false;
   bool _isLoadingVerification = false;
-  bool _isVerifyingMobileOtp = false;
   bool _isVerifyingEmailOtp = false;
+  int _resendCooldown = 0;
+  Timer? _resendTimer;
 
   // Background Location Analytics Data (Database mein store karne ke liye)
   Map<String, dynamic> _ipAnalyticsData = {};
@@ -55,7 +58,6 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
   final _pinController = TextEditingController();
   final _gstController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _otpController = TextEditingController();
   final _emailOtpController = TextEditingController(); // Email OTP Controller
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -141,6 +143,7 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
     // Cleanup controllers to prevent memory leaks
     _pinController.removeListener(_onPinChanged);
     _companyNameController.dispose();
@@ -152,7 +155,6 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
     _pinController.dispose();
     _gstController.dispose();
     _phoneController.dispose();
-    _otpController.dispose();
     _emailOtpController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -227,7 +229,21 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
   // VALIDATION LOGIC
   // ---------------------------------------------------------------------------
 
-  bool _isValidPhone(String p) => RegExp(r'^[6-9]\d{9}$').hasMatch(p);
+  bool _isValidPhone(String p) {
+    // 1. Format check — 10 digit, 6/7/8/9 se shuru
+    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(p)) return false;
+    // 2. Fake pattern check — sabhi digit same (9999999999, 0000000000, etc.)
+    if (RegExp(r'^(\d)\1{9}$').hasMatch(p)) return false;
+    // 3. Fake pattern check — simple ascending/descending sequence
+    const fakeSequences = {
+      '0123456789',
+      '1234567890',
+      '9876543210',
+      '0987654321',
+    };
+    if (fakeSequences.contains(p)) return false;
+    return true;
+  }
 
   bool _isValidPin(String p) => RegExp(r'^\d{6}$').hasMatch(p);
 
@@ -306,82 +322,92 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
       debugPrint('Network tracing safely skipped: $e');
     }
 
-    // 3. Real Mobile OTP (Firebase SMS) + Real Email OTP (Cloud Function
-    // se Gmail SMTP), dono ek ke baad ek bhejo.
+    // 3. Mobile number ab sirf format + duplicate check hota hai — koi SMS
+    // OTP nahi jaata, paisa bhi nahi lagta. Email hi asli verification hai.
     if (!mounted) return;
-    await OtpService.instance.sendOtp(
-      phone: _phoneController.text.trim(),
-      onCodeSent: () async {
-        // Mobile OTP bhej diya — ab Email OTP bhi bhejo (real)
-        final emailError = await OtpService.instance.sendEmailOtp(
-          _emailController.text.trim(),
-        );
-
-        if (!mounted) return;
-        setState(() {
-          _isLoadingVerification = false;
-          _otpSent = true;
-          _currentStep = 2;
-          if (emailError == null) _emailOtpSent = true;
-        });
-
-        if (emailError != null) {
-          _showError(
-            'Mobile par OTP bhej diya, lekin Email OTP mein dikkat: $emailError',
-          );
-        } else {
-          Get.snackbar(
-            'Sent!',
-            'Mobile aur Email dono par verification codes bheje gaye hain',
-            backgroundColor: widget.industryColor,
-            colorText: Colors.white,
-            snackPosition: SnackPosition.BOTTOM,
-            margin: const EdgeInsets.all(15),
-          );
-        }
-      },
-      onError: (msg) {
-        if (!mounted) return;
+    try {
+      final existing = await CompanyStore.instance.lookupPhone(
+        _phoneController.text.trim(),
+      );
+      if (existing != null) {
         setState(() => _isLoadingVerification = false);
-        _showError(msg);
-      },
+        _showError('Ye mobile number pehle se kisi account se registered hai');
+        return;
+      }
+    } catch (e) {
+      debugPrint('Phone duplicate check skipped: $e');
+    }
+
+    // 4. Real Email OTP (Cloud Function se Gmail SMTP) bhejo.
+    final emailError = await OtpService.instance.sendEmailOtp(
+      _emailController.text.trim(),
     );
-  }
-
-  // Mobile OTP Verification Handler — REAL Firebase Phone Auth
-  void _verifyMobileOTP() async {
-    if (_otpController.text.length != 6 ||
-        !RegExp(r'^\d{6}$').hasMatch(_otpController.text)) {
-      _showError('6 digit numeric Mobile OTP daalo');
-      return;
-    }
-
-    if (!mounted) return;
-    setState(() => _isVerifyingMobileOtp = true);
-
-    final ok = await OtpService.instance.verifyOtp(_otpController.text.trim());
-
-    if (!mounted) return;
-    setState(() => _isVerifyingMobileOtp = false);
-
-    if (!ok) {
-      _showError('OTP galat hai — dobara try karo');
-      return;
-    }
-
-    // Sirf ownership verify karni thi — session clean karo taaki
-    // baad mein _register() ka createUserWithEmailAndPassword clean
-    // state se ho (koi purana signed-in phone session conflict na kare).
-    await OtpService.instance.signOutOtpSession();
 
     if (!mounted) return;
     setState(() {
-      _otpVerified = true;
+      _isLoadingVerification = false;
+      _otpSent = true;
+      _otpVerified = true; // Mobile ownership ab OTP se verify nahi hoti —
+      // sirf format + duplicate-check hi kaafi hai, isliye seedha true.
+      _currentStep = 2;
+      if (emailError == null) _emailOtpSent = true;
     });
-    _checkIfAllVerified();
+
+    if (emailError != null) {
+      _showError('Email OTP bhejne mein dikkat: $emailError');
+    } else {
+      _startResendCooldown();
+      Get.snackbar(
+        'Sent!',
+        'Verification code aapke email par bheja gaya hai',
+        backgroundColor: widget.industryColor,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+    }
   }
 
   // Email OTP Verification Handler — REAL (Cloud Function se verify hota hai)
+  // ✅ Resend OTP — 30-second cooldown, spam-click se bachne ke liye.
+  void _startResendCooldown() {
+    _resendTimer?.cancel();
+    setState(() => _resendCooldown = 30);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendCooldown <= 1) {
+        timer.cancel();
+        setState(() => _resendCooldown = 0);
+      } else {
+        setState(() => _resendCooldown--);
+      }
+    });
+  }
+
+  Future<void> _resendEmailOtp() async {
+    if (_resendCooldown > 0) return;
+    final error = await OtpService.instance.sendEmailOtp(
+      _emailController.text.trim(),
+    );
+    if (!mounted) return;
+    if (error != null) {
+      _showError('Resend fail: $error');
+      return;
+    }
+    _startResendCooldown();
+    Get.snackbar(
+      'Naya OTP Bheja Gaya!',
+      'Email check karo',
+      backgroundColor: widget.industryColor,
+      colorText: Colors.white,
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(15),
+    );
+  }
+
   void _verifyEmailOTP() async {
     if (_emailOtpController.text.length != 6 ||
         !RegExp(r'^\d{6}$').hasMatch(_emailOtpController.text)) {
@@ -492,8 +518,8 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
     await Future.delayed(const Duration(milliseconds: 800));
     if (!mounted) return;
 
-    Get.offAll(
-      () => HomeScreen(
+    await AppLockService.instance.routeAfterAuth(
+      HomeScreen(
         ownerName: _ownerNameController.text,
         companyName: _companyNameController.text,
       ),
@@ -668,7 +694,7 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
                                       ),
                                     )
                                   : Text(
-                                      _otpSent ? '✓ Sent' : 'Verify Info',
+                                      _otpSent ? '✓ Sent' : 'Send OTP',
                                       style: const TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
@@ -680,29 +706,10 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
                       ),
                     ],
 
-                    // STEP 2 — VERIFICATION PHASE (Dual Verification)
+                    // STEP 2 — VERIFICATION PHASE (Email OTP only)
                     if (_currentStep >= 2) ...[
                       const SizedBox(height: 32),
-                      _sectionLabel('🔐 SECURITY VERIFICATION', '2'),
-                      const SizedBox(height: 16),
-
-                      // Mobile OTP Container
-                      if (!_otpVerified) ...[
-                        _buildVerificationRow(
-                          controller: _otpController,
-                          label: 'Mobile OTP *',
-                          hint: 'SMS se aaya hua code',
-                          onVerify: _isVerifyingMobileOtp
-                              ? null
-                              : _verifyMobileOTP,
-                          isLoading: _isVerifyingMobileOtp,
-                        ),
-                      ] else
-                        _verifiedBox(
-                          'Mobile Number successfully verified! ✓',
-                          widget.industryColor,
-                        ),
-
+                      _sectionLabel('🔐 EMAIL VERIFICATION', '2'),
                       const SizedBox(height: 16),
 
                       // Email OTP Container
@@ -722,11 +729,11 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
                           widget.industryColor,
                         ),
 
-                      if (!_otpVerified || !_emailVerified)
+                      if (!_emailVerified) ...[
                         Padding(
                           padding: const EdgeInsets.only(top: 14),
                           child: Text(
-                            'Mobile OTP SMS se aata hai, Email OTP aapke email inbox mein.',
+                            'Email OTP aapke email inbox mein aayega.',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade600,
@@ -734,6 +741,27 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
                             ),
                           ),
                         ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: TextButton(
+                            onPressed: _resendCooldown > 0
+                                ? null
+                                : _resendEmailOtp,
+                            child: Text(
+                              _resendCooldown > 0
+                                  ? 'Resend OTP ($_resendCooldown s)'
+                                  : 'Resend OTP',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: _resendCooldown > 0
+                                    ? Colors.grey
+                                    : widget.industryColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
 
                     // STEP 3 — CREDENTIALS PHASE (Password Locking)

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:get/get.dart';
 import '../home/home_screen.dart';
+import '../dashboards/farmer_dashboard.dart';
 import '../../services/auth_service.dart';
 import '../../services/company_store.dart';
 import '../../services/otp_service.dart';
+import '../../services/app_lock_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,8 +20,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _otpPhoneController = TextEditingController();
-  final _otpController = TextEditingController();
+  final _farmerPhoneController = TextEditingController();
+  final _farmerPinController = TextEditingController();
+  final _farmerPinConfirmController = TextEditingController();
+  final _farmerDobController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmNewPasswordController = TextEditingController();
   final _forgotPhoneController = TextEditingController();
@@ -28,9 +33,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _showPassword = false;
   bool _isLoading = false;
+  int _forgotResendCooldown = 0;
+  Timer? _forgotResendTimer;
+  void Function(void Function())? _forgotDialogSetState;
 
   // OTP Login state (Company Farmer)
-  bool _otpSent = false;
+  bool _farmerPhoneChecked = false;
+  bool _farmerHasPin = false;
+  bool _farmerForgotPin = false;
+  String? _farmerCompanyId;
   bool _otpVerified = false;
   bool _showNewPassFields = false;
 
@@ -40,16 +51,24 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _showForgotNewPass = false;
   bool _showForgotNewPassword = false;
   bool _showForgotConfirmPassword = false;
+  // ✅ Forgot password ab EMAIL OTP se hota hai (mobile OTP hata diya).
+  // Phone se lookup karke authEmail nikalte hain, wahi email OTP + reset
+  // ke liye use hota hai — user ko email alag se type nahi karna padta.
+  String? _forgotResolvedEmail;
+  String? _forgotResetToken;
 
   // Current tab: 0 = Password Login, 1 = OTP Login (Company Farmer)
   int _currentTab = 0;
 
   @override
   void dispose() {
+    _forgotResendTimer?.cancel();
     _phoneController.dispose();
     _passwordController.dispose();
-    _otpPhoneController.dispose();
-    _otpController.dispose();
+    _farmerPhoneController.dispose();
+    _farmerPinController.dispose();
+    _farmerPinConfirmController.dispose();
+    _farmerDobController.dispose();
     _newPasswordController.dispose();
     _confirmNewPasswordController.dispose();
     _forgotPhoneController.dispose();
@@ -99,8 +118,8 @@ class _LoginScreenState extends State<LoginScreen> {
         margin: const EdgeInsets.all(15),
       );
       await Future.delayed(const Duration(milliseconds: 800));
-      Get.offAll(
-        () => HomeScreen(
+      await AppLockService.instance.routeAfterAuth(
+        HomeScreen(
           ownerName: result.displayName ?? result.ownerName ?? '',
           companyName: result.companyName ?? '',
         ),
@@ -112,110 +131,155 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ----------------------------------------------------------------
-  // OTP LOGIN — Company Farmer (REAL Firebase Phone Auth)
+  // COMPANY FARMER LOGIN — Number Match + PIN (zero-cost, no OTP/SMS)
   // ----------------------------------------------------------------
-  Future<void> _sendFarmerOtp() async {
-    final phone = _otpPhoneController.text.trim();
+  Future<void> _checkFarmerPhone() async {
+    final phone = _farmerPhoneController.text.trim();
     if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phone)) {
       _showError('Sahi phone number daalo — 10 digit');
       return;
     }
 
+    setState(() => _isLoading = true);
     try {
-      final companyFarmers = await CompanyStore.instance.getJsonList(
-        'companyFarmers',
-      );
-      final farmerExists = companyFarmers.any((f) => f['phone'] == phone);
+      final check = await AuthService.instance.checkCompanyFarmerPhone(phone);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
 
-      if (!farmerExists) {
+      if (!check.exists) {
         _showError('Yeh number register nahi hai. Owner se contact karo.');
         return;
       }
 
-      setState(() => _isLoading = true);
-      await OtpService.instance.sendOtp(
-        phone: phone,
-        onCodeSent: () {
-          if (!mounted) return;
-          setState(() {
-            _isLoading = false;
-            _otpSent = true;
-          });
-          Get.snackbar(
-            'OTP Bheja Gaya!',
-            '$phone pe OTP bheja gaya',
-            backgroundColor: primaryGreen,
-            colorText: Colors.white,
-            snackPosition: SnackPosition.BOTTOM,
-            margin: const EdgeInsets.all(15),
-          );
-        },
-        onError: (msg) {
-          if (!mounted) return;
-          setState(() => _isLoading = false);
-          _showError(msg);
-        },
-      );
+      setState(() {
+        _farmerPhoneChecked = true;
+        _farmerHasPin = check.hasPin;
+        _farmerCompanyId = check.companyId;
+        _farmerForgotPin = false;
+      });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
       _showError('Error checking farmer: ${e.toString()}');
     }
   }
 
-  Future<void> _verifyFarmerOtp() async {
-    if (_otpController.text.length != 6) {
-      _showError('6 digit OTP daalo');
+  Future<void> _submitFarmerPin() async {
+    final pin = _farmerPinController.text.trim();
+    if (pin.length != 4) {
+      _showError('4 digit PIN daalo');
+      return;
+    }
+
+    if (!_farmerHasPin) {
+      final confirm = _farmerPinConfirmController.text.trim();
+      if (pin != confirm) {
+        _showError('PIN match nahi kar raha');
+        return;
+      }
+    }
+
+    if (_farmerCompanyId == null) {
+      _showError('Kuch galat ho gaya — dobara try karo');
       return;
     }
 
     setState(() => _isLoading = true);
 
-    final otpOk = await OtpService.instance.verifyOtp(
-      _otpController.text.trim(),
-    );
+    final result = _farmerHasPin
+        ? await AuthService.instance.loginCompanyFarmerWithPin(
+            companyId: _farmerCompanyId!,
+            phone: _farmerPhoneController.text.trim(),
+            pin: pin,
+          )
+        : await AuthService.instance.setupCompanyFarmerPin(
+            companyId: _farmerCompanyId!,
+            phone: _farmerPhoneController.text.trim(),
+            pin: pin,
+          );
 
-    if (!otpOk) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      _showError('OTP galat hai');
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (!result.success) {
+      _showError(result.errorMessage ?? 'Login fail');
       return;
     }
 
-    try {
-      // Session signed-in HI rakho (sign out mat karo) — isse farmer ka
-      // real Firebase UID mil jayega jo linkAuthUser use karega.
-      final result = await AuthService.instance.loginCompanyFarmer(
-        phone: _otpPhoneController.text.trim(),
-      );
-      if (!mounted) return;
-      setState(() => _isLoading = false);
+    Get.snackbar(
+      '✅ Welcome!',
+      'Namaste, ${result.displayName}! 👋',
+      backgroundColor: primaryGreen,
+      colorText: Colors.white,
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(15),
+    );
+    await Future.delayed(const Duration(milliseconds: 800));
+    await AppLockService.instance.routeAfterAuth(
+      FarmerDashboard(
+        ownerName: result.displayName ?? '',
+        companyName: result.companyName ?? '',
+      ),
+    );
+  }
 
-      if (!result.success) {
-        await OtpService.instance.signOutOtpSession();
-        _showError(result.errorMessage ?? 'Login fail');
-        return;
-      }
+  /// ✅ Self-service PIN reset — FARMER khud karta hai, DOB confirm
+  /// karke (jo Office Manager ko onboarding ke time di thi). Koi
+  /// Office Manager/Owner involvement nahi chahiye.
+  Future<void> _submitFarmerPinReset() async {
+    final dob = _farmerDobController.text.trim();
+    final pin = _farmerPinController.text.trim();
+    final confirm = _farmerPinConfirmController.text.trim();
 
-      Get.snackbar(
-        '✅ Welcome!',
-        'Namaste, ${result.displayName}! 👋',
-        backgroundColor: primaryGreen,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(15),
-      );
-      await Future.delayed(const Duration(milliseconds: 800));
-      Get.offAll(
-        () => HomeScreen(
-          ownerName: result.displayName ?? '',
-          companyName: result.companyName ?? '',
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      _showError('OTP verification error: ${e.toString()}');
+    if (dob.isEmpty) {
+      _showError('Apni Date of Birth daalo (jo Office Manager ko di thi)');
+      return;
     }
+    if (pin.length != 4) {
+      _showError('4 digit naya PIN daalo');
+      return;
+    }
+    if (pin != confirm) {
+      _showError('PIN match nahi kar raha');
+      return;
+    }
+    if (_farmerCompanyId == null) {
+      _showError('Kuch galat ho gaya — dobara try karo');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    final result = await AuthService.instance.resetFarmerPinWithDob(
+      companyId: _farmerCompanyId!,
+      phone: _farmerPhoneController.text.trim(),
+      dob: dob,
+      newPin: pin,
+    );
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (!result.success) {
+      _showError(result.errorMessage ?? 'Reset fail ho gaya');
+      return;
+    }
+
+    Get.snackbar(
+      '✅ PIN Reset Ho Gaya!',
+      'Naye PIN se login ho gaya',
+      backgroundColor: primaryGreen,
+      colorText: Colors.white,
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(15),
+    );
+    await Future.delayed(const Duration(milliseconds: 800));
+    await AppLockService.instance.routeAfterAuth(
+      FarmerDashboard(
+        ownerName: result.displayName ?? '',
+        companyName: result.companyName ?? '',
+      ),
+    );
   }
 
   // ----------------------------------------------------------------
@@ -239,25 +303,81 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      await OtpService.instance.sendOtp(
-        phone: phone,
-        onCodeSent: () {
-          if (!mounted) return;
-          setState(() => _forgotOtpSent = true);
-          Get.snackbar(
-            'OTP Bheja Gaya!',
-            '$phone pe OTP bheja gaya',
-            backgroundColor: primaryGreen,
-            colorText: Colors.white,
-            snackPosition: SnackPosition.BOTTOM,
-            margin: const EdgeInsets.all(15),
-          );
-        },
-        onError: (msg) => _showError(msg),
+      // Owner/Personal Farmer ka authEmail chahiye — usi par OTP jayega.
+      final authEmail = lookup?['authEmail'] as String?;
+      if (authEmail == null || authEmail.isEmpty) {
+        _showError('Is account ka email record nahi mila.');
+        return;
+      }
+      _forgotResolvedEmail = authEmail;
+
+      if (!mounted) return;
+      setState(() => _isLoading = true);
+
+      final error = await OtpService.instance.sendEmailOtp(authEmail);
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (error != null) {
+        _showError(error);
+        return;
+      }
+
+      setState(() => _forgotOtpSent = true);
+      _startForgotResendCooldown();
+      Get.snackbar(
+        'OTP Bheja Gaya!',
+        'Aapke registered email par OTP bheja gaya',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
       );
     } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
       _showError('Error sending OTP: ${e.toString()}');
     }
+  }
+
+  // ✅ Resend OTP — 30-second cooldown.
+  void _startForgotResendCooldown() {
+    _forgotResendTimer?.cancel();
+    setState(() => _forgotResendCooldown = 30);
+    _forgotDialogSetState?.call(() {});
+    _forgotResendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_forgotResendCooldown <= 1) {
+        timer.cancel();
+        setState(() => _forgotResendCooldown = 0);
+      } else {
+        setState(() => _forgotResendCooldown--);
+      }
+      _forgotDialogSetState?.call(() {});
+    });
+  }
+
+  Future<void> _resendForgotOtp() async {
+    if (_forgotResendCooldown > 0 || _forgotResolvedEmail == null) return;
+    final error = await OtpService.instance.sendEmailOtp(_forgotResolvedEmail!);
+    if (!mounted) return;
+    if (error != null) {
+      _showError('Resend fail: $error');
+      return;
+    }
+    _startForgotResendCooldown();
+    Get.snackbar(
+      'Naya OTP Bheja Gaya!',
+      'Email check karo',
+      backgroundColor: primaryGreen,
+      colorText: Colors.white,
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(15),
+    );
   }
 
   Future<void> _verifyForgotOtp() async {
@@ -265,15 +385,22 @@ class _LoginScreenState extends State<LoginScreen> {
       _showError('6 digit OTP daalo');
       return;
     }
+    if (_forgotResolvedEmail == null) {
+      _showError('Session expire ho gaya — dobara try karo');
+      return;
+    }
 
-    final ok = await OtpService.instance.verifyOtp(
+    final resetToken = await OtpService.instance.verifyEmailOtpForReset(
+      _forgotResolvedEmail!,
       _forgotOtpController.text.trim(),
     );
 
-    if (!ok) {
-      _showError('OTP galat hai');
+    if (resetToken == null) {
+      _showError('OTP galat ya expire ho gaya');
       return;
     }
+
+    _forgotResetToken = resetToken;
 
     if (!mounted) return;
     setState(() {
@@ -299,14 +426,18 @@ class _LoginScreenState extends State<LoginScreen> {
       _showError('Password match nahi kar raha');
       return;
     }
+    if (_forgotResolvedEmail == null || _forgotResetToken == null) {
+      _showError('Session expire ho gaya — dobara OTP verify karo');
+      return;
+    }
 
     try {
-      // Server-side Cloud Function — verified phone-auth session se hi kaam karti hai
+      // Server-side Cloud Function — email OTP se mile resetToken ke saath
       final error = await OtpService.instance.resetPasswordAfterOtp(
-        _forgotNewPassController.text,
+        email: _forgotResolvedEmail!,
+        resetToken: _forgotResetToken!,
+        newPassword: _forgotNewPassController.text,
       );
-      // Temporary phone-auth session ab band karo
-      await OtpService.instance.signOutOtpSession();
 
       if (error != null) {
         _showError(error);
@@ -327,6 +458,8 @@ class _LoginScreenState extends State<LoginScreen> {
         _forgotOtpSent = false;
         _forgotOtpVerified = false;
         _showForgotNewPass = false;
+        _forgotResolvedEmail = null;
+        _forgotResetToken = null;
         _forgotPhoneController.clear();
         _forgotOtpController.clear();
         _forgotNewPassController.clear();
@@ -345,250 +478,293 @@ class _LoginScreenState extends State<LoginScreen> {
       _forgotOtpSent = false;
       _forgotOtpVerified = false;
       _showForgotNewPass = false;
+      _forgotResolvedEmail = null;
+      _forgotResetToken = null;
       _forgotPhoneController.clear();
       _forgotOtpController.clear();
       _forgotNewPassController.clear();
       _forgotConfirmPassController.clear();
+      _forgotResendCooldown = 0;
     });
+    _forgotResendTimer?.cancel();
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text(
-            '🔑 Forgot Password',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Info note
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
+        builder: (context, setDialogState) {
+          // ✅ Resend-cooldown timer isi setDialogState se dialog ko
+          // live-refresh kar sake, isliye har build par latest reference
+          // save kar lete hain.
+          _forgotDialogSetState = setDialogState;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text(
+              '🔑 Forgot Password',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Info note
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Text(
+                      '⚠️ Sirf Owner aur Personal Farmer apna password reset kar sakte hain.\n\nManager ka password Owner ke paas hota hai.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange.shade800,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Phone field
+                  if (!_forgotOtpSent) ...[
+                    const Text(
+                      'Registered Phone Number',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _forgotPhoneController,
+                      keyboardType: TextInputType.phone,
+                      maxLength: 10,
+                      textInputAction: TextInputAction.done,
+                      decoration: InputDecoration(
+                        hintText: '10 digit mobile number',
+                        prefixIcon: const Icon(Icons.phone_rounded),
+                        counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(
+                            color: primaryGreen,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // OTP field
+                  if (_forgotOtpSent && !_forgotOtpVerified) ...[
+                    Text(
+                      _forgotResolvedEmail != null
+                          ? '$_forgotResolvedEmail par OTP bheja gaya'
+                          : 'Aapke registered email par OTP bheja gaya',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '6 Digit OTP',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _forgotOtpController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      textInputAction: TextInputAction.done,
+                      decoration: InputDecoration(
+                        hintText: 'Email se aaya hua code',
+                        prefixIcon: const Icon(Icons.lock_clock_rounded),
+                        counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(
+                            color: primaryGreen,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _forgotResendCooldown > 0
+                            ? null
+                            : () {
+                                _resendForgotOtp().then((_) {
+                                  _forgotDialogSetState?.call(() {});
+                                });
+                              },
+                        child: Text(
+                          _forgotResendCooldown > 0
+                              ? 'Resend OTP (${_forgotResendCooldown}s)'
+                              : 'Resend OTP',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: _forgotResendCooldown > 0
+                                ? Colors.grey
+                                : primaryGreen,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // New Password fields
+                  if (_showForgotNewPass) ...[
+                    const Text(
+                      'Naya Password',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    StatefulBuilder(
+                      builder: (context, setPassState) => Column(
+                        children: [
+                          TextField(
+                            controller: _forgotNewPassController,
+                            obscureText: !_showForgotNewPassword,
+                            textInputAction: TextInputAction.next,
+                            decoration: InputDecoration(
+                              hintText: 'Naya password',
+                              prefixIcon: const Icon(Icons.lock_rounded),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _showForgotNewPassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: Colors.grey,
+                                ),
+                                onPressed: () => setPassState(
+                                  () => _showForgotNewPassword =
+                                      !_showForgotNewPassword,
+                                ),
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                  color: primaryGreen,
+                                  width: 1.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _forgotConfirmPassController,
+                            obscureText: !_showForgotConfirmPassword,
+                            textInputAction: TextInputAction.done,
+                            decoration: InputDecoration(
+                              hintText: 'Confirm password',
+                              prefixIcon: const Icon(Icons.lock_rounded),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _showForgotConfirmPassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: Colors.grey,
+                                ),
+                                onPressed: () => setPassState(
+                                  () => _showForgotConfirmPassword =
+                                      !_showForgotConfirmPassword,
+                                ),
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                  color: primaryGreen,
+                                  width: 1.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _forgotOtpSent = false;
+                    _forgotOtpVerified = false;
+                    _showForgotNewPass = false;
+                  });
+                  Navigator.pop(context);
+                },
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (!_forgotOtpSent) {
+                    _sendForgotOtp().then((_) {
+                      setDialogState(() {});
+                    });
+                  } else if (!_forgotOtpVerified) {
+                    _verifyForgotOtp().then((_) {
+                      setDialogState(() {});
+                    });
+                  } else {
+                    _setNewPassword();
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryGreen,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.shade200),
-                  ),
-                  child: Text(
-                    '⚠️ Sirf Owner aur Personal Farmer apna password reset kar sakte hain.\n\nManager ka password Owner ke paas hota hai.',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.orange.shade800,
-                      height: 1.4,
-                    ),
                   ),
                 ),
-                const SizedBox(height: 16),
-
-                // Phone field
-                if (!_forgotOtpSent) ...[
-                  const Text(
-                    'Registered Phone Number',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _forgotPhoneController,
-                    keyboardType: TextInputType.phone,
-                    maxLength: 10,
-                    textInputAction: TextInputAction.done,
-                    decoration: InputDecoration(
-                      hintText: '10 digit mobile number',
-                      prefixIcon: const Icon(Icons.phone_rounded),
-                      counterText: '',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(
-                          color: primaryGreen,
-                          width: 1.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-
-                // OTP field
-                if (_forgotOtpSent && !_forgotOtpVerified) ...[
-                  Text(
-                    '${_forgotPhoneController.text} pe OTP bheja gaya',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    '6 Digit OTP',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _forgotOtpController,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    textInputAction: TextInputAction.done,
-                    decoration: InputDecoration(
-                      hintText: 'e.g. 123456',
-                      prefixIcon: const Icon(Icons.lock_clock_rounded),
-                      counterText: '',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(
-                          color: primaryGreen,
-                          width: 1.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-
-                // New Password fields
-                if (_showForgotNewPass) ...[
-                  const Text(
-                    'Naya Password',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  StatefulBuilder(
-                    builder: (context, setPassState) => Column(
-                      children: [
-                        TextField(
-                          controller: _forgotNewPassController,
-                          obscureText: !_showForgotNewPassword,
-                          textInputAction: TextInputAction.next,
-                          decoration: InputDecoration(
-                            hintText: 'Naya password',
-                            prefixIcon: const Icon(Icons.lock_rounded),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _showForgotNewPassword
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                                color: Colors.grey,
-                              ),
-                              onPressed: () => setPassState(
-                                () => _showForgotNewPassword =
-                                    !_showForgotNewPassword,
-                              ),
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(
-                                color: primaryGreen,
-                                width: 1.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _forgotConfirmPassController,
-                          obscureText: !_showForgotConfirmPassword,
-                          textInputAction: TextInputAction.done,
-                          decoration: InputDecoration(
-                            hintText: 'Confirm password',
-                            prefixIcon: const Icon(Icons.lock_rounded),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _showForgotConfirmPassword
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                                color: Colors.grey,
-                              ),
-                              onPressed: () => setPassState(
-                                () => _showForgotConfirmPassword =
-                                    !_showForgotConfirmPassword,
-                              ),
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(
-                                color: primaryGreen,
-                                width: 1.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _forgotOtpSent = false;
-                  _forgotOtpVerified = false;
-                  _showForgotNewPass = false;
-                });
-                Navigator.pop(context);
-              },
-              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (!_forgotOtpSent) {
-                  _sendForgotOtp().then((_) {
-                    setDialogState(() {});
-                  });
-                } else if (!_forgotOtpVerified) {
-                  _verifyForgotOtp().then((_) {
-                    setDialogState(() {});
-                  });
-                } else {
-                  _setNewPassword();
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryGreen,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                child: Text(
+                  !_forgotOtpSent
+                      ? 'OTP Bhejo'
+                      : !_forgotOtpVerified
+                      ? 'Verify Karo'
+                      : 'Password Save Karo',
                 ),
               ),
-              child: Text(
-                !_forgotOtpSent
-                    ? 'OTP Bhejo'
-                    : !_forgotOtpVerified
-                    ? 'Verify Karo'
-                    : 'Password Save Karo',
-              ),
-            ),
-          ],
-        ),
+            ],
+          );
+        },
       ),
-    );
+    ).then((_) {
+      // Dialog band ho gaya — resend timer aur stale reference clean karo
+      _forgotResendTimer?.cancel();
+      _forgotDialogSetState = null;
+    });
   }
 
   void _showError(String msg) {
@@ -921,7 +1097,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ----------------------------------------------------------------
-  // OTP LOGIN UI — Company Farmer
+  // LOGIN UI — Company Farmer (Number + PIN)
   // ----------------------------------------------------------------
   Widget _buildOtpLogin() {
     return Column(
@@ -962,10 +1138,10 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             Expanded(
               child: TextField(
-                controller: _otpPhoneController,
+                controller: _farmerPhoneController,
                 keyboardType: TextInputType.phone,
                 maxLength: 10,
-                enabled: !_otpSent,
+                enabled: !_farmerPhoneChecked,
                 textInputAction: TextInputAction.done,
                 style: const TextStyle(
                   fontSize: 15,
@@ -982,7 +1158,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: primaryGreen,
                   ),
                   filled: true,
-                  fillColor: _otpSent ? Colors.grey.shade100 : Colors.white,
+                  fillColor: _farmerPhoneChecked
+                      ? Colors.grey.shade100
+                      : Colors.white,
                   counterText: '',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
@@ -1012,7 +1190,9 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(width: 10),
             ElevatedButton(
-              onPressed: (_otpSent || _isLoading) ? null : _sendFarmerOtp,
+              onPressed: (_farmerPhoneChecked || _isLoading)
+                  ? null
+                  : _checkFarmerPhone,
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryGreen,
                 foregroundColor: Colors.white,
@@ -1025,7 +1205,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: (_isLoading && !_otpSent)
+              child: (_isLoading && !_farmerPhoneChecked)
                   ? const SizedBox(
                       width: 16,
                       height: 16,
@@ -1035,7 +1215,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     )
                   : Text(
-                      _otpSent ? '✓ Sent' : 'OTP Bhejo',
+                      _farmerPhoneChecked ? '✓ Verified' : 'Check Number',
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -1045,11 +1225,184 @@ class _LoginScreenState extends State<LoginScreen> {
           ],
         ),
 
-        // OTP field
-        if (_otpSent) ...[
+        // PIN field
+        if (_farmerPhoneChecked && !_farmerForgotPin) ...[
           const SizedBox(height: 20),
+          Text(
+            _farmerHasPin ? 'Apna 4-digit PIN daalo' : 'Naya 4-digit PIN banao',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _farmerPinController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            textInputAction: TextInputAction.done,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+            decoration: InputDecoration(
+              hintText: '4 digit PIN',
+              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+              prefixIcon: const Icon(
+                Icons.lock_outline_rounded,
+                color: primaryGreen,
+              ),
+              filled: true,
+              fillColor: Colors.white,
+              counterText: '',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: primaryGreen, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 18,
+              ),
+            ),
+          ),
+
+          if (!_farmerHasPin) ...[
+            const SizedBox(height: 14),
+            const Text(
+              'PIN Confirm Karo',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _farmerPinConfirmController,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              obscureText: true,
+              textInputAction: TextInputAction.done,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              decoration: InputDecoration(
+                hintText: 'Wahi PIN dobara daalo',
+                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                prefixIcon: const Icon(
+                  Icons.lock_outline_rounded,
+                  color: primaryGreen,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                counterText: '',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: primaryGreen, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 18,
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _submitFarmerPin,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryGreen,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text(
+                      _farmerHasPin ? 'Login Karo' : 'PIN Set Karo & Login',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+            ),
+          ),
+
+          // "PIN bhool gaye?" — sirf returning farmer (already PIN set)
+          // ko dikhega, naye farmer ko nahi (uska to PIN hi ban raha hai)
+          if (_farmerHasPin) ...[
+            const SizedBox(height: 10),
+            Center(
+              child: TextButton(
+                onPressed: () {
+                  setState(() {
+                    _farmerForgotPin = true;
+                    _farmerPinController.clear();
+                    _farmerPinConfirmController.clear();
+                  });
+                },
+                child: const Text(
+                  'PIN bhool gaye?',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+
+        // ── Forgot PIN — SELF-SERVICE reset (farmer khud karta hai) ──────
+        // DOB confirm karke naya PIN set hota hai, Office Manager ki
+        // zaroorat nahi.
+        if (_farmerPhoneChecked && _farmerForgotPin) ...[
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.blue.shade100),
+            ),
+            child: Text(
+              'Apni Date of Birth daalo (wahi jo Office Manager ko onboarding ke time di thi) — match hone par naya PIN set kar sakte ho.',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: Colors.blue.shade900,
+                height: 1.4,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           const Text(
-            '6 Digit OTP',
+            'Date of Birth',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -1057,86 +1410,172 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _otpController,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  textInputAction: TextInputAction.done,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'SMS se aaya hua code',
-                    hintStyle: TextStyle(
-                      color: Colors.grey.shade400,
-                      fontSize: 13,
-                    ),
-                    prefixIcon: const Icon(
-                      Icons.lock_clock_rounded,
-                      color: primaryGreen,
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    counterText: '',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: Colors.grey.shade200),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: Colors.grey.shade200),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(
-                        color: primaryGreen,
-                        width: 1.5,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 18,
-                    ),
-                  ),
+          TextField(
+            controller: _farmerDobController,
+            keyboardType: TextInputType.datetime,
+            textInputAction: TextInputAction.done,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+            decoration: InputDecoration(
+              hintText: 'DD/MM/YYYY',
+              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+              prefixIcon: const Icon(Icons.cake_outlined, color: primaryGreen),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: primaryGreen, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 18,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Naya 4-digit PIN',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _farmerPinController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            textInputAction: TextInputAction.done,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+            decoration: InputDecoration(
+              hintText: '4 digit PIN',
+              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+              prefixIcon: const Icon(
+                Icons.lock_outline_rounded,
+                color: primaryGreen,
+              ),
+              filled: true,
+              fillColor: Colors.white,
+              counterText: '',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: primaryGreen, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 18,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'PIN Confirm Karo',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _farmerPinConfirmController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            textInputAction: TextInputAction.done,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+            decoration: InputDecoration(
+              hintText: 'Wahi naya PIN dobara daalo',
+              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+              prefixIcon: const Icon(
+                Icons.lock_outline_rounded,
+                color: primaryGreen,
+              ),
+              filled: true,
+              fillColor: Colors.white,
+              counterText: '',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: primaryGreen, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 18,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _submitFarmerPinReset,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryGreen,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              const SizedBox(width: 10),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _verifyFarmerOtp,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryGreen,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.grey.shade300,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 18,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Text(
-                        'Verify',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
                       ),
+                    )
+                  : const Text(
+                      'PIN Reset Karo & Login',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Center(
+            child: TextButton(
+              onPressed: () {
+                setState(() {
+                  _farmerForgotPin = false;
+                  _farmerPinController.clear();
+                  _farmerPinConfirmController.clear();
+                  _farmerDobController.clear();
+                });
+              },
+              child: const Text(
+                '← Wapas jao',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
               ),
-            ],
+            ),
           ),
         ],
 

@@ -127,21 +127,23 @@ class OtpService {
     _resendToken = null;
   }
 
-  /// Forgot Password — server-side Cloud Function `resetPasswordAfterOtp` ko
-  /// call karta hai. Isse pehle verifyOtp() successful hona ZAROORI hai
-  /// (user abhi phone-verified signed-in hona chahiye), warna function
-  /// "unauthenticated" error dega.
+  /// Forgot Password — EMAIL OTP based (ab mobile OTP/phone-auth session
+  /// ki zaroorat nahi). [resetToken] wahi hai jo verifyEmailOtpForReset()
+  /// se mila tha — isse pehle wo call karna ZAROORI hai.
   ///
   /// Return: `null` = success, warna error message (Hinglish, user ko dikhane layak).
-  Future<String?> resetPasswordAfterOtp(String newPassword) async {
-    if (_auth.currentUser == null) {
-      return 'Session expire ho gaya — OTP dobara verify karo';
-    }
+  Future<String?> resetPasswordAfterOtp({
+    required String email,
+    required String resetToken,
+    required String newPassword,
+  }) async {
     try {
       final callable = FirebaseFunctions.instance.httpsCallable(
         'resetPasswordAfterOtp',
       );
       final result = await callable.call(<String, dynamic>{
+        'email': email.trim().toLowerCase(),
+        'resetToken': resetToken,
         'newPassword': newPassword,
       });
       final data = result.data;
@@ -151,6 +153,30 @@ class OtpService {
       return e.message ?? 'Password reset error (${e.code})';
     } catch (e) {
       return 'Password reset error: $e';
+    }
+  }
+
+  /// Forgot Password ka Email OTP verify karta hai — normal verifyEmailOtp()
+  /// jaisa hi hai, bas success par ek `resetToken` bhi milta hai jo
+  /// resetPasswordAfterOtp() mein use hoga. Return `null` = OTP galat/expire,
+  /// warna resetToken string.
+  Future<String?> verifyEmailOtpForReset(String email, String code) async {
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'verifyEmailOtpForReset',
+      );
+      final result = await callable.call(<String, dynamic>{
+        'email': email.trim().toLowerCase(),
+        'code': code.trim(),
+      });
+      final data = result.data;
+      if (data is Map && data['success'] == true) {
+        return data['resetToken'] as String?;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[OtpService] verifyEmailOtpForReset failed: $e');
+      return null;
     }
   }
 

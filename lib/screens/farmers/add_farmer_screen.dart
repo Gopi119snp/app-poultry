@@ -103,6 +103,21 @@ class _AddFarmerScreenState extends State<AddFarmerScreen> {
     }
   }
 
+  // ✅ Phone validation — format + fake/nakli pattern reject karta hai.
+  // (Duplicate-check pehle se step2 mein hai — yahan sirf format/fake check.)
+  bool _isValidPhone(String p) {
+    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(p)) return false;
+    if (RegExp(r'^(\d)\1{9}$').hasMatch(p)) return false; // 9999999999 waghera
+    const fakeSequences = {
+      '0123456789',
+      '1234567890',
+      '9876543210',
+      '0987654321',
+    };
+    if (fakeSequences.contains(p)) return false;
+    return true;
+  }
+
   @override
   void dispose() {
     _pinController.removeListener(_onPinChanged);
@@ -182,8 +197,8 @@ class _AddFarmerScreenState extends State<AddFarmerScreen> {
       _showError('Relation ka naam kam se kam 3 characters');
       return;
     }
-    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(_phoneController.text.trim())) {
-      _showError('Sahi phone number daalo — 10 digit');
+    if (!_isValidPhone(_phoneController.text.trim())) {
+      _showError('Sahi phone number daalo — 10 digit, fake number nahi');
       return;
     }
     if (_pinController.text.length != 6) {

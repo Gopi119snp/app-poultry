@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
@@ -48,6 +49,23 @@ class AuthResult {
   );
 }
 
+/// Company Farmer login ke "number check" step ka result — batata hai
+/// number valid hai ya nahi, aur uska PIN pehle se set hai ya nahi
+/// (set hai = returning farmer, PIN daalo | nahi hai = naya, PIN set karo).
+class FarmerPhoneCheckResult {
+  final bool exists;
+  final bool hasPin;
+  final String? companyId;
+  final String? farmerName;
+
+  const FarmerPhoneCheckResult({
+    required this.exists,
+    required this.hasPin,
+    this.companyId,
+    this.farmerName,
+  });
+}
+
 class AuthService {
   AuthService._();
 
@@ -85,51 +103,75 @@ class AuthService {
       );
 
       final uid = cred.user!.uid;
-      final profile = {
-        'ownerName': ownerName,
-        'companyName': companyName,
-        'phone': phone,
-        'email': email.trim().toLowerCase(),
-        'authEmail': email.trim().toLowerCase(),
-        'industry': industry,
-        'accountType': 'company',
-        if (extraProfile != null) ...extraProfile,
-      };
 
-      await CompanyStore.instance.createCompanyInCloud(
-        companyId: uid,
-        profile: profile,
-      );
+      // ✅ FIX — Agar account banne ke baad (upar wali line) koi bhi
+      // step fail ho jaye (internet cut, app crash, Firestore error
+      // waghera), to Firebase Auth account yahin turant DELETE (rollback)
+      // kar dete hain. Warna wo email hamesha ke liye "already
+      // registered" bol ke stuck ho jata, bina kisi usable account ke —
+      // na login ho sakta, na dobara register ho sakta.
+      try {
+        final profile = {
+          'ownerName': ownerName,
+          'companyName': companyName,
+          'phone': phone,
+          'email': email.trim().toLowerCase(),
+          'authEmail': email.trim().toLowerCase(),
+          'industry': industry,
+          'accountType': 'company',
+          if (extraProfile != null) ...extraProfile,
+        };
 
-      await CompanyStore.instance.linkAuthUser(
-        authUid: uid,
-        companyId: uid,
-        role: 'Owner',
-        phone: phone,
-        displayName: ownerName,
-      );
+        await CompanyStore.instance.createCompanyInCloud(
+          companyId: uid,
+          profile: profile,
+        );
 
-      await CompanyStore.instance.registerPhoneLookup(
-        phone: phone,
-        companyId: uid,
-        role: 'Owner',
-        authEmail: email.trim().toLowerCase(),
-        displayName: ownerName,
-      );
+        await CompanyStore.instance.linkAuthUser(
+          authUid: uid,
+          companyId: uid,
+          role: 'Owner',
+          phone: phone,
+          displayName: ownerName,
+        );
 
-      await SessionService.saveLoginSession(
-        companyId: uid,
-        role: 'Owner',
-        displayName: ownerName,
-        ownerName: ownerName,
-        companyName: companyName,
-        phone: phone,
-        industry: industry,
-        authEmail: email.trim().toLowerCase(),
-      );
+        await CompanyStore.instance.registerPhoneLookup(
+          phone: phone,
+          companyId: uid,
+          role: 'Owner',
+          authEmail: email.trim().toLowerCase(),
+          displayName: ownerName,
+        );
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('password', password);
+        await SessionService.saveLoginSession(
+          companyId: uid,
+          role: 'Owner',
+          displayName: ownerName,
+          ownerName: ownerName,
+          companyName: companyName,
+          phone: phone,
+          industry: industry,
+          authEmail: email.trim().toLowerCase(),
+        );
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('password', password);
+      } catch (innerError) {
+        debugPrint(
+          '[registerCompany] Post-auth step failed, rolling back Auth user: $innerError',
+        );
+        try {
+          await cred.user!.delete();
+        } catch (deleteError) {
+          debugPrint(
+            '[registerCompany] Rollback delete also failed: $deleteError',
+          );
+        }
+        return AuthResult.fail(
+          'Registration beech mein fail ho gaya (network/data issue). '
+          'Koi account create nahi hua — dobara try karo.',
+        );
+      }
 
       return AuthResult.ok(
         companyId: uid,
@@ -186,51 +228,72 @@ class AuthService {
       );
 
       final uid = cred.user!.uid;
-      final profile = {
-        'ownerName': farmerName,
-        'companyName': farmerName,
-        'phone': normalized,
-        'email': authEmail,
-        'authEmail': authEmail,
-        'industry': industry,
-        'accountType': 'personal',
-        if (extraProfile != null) ...extraProfile,
-      };
 
-      await CompanyStore.instance.createCompanyInCloud(
-        companyId: uid,
-        profile: profile,
-      );
+      // ✅ FIX — registerCompany() jaisa hi rollback: agar account banne
+      // ke baad koi step fail ho, to Auth user turant delete kar dete
+      // hain, taaki email hamesha ke liye stuck na ho jaye.
+      try {
+        final profile = {
+          'ownerName': farmerName,
+          'companyName': farmerName,
+          'phone': normalized,
+          'email': authEmail,
+          'authEmail': authEmail,
+          'industry': industry,
+          'accountType': 'personal',
+          if (extraProfile != null) ...extraProfile,
+        };
 
-      await CompanyStore.instance.linkAuthUser(
-        authUid: uid,
-        companyId: uid,
-        role: 'Personal Farmer',
-        phone: normalized,
-        displayName: farmerName,
-      );
+        await CompanyStore.instance.createCompanyInCloud(
+          companyId: uid,
+          profile: profile,
+        );
 
-      await CompanyStore.instance.registerPhoneLookup(
-        phone: normalized,
-        companyId: uid,
-        role: 'Personal Farmer',
-        authEmail: authEmail,
-        displayName: farmerName,
-      );
+        await CompanyStore.instance.linkAuthUser(
+          authUid: uid,
+          companyId: uid,
+          role: 'Personal Farmer',
+          phone: normalized,
+          displayName: farmerName,
+        );
 
-      await SessionService.saveLoginSession(
-        companyId: uid,
-        role: 'Personal Farmer',
-        displayName: farmerName,
-        ownerName: farmerName,
-        companyName: farmerName,
-        phone: normalized,
-        industry: industry,
-        authEmail: authEmail,
-      );
+        await CompanyStore.instance.registerPhoneLookup(
+          phone: normalized,
+          companyId: uid,
+          role: 'Personal Farmer',
+          authEmail: authEmail,
+          displayName: farmerName,
+        );
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('password', password);
+        await SessionService.saveLoginSession(
+          companyId: uid,
+          role: 'Personal Farmer',
+          displayName: farmerName,
+          ownerName: farmerName,
+          companyName: farmerName,
+          phone: normalized,
+          industry: industry,
+          authEmail: authEmail,
+        );
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('password', password);
+      } catch (innerError) {
+        debugPrint(
+          '[registerPersonalFarmer] Post-auth step failed, rolling back Auth user: $innerError',
+        );
+        try {
+          await cred.user!.delete();
+        } catch (deleteError) {
+          debugPrint(
+            '[registerPersonalFarmer] Rollback delete also failed: $deleteError',
+          );
+        }
+        return AuthResult.fail(
+          'Registration beech mein fail ho gaya (network/data issue). '
+          'Koi account create nahi hua — dobara try karo.',
+        );
+      }
 
       return AuthResult.ok(
         companyId: uid,
@@ -408,6 +471,212 @@ class AuthService {
       ownerName: ownerName,
       companyName: companyName,
     );
+  }
+
+  // ==========================================================================
+  // COMPANY FARMER LOGIN — NUMBER MATCH + PIN (zero-cost, no OTP/SMS)
+  // ==========================================================================
+  //
+  // Kyun: Company Farmer ka number already Office Manager KYC ke through
+  // "trusted" ban chuka hota hai jab wo add_farmer_screen se add karta hai.
+  // Isliye login ke liye dobara OTP verify karwana zaroorat nahi — bas
+  // number match karo, aur ek 4-digit PIN (jo farmer khud pehli baar set
+  // karta hai) se future logins secure karo. Koi SMS/API cost nahi.
+
+  String _hashPin(String pin) => sha256.convert(utf8.encode(pin)).toString();
+
+  /// Step 1 — Number check karta hai: kya ye Company Farmer record mein
+  /// hai, aur kya uska PIN pehle se set hai (returning farmer) ya nahi
+  /// (naya/pehli-baar login — PIN set karwana hoga).
+  Future<FarmerPhoneCheckResult> checkCompanyFarmerPhone(String phone) async {
+    final normalized = _normalizePhone(phone);
+    String? companyId;
+
+    if (FirebaseBootstrap.isReady) {
+      final lookup = await CompanyStore.instance.lookupPhone(normalized);
+      companyId = lookup?['companyId'] as String?;
+      companyId ??= await _findCompanyIdForFarmerPhone(normalized);
+      if (companyId != null) {
+        await CompanyStore.instance.activateCompany(companyId);
+      }
+    } else {
+      companyId = await SessionService.companyId;
+    }
+
+    if (companyId == null) {
+      return FarmerPhoneCheckResult(exists: false, hasPin: false);
+    }
+
+    final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
+    final match = farmers.where((f) => f['phone'] == normalized).toList();
+
+    if (match.isEmpty) {
+      return FarmerPhoneCheckResult(exists: false, hasPin: false);
+    }
+
+    final hasPin = (match.first['loginPinHash'] as String?)?.isNotEmpty == true;
+
+    return FarmerPhoneCheckResult(
+      exists: true,
+      hasPin: hasPin,
+      companyId: companyId,
+      farmerName: match.first['name'] as String? ?? '',
+    );
+  }
+
+  /// Step 2a — Pehli baar login: farmer apna 4-digit PIN set karta hai.
+  /// PIN farmer ke record ke saath (Firestore/local `companyFarmers`
+  /// list) save hota hai, taaki agli baar kisi bhi device se wahi PIN
+  /// kaam kare.
+  Future<AuthResult> setupCompanyFarmerPin({
+    required String companyId,
+    required String phone,
+    required String pin,
+  }) async {
+    final normalized = _normalizePhone(phone);
+    await CompanyStore.instance.activateCompany(companyId);
+
+    final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
+    final idx = farmers.indexWhere((f) => f['phone'] == normalized);
+
+    if (idx == -1) {
+      return AuthResult.fail(
+        'Yeh number register nahi hai. Owner se contact karo.',
+      );
+    }
+
+    farmers[idx]['loginPinHash'] = _hashPin(pin);
+    await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
+
+    final profile = await _loadCompanyProfile(companyId);
+    final farmerName = farmers[idx]['name'] as String? ?? '';
+
+    await _finalizeSession(
+      companyId: companyId,
+      role: 'Company Farmer',
+      displayName: farmerName,
+      profile: profile,
+    );
+
+    return AuthResult.ok(
+      companyId: companyId,
+      role: 'Company Farmer',
+      displayName: farmerName,
+      ownerName: profile['ownerName'] as String? ?? '',
+      companyName: profile['companyName'] as String? ?? '',
+    );
+  }
+
+  /// Step 2b — Returning farmer: number + PIN se login.
+  Future<AuthResult> loginCompanyFarmerWithPin({
+    required String companyId,
+    required String phone,
+    required String pin,
+  }) async {
+    final normalized = _normalizePhone(phone);
+    await CompanyStore.instance.activateCompany(companyId);
+
+    final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
+    final idx = farmers.indexWhere((f) => f['phone'] == normalized);
+
+    if (idx == -1) {
+      return AuthResult.fail(
+        'Yeh number register nahi hai. Owner se contact karo.',
+      );
+    }
+
+    final storedHash = farmers[idx]['loginPinHash'] as String?;
+    if (storedHash == null || storedHash != _hashPin(pin)) {
+      return AuthResult.fail('PIN galat hai');
+    }
+
+    final profile = await _loadCompanyProfile(companyId);
+    final farmerName = farmers[idx]['name'] as String? ?? '';
+
+    await _finalizeSession(
+      companyId: companyId,
+      role: 'Company Farmer',
+      displayName: farmerName,
+      profile: profile,
+    );
+
+    return AuthResult.ok(
+      companyId: companyId,
+      role: 'Company Farmer',
+      displayName: farmerName,
+      ownerName: profile['ownerName'] as String? ?? '',
+      companyName: profile['companyName'] as String? ?? '',
+    );
+  }
+
+  /// ✅ PRIMARY reset path — SELF-SERVICE, farmer khud karta hai, Office
+  /// Manager/Owner ki zaroorat nahi. Farmer apni **Date of Birth**
+  /// confirm karta hai (jo onboarding ke time Office Manager ne KYC mein
+  /// li thi) — match hone par naya PIN set ho jata hai aur farmer seedha
+  /// login bhi ho jata hai.
+  Future<AuthResult> resetFarmerPinWithDob({
+    required String companyId,
+    required String phone,
+    required String dob,
+    required String newPin,
+  }) async {
+    final normalized = _normalizePhone(phone);
+    await CompanyStore.instance.activateCompany(companyId);
+
+    final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
+    final idx = farmers.indexWhere((f) => f['phone'] == normalized);
+
+    if (idx == -1) {
+      return AuthResult.fail(
+        'Yeh number register nahi hai. Owner se contact karo.',
+      );
+    }
+
+    final storedDob = (farmers[idx]['dob'] as String?)?.trim() ?? '';
+    if (storedDob.isEmpty || storedDob != dob.trim()) {
+      return AuthResult.fail(
+        'Date of Birth match nahi hui. Sahi jaanam-tithi daalo — ye wahi honi chahiye jo Office Manager ko di thi.',
+      );
+    }
+
+    farmers[idx]['loginPinHash'] = _hashPin(newPin);
+    await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
+
+    final profile = await _loadCompanyProfile(companyId);
+    final farmerName = farmers[idx]['name'] as String? ?? '';
+
+    await _finalizeSession(
+      companyId: companyId,
+      role: 'Company Farmer',
+      displayName: farmerName,
+      profile: profile,
+    );
+
+    return AuthResult.ok(
+      companyId: companyId,
+      role: 'Company Farmer',
+      displayName: farmerName,
+      ownerName: profile['ownerName'] as String? ?? '',
+      companyName: profile['companyName'] as String? ?? '',
+    );
+  }
+
+  /// FALLBACK ONLY — agar farmer apni DOB bhi bhool jaye ya galat KYC
+  /// data record ho gaya ho, tab Office Manager/Owner (farmer_profile
+  /// screen mein "Reset Farmer PIN" button se) ye emergency-override use
+  /// kar sakte hain — bas PIN clear karega, farmer agli baar phir DOB se
+  /// khud naya PIN bana lega.
+  Future<void> resetCompanyFarmerPin({
+    required String companyId,
+    required String phone,
+  }) async {
+    final normalized = _normalizePhone(phone);
+    await CompanyStore.instance.activateCompany(companyId);
+    final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
+    final idx = farmers.indexWhere((f) => f['phone'] == normalized);
+    if (idx == -1) return;
+    farmers[idx].remove('loginPinHash');
+    await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
   }
 
   /// Manager add karte waqt Firebase account (alag phone par login).
