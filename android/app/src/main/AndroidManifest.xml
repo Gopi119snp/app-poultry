@@ -33,7 +33,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
-        android:label="poultrypro"
+        android:label="Tracko"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

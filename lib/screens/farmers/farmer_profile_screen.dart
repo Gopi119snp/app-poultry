@@ -2483,7 +2483,15 @@ class _FarmerProfileScreenState extends State<FarmerProfileScreen>
           _infoCard(
             title: 'Registration Details',
             children: [
-              _infoRow('Farmer ID', _currentFarmer['id'] ?? '-'),
+              // ✅ FIX: ab yahan naya readable "farmerId" (jaise SIN-RAM-1234)
+              // dikhega. Purane farmers jinke paas ye field nahi hai unke
+              // liye safe fallback purane 'id' (timestamp) par chala jaata
+              // hai, taaki koi crash ya khaali value na dikhe.
+              _infoRow(
+                'Farmer ID',
+                (_currentFarmer['farmerId'] ?? _currentFarmer['id'] ?? '-')
+                    .toString(),
+              ),
               _infoRow(
                 'Registered On',
                 _formatDate(_currentFarmer['registeredOn'] ?? ''),

@@ -13,6 +13,8 @@ class SessionService {
   static const _kPhone = 'phone';
   static const _kIndustry = 'industry';
   static const _kAuthEmail = 'authEmail';
+  // ✅ NEW — Guest Preview Mode flag
+  static const _kGuestMode = 'isGuestMode';
 
   static Future<SharedPreferences> get _prefs =>
       SharedPreferences.getInstance();
@@ -20,6 +22,12 @@ class SessionService {
   static Future<bool> get isLoggedIn async {
     final p = await _prefs;
     return p.getBool(_kLoggedIn) ?? false;
+  }
+
+  // ✅ NEW — Guest mode mein hai ya nahi
+  static Future<bool> get isGuestMode async {
+    final p = await _prefs;
+    return p.getBool(_kGuestMode) ?? false;
   }
 
   static Future<String?> get companyId async {
@@ -32,21 +40,12 @@ class SessionService {
     return p.getString(_kCurrentRole);
   }
 
-  // ✅ NEW — "Owner hai ya nahi" check ab yahi ek jagah se hoga. Trim +
-  // case-insensitive, taaki kahin bhi extra space ya 'owner'/'OWNER' jaisi
-  // mismatch se Owner ko galti se Manager jaisa treat na kiya jaaye.
-  // PermissionService.can() aur baaki app isi getter ko use karega instead
-  // of raw string comparison "role == 'Owner'" ke.
   static Future<bool> get isOwner async {
     final role = await currentRole;
     if (role == null) return false;
     return role.trim().toLowerCase() == 'owner';
   }
 
-  // ✅ NEW — poore app mein "role kya hai" ko clean/normalized form mein
-  // dikhane ke liye (e.g. UI labels, "By: $normalizedRole"). Raw storage
-  // string ko kabhi trim karke overwrite nahi karta — sirf reading ke waqt
-  // safe banata hai.
   static Future<String?> get normalizedRole async {
     final role = await currentRole;
     if (role == null) return null;
@@ -84,6 +83,29 @@ class SessionService {
     return p.getString(_kAuthEmail);
   }
 
+  // ✅ NEW — Guest Preview Mode shuru karne ke liye.
+  // Purana kisi bhi user ka leftover local data pehle poora clear karta hai
+  // (taaki galti se real business data guest ko na dikh jaye), fir guest
+  // flag set karta hai. Demo data seed karna DemoDataService ka kaam hai —
+  // isko caller (Welcome Screen) alag se call karega.
+  static Future<void> enterGuestMode() async {
+    final p = await _prefs;
+    await p
+        .clear(); // ✅ Purana leftover data (agar koi real login pehle hua ho) safaya
+    await p.setBool(_kLoggedIn, false);
+    await p.setBool(_kGuestMode, true);
+    await p.setString(_kCurrentRole, 'Guest');
+    await p.setString(_kCurrentName, 'Guest User');
+    await p.setString(_kCompanyName, 'Demo Company');
+    await p.setString(_kOwnerName, 'Guest User');
+  }
+
+  // ✅ NEW — Guest mode se bahar nikal ke Welcome screen pe jaana
+  static Future<void> exitGuestMode() async {
+    final p = await _prefs;
+    await p.clear();
+  }
+
   static Future<void> saveLoginSession({
     required String companyId,
     required String role,
@@ -96,10 +118,11 @@ class SessionService {
   }) async {
     final p = await _prefs;
     await p.setBool(_kLoggedIn, true);
+    await p.setBool(
+      _kGuestMode,
+      false,
+    ); // ✅ NEW — real login hote hi guest flag hata do
     await p.setString(_kCompanyId, companyId);
-    // ✅ FIX — role ko trim karke save karo taaki login form/autofill se
-    // aayi hui trailing/leading space kabhi bhi 'Owner' ko silently
-    // 'Owner ' ban ke Manager jaisa treat na kar de.
     await p.setString(_kCurrentRole, role.trim());
     await p.setString(_kCurrentName, displayName);
     await p.setString(_kOwnerName, ownerName);
@@ -114,6 +137,7 @@ class SessionService {
   static Future<void> logout() async {
     final p = await _prefs;
     await p.setBool(_kLoggedIn, false);
+    await p.setBool(_kGuestMode, false); // ✅ NEW
     await p.remove(_kCurrentRole);
     await p.remove(_kCurrentName);
     await p.remove(_kAuthEmail);

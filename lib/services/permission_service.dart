@@ -724,18 +724,68 @@ class PermissionService {
     );
   }
 
+  // ✅ UPDATED: Per-module override + role default fallback
   static Future<Map<String, Map<String, bool>>> getPersonMatrix(
     String phone,
     String role,
   ) async {
+    final roleDefault = await getRoleDefaultMatrix(role);
     final raw = await _loadRawPersonPermissions();
-    if (raw[phone] is Map) {
-      return _fillModuleMap(Map<String, dynamic>.from(raw[phone]));
+    final personRaw = (raw[phone] is Map)
+        ? Map<String, dynamic>.from(raw[phone])
+        : <String, dynamic>{};
+
+    final map = <String, Map<String, bool>>{};
+    for (final m in leafModules) {
+      if (personRaw[m.id] is Map) {
+        final modData = Map<String, dynamic>.from(personRaw[m.id]);
+        map[m.id] = {for (final a in actions) a: (modData[a] == true)};
+      } else {
+        map[m.id] = Map<String, bool>.from(
+          roleDefault[m.id] ?? {for (final a in actions) a: false},
+        );
+      }
     }
-    return getRoleDefaultMatrix(role);
+    return map;
   }
 
-  // ✅ FIX: Same JSON fix for Person overriding + notify
+  // ✅ NEW: Save only one module's override for a person
+  static Future<void> savePersonModule(
+    String phone,
+    String moduleId,
+    Map<String, bool> moduleData,
+  ) async {
+    final raw = await _loadRawPersonPermissions();
+    final personMap = (raw[phone] is Map)
+        ? Map<String, dynamic>.from(raw[phone])
+        : <String, dynamic>{};
+    personMap[moduleId] = Map<String, dynamic>.from(moduleData);
+    raw[phone] = personMap;
+    await _savePersonPermissions(raw);
+  }
+
+  /// ⭐ NEW — Default badalte hi, us role ke SABHI persons ka ye module
+  /// force-overwrite ho jata hai — unka koi bhi purana personal override
+  /// hoga to bhi wipe ho jayega. Isse "Default hamesha final baat hai"
+  /// wala behaviour milta hai — jab tak Owner khud us specific manager
+  /// ke section mein jaake alag se change na kare.
+  static Future<void> setPersonModuleForAllInRole(
+    List<String> phones,
+    String moduleId,
+    Map<String, bool> moduleData,
+  ) async {
+    final raw = await _loadRawPersonPermissions();
+    for (final phone in phones) {
+      final personMap = (raw[phone] is Map)
+          ? Map<String, dynamic>.from(raw[phone])
+          : <String, dynamic>{};
+      personMap[moduleId] = Map<String, dynamic>.from(moduleData);
+      raw[phone] = personMap;
+    }
+    await _savePersonPermissions(raw);
+  }
+
+  // Keep the old savePersonMatrix (full matrix) as is
   static Future<void> savePersonMatrix(
     String phone,
     Map<String, Map<String, bool>> matrix,
@@ -790,17 +840,11 @@ class PermissionService {
 
   /// Priority: Person override > Role default. Owner gets full access.
   ///
-  /// ✅ FIX — Ab STRICT tree-based check hai: koi bhi child/sub-item ka
-  /// permission ON hone se parent apne aap "ON" nahi maana jayega.
-  /// Har moduleId (parent ho ya leaf) ka apna EXPLICIT toggle hi authoritative
-  /// hai. Matlab agar Owner ne "Purchase / Expense" ka Overall Access OFF
-  /// kiya hai, to Chicks/Feed/Medicine/Labour/Other mein se kisi ka bhi
-  /// permission ON kyu na ho — Purchase card turant hide ho jayega,
-  /// kyunki parent explicitly OFF hai. Isse har node independently control
-  /// hota hai aur "main OFF to sab OFF" wala tree-hierarchy behaviour milta
-  /// hai (parent OFF hone par uske andar navigate karne ka raasta bhi khud
-  /// band ho jata hai, kyunki parent card hi nahi dikhega).
+  /// ✅ UPDATED: Per-module fallback: person override if exists, otherwise role default.
   static Future<bool> can(String moduleId, String action) async {
+    if (await SessionService.isGuestMode) {
+      return action == 'view';
+    }
     if (await SessionService.isOwner) return true;
 
     final role = await SessionService.normalizedRole;
@@ -809,26 +853,27 @@ class PermissionService {
     final phone = await SessionService.phone;
     if (phone == null || phone.isEmpty) return false;
 
-    bool hasDirectPerm(Map<String, dynamic> map, String id) {
-      if (map[id] is Map) {
-        return map[id][action] == true;
-      }
-      return false;
-    }
-
     final personRaw = await _loadRawPersonPermissions();
-    final roleRaw = await _loadRawRolePermissions();
+    final personModuleMap = (personRaw[phone] is Map)
+        ? Map<String, dynamic>.from(personRaw[phone])
+        : <String, dynamic>{};
 
-    Map<String, dynamic> activeMap = {};
-    if (personRaw[phone] is Map) {
-      activeMap = Map<String, dynamic>.from(personRaw[phone]);
-    } else if (roleRaw[role] is Map) {
-      activeMap = Map<String, dynamic>.from(roleRaw[role]);
+    // Person ne is specific module ko explicitly override kiya hai?
+    if (personModuleMap[moduleId] is Map) {
+      final modData = Map<String, dynamic>.from(personModuleMap[moduleId]);
+      return modData[action] == true;
     }
 
-    // Sirf direct match — koi hierarchy OR-fallback nahi. Har module
-    // (parent group ho ya leaf) ka apna explicit toggle hi final hai.
-    return hasDirectPerm(activeMap, moduleId);
+    // Warna role ke Default se lo
+    final roleRaw = await _loadRawRolePermissions();
+    final roleModuleMap = (roleRaw[role] is Map)
+        ? Map<String, dynamic>.from(roleRaw[role])
+        : <String, dynamic>{};
+    if (roleModuleMap[moduleId] is Map) {
+      final modData = Map<String, dynamic>.from(roleModuleMap[moduleId]);
+      return modData[action] == true;
+    }
+    return false;
   }
 
   /// ⭐⭐ Screen/feature ke liye ASLI check — "Grandfather → Father → Child"

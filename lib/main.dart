@@ -1,21 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:flutter/foundation.dart'; // ✅ For debugPrint
 
 import 'screens/welcome_screen.dart';
 import 'screens/home/home_screen.dart';
-import 'screens/dashboards/office_manager_dashboard.dart';
-import 'screens/dashboards/field_manager_dashboard.dart';
 import 'screens/dashboards/farmer_dashboard.dart';
 import 'screens/auth/app_lock_screen.dart';
 import 'services/company_store.dart';
 import 'services/firebase_bootstrap.dart';
 import 'services/session_service.dart';
 import 'services/app_lock_service.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // ✅ NAYA — anonymous auth ke liye
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await FirebaseBootstrap.init();
+  await _ensureAnonymousAuth(); // ✅ NAYA — Firestore rules pass karne ke liye
   runApp(const TrackoApp());
+}
+
+/// ✅ Anonymous Firebase Auth session banata hai (agar already nahi hai),
+/// taaki Firestore Security Rules ka `request.auth != null` check pass ho
+/// jaye. Ye humara real login system (phone+PIN/password) replace nahi
+/// karta — sirf Firestore access allow karne ke liye ek background session
+/// hai. FirebaseBootstrap.isReady false (local mode) to skip karo.
+Future<void> _ensureAnonymousAuth() async {
+  if (!FirebaseBootstrap.isReady) return;
+  try {
+    if (FirebaseAuth.instance.currentUser == null) {
+      await FirebaseAuth.instance.signInAnonymously();
+    }
+  } catch (e) {
+    debugPrint('[main] Anonymous auth failed: $e');
+  }
 }
 
 class AppColors {
@@ -61,7 +78,7 @@ class _TrackoAppState extends State<TrackoApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
-      title: 'PoultryPro',
+      title: 'Tracko',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: AppColors.defaultPrimary),
@@ -124,35 +141,11 @@ class _SplashScreenState extends State<SplashScreen> {
       // ho jayega.
       await AppLockService.instance.lockIfNeeded();
 
-      // ✅ FIX — role SessionService mein exactly jaisa save hua tha
-      // waisa hi milta hai (e.g. "Owner", "Office Manager",
-      // "Field Manager", "Company Farmer") — camelCase/lowercase nahi.
-      // Pehle yahan 'officeManager'/'fieldManager'/'farmer' jaise galat
-      // keys the jo kabhi match hi nahi karte the, isliye app band karke
-      // dobara kholne par (cold start) Manager/Farmer sab galti se
-      // HomeScreen (Owner ki screen) pe chale jaate the.
+      // ✅ FIX — Owner, Office Manager, Field Manager — sab ab HomeScreen
+      // use karenge, jaha permission-based system se access control hota
+      // hai. Sirf Company Farmer ka alag dashboard/login-flow hai, isliye
+      // wahi separate rakha hai.
       switch (role.trim()) {
-        case 'Owner':
-          Get.off(
-            () => HomeScreen(ownerName: ownerName, companyName: companyName),
-          );
-          break;
-        case 'Office Manager':
-          Get.off(
-            () => OfficeManagerDashboard(
-              ownerName: ownerName,
-              companyName: companyName,
-            ),
-          );
-          break;
-        case 'Field Manager':
-          Get.off(
-            () => FieldManagerDashboard(
-              ownerName: ownerName,
-              companyName: companyName,
-            ),
-          );
-          break;
         case 'Company Farmer':
           Get.off(
             () =>
@@ -198,7 +191,7 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             const SizedBox(height: 28),
             const Text(
-              'PoultryPro',
+              'Tracko',
               style: TextStyle(
                 fontSize: 38,
                 fontWeight: FontWeight.w800,

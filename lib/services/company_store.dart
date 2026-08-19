@@ -52,7 +52,6 @@ class CompanyStore {
     'medicineSalesHistory',
     'chickenLiftingSaleHistory',
     'salesHistory', // Common sales key
-
     // ========================
     'rule1SettlementConfig',
     'rule2SettlementConfig',
@@ -236,6 +235,31 @@ class CompanyStore {
       'role': role,
       if (authEmail != null) 'authEmail': authEmail,
       if (displayName != null) 'displayName': displayName,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// ✅ Per-company farmer phone index — collection-group query ke liye.
+  /// Global registerPhoneLookup() ki tarah overwrite nahi karta, kyunki
+  /// har company apna alag doc rakhti hai: companies/{companyId}/farmerPhoneIndex/{phone}
+  Future<void> registerFarmerPhoneIndex({
+    required String companyId,
+    required String phone,
+    required String farmerId,
+    required String farmerName,
+    required String companyName,
+  }) async {
+    if (!FirebaseBootstrap.isReady) return;
+    final normalized = _normalizePhone(phone);
+    if (normalized.isEmpty) return;
+
+    await _companyRef(
+      companyId,
+    ).collection('farmerPhoneIndex').doc(normalized).set({
+      'farmerId': farmerId,
+      'farmerName': farmerName,
+      'companyId': companyId,
+      'companyName': companyName,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }

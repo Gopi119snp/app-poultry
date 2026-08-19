@@ -357,6 +357,7 @@ class AuthService {
               role: role,
               displayName: displayName,
               profile: profile,
+              phoneOverride: normalized, // ✅ ADD
             );
 
             return AuthResult.ok(
@@ -383,6 +384,7 @@ class AuthService {
             role: 'Owner',
             displayName: profile['ownerName'] as String? ?? '',
             profile: profile,
+            phoneOverride: normalized, // ✅ ADD
           );
           return AuthResult.ok(
             companyId: companyId,
@@ -431,6 +433,7 @@ class AuthService {
           role: 'Company Farmer',
           displayName: farmer.first['name'] as String? ?? '',
           profile: profile,
+          phoneOverride: normalized, // ✅ ADD
         );
 
         return AuthResult.ok(
@@ -492,79 +495,103 @@ class AuthService {
     final normalized = _normalizePhone(phone);
     String? companyId;
 
-    if (FirebaseBootstrap.isReady) {
-      final lookup = await CompanyStore.instance.lookupPhone(normalized);
-      companyId = lookup?['companyId'] as String?;
-      companyId ??= await _findCompanyIdForFarmerPhone(normalized);
-      if (companyId != null) {
-        await CompanyStore.instance.activateCompany(companyId);
+    try {
+      if (FirebaseBootstrap.isReady) {
+        final lookup = await CompanyStore.instance.lookupPhone(normalized);
+        companyId = lookup?['companyId'] as String?;
+        companyId ??= await _findCompanyIdForFarmerPhone(normalized);
+        if (companyId != null) {
+          await CompanyStore.instance.activateCompany(companyId);
+        }
+      } else {
+        companyId = await SessionService.companyId;
       }
-    } else {
-      companyId = await SessionService.companyId;
-    }
 
-    if (companyId == null) {
+      if (companyId == null) {
+        return FarmerPhoneCheckResult(exists: false, hasPin: false);
+      }
+
+      final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
+      final match = farmers.where((f) => f['phone'] == normalized).toList();
+
+      if (match.isEmpty) {
+        return FarmerPhoneCheckResult(exists: false, hasPin: false);
+      }
+
+      final hasPin =
+          (match.first['loginPinHash'] as String?)?.isNotEmpty == true;
+
+      return FarmerPhoneCheckResult(
+        exists: true,
+        hasPin: hasPin,
+        companyId: companyId,
+        farmerName: match.first['name'] as String? ?? '',
+      );
+    } catch (e) {
+      debugPrint('[checkCompanyFarmerPhone] failed: $e');
       return FarmerPhoneCheckResult(exists: false, hasPin: false);
     }
-
-    final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-    final match = farmers.where((f) => f['phone'] == normalized).toList();
-
-    if (match.isEmpty) {
-      return FarmerPhoneCheckResult(exists: false, hasPin: false);
-    }
-
-    final hasPin = (match.first['loginPinHash'] as String?)?.isNotEmpty == true;
-
-    return FarmerPhoneCheckResult(
-      exists: true,
-      hasPin: hasPin,
-      companyId: companyId,
-      farmerName: match.first['name'] as String? ?? '',
-    );
   }
 
-  /// Step 2a — Pehli baar login: farmer apna 4-digit PIN set karta hai.
-  /// PIN farmer ke record ke saath (Firestore/local `companyFarmers`
-  /// list) save hota hai, taaki agli baar kisi bhi device se wahi PIN
-  /// kaam kare.
+  /// Step 2a — Pehli baar login: farmer apna 4-digit PIN set karta hai — lekin
+  /// pehle apni Date of Birth confirm karta hai (jo Office Manager ne
+  /// onboarding KYC mein li thi). Isse pakka hota hai ki jo number type
+  /// kar raha hai wahi asli farmer hai — sirf number jaan ke koi random
+  /// insaan PIN hijack nahi kar sakta.
   Future<AuthResult> setupCompanyFarmerPin({
     required String companyId,
     required String phone,
+    required String dob,
     required String pin,
   }) async {
-    final normalized = _normalizePhone(phone);
-    await CompanyStore.instance.activateCompany(companyId);
+    try {
+      final normalized = _normalizePhone(phone);
+      await CompanyStore.instance.activateCompany(companyId);
 
-    final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-    final idx = farmers.indexWhere((f) => f['phone'] == normalized);
+      final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
+      final idx = farmers.indexWhere((f) => f['phone'] == normalized);
 
-    if (idx == -1) {
-      return AuthResult.fail(
-        'Yeh number register nahi hai. Owner se contact karo.',
+      if (idx == -1) {
+        return AuthResult.fail(
+          'Yeh number register nahi hai. Owner se contact karo.',
+        );
+      }
+
+      // ✅ DOB verification — account hijack rokne ke liye. Random insaan
+      // jisko sirf farmer ka number pata hai, wo pehle khud PIN set nahi
+      // kar sakega jab tak use farmer ki DOB bhi na pata ho.
+      final storedDob = (farmers[idx]['dob'] as String?)?.trim() ?? '';
+      if (storedDob.isEmpty || storedDob != dob.trim()) {
+        return AuthResult.fail(
+          'Date of Birth match nahi hui. Sahi jaanam-tithi daalo — ye wahi honi chahiye jo Office Manager ko di thi.',
+        );
+      }
+
+      farmers[idx]['loginPinHash'] = _hashPin(pin);
+      await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
+
+      final profile = await _loadCompanyProfile(companyId);
+      final farmerName = farmers[idx]['name'] as String? ?? '';
+
+      await _finalizeSession(
+        companyId: companyId,
+        role: 'Company Farmer',
+        displayName: farmerName,
+        profile: profile,
+        phoneOverride: normalized, // ✅ ADD
       );
+
+      return AuthResult.ok(
+        companyId: companyId,
+        role: 'Company Farmer',
+        displayName: farmerName,
+        ownerName: profile['ownerName'] as String? ?? '',
+        companyName: profile['companyName'] as String? ?? '',
+      );
+    } catch (e) {
+      debugPrint('[setupCompanyFarmerPin] failed: $e');
+      return AuthResult.fail('PIN set nahi ho paaya: ${e.toString()}');
     }
-
-    farmers[idx]['loginPinHash'] = _hashPin(pin);
-    await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
-
-    final profile = await _loadCompanyProfile(companyId);
-    final farmerName = farmers[idx]['name'] as String? ?? '';
-
-    await _finalizeSession(
-      companyId: companyId,
-      role: 'Company Farmer',
-      displayName: farmerName,
-      profile: profile,
-    );
-
-    return AuthResult.ok(
-      companyId: companyId,
-      role: 'Company Farmer',
-      displayName: farmerName,
-      ownerName: profile['ownerName'] as String? ?? '',
-      companyName: profile['companyName'] as String? ?? '',
-    );
   }
 
   /// Step 2b — Returning farmer: number + PIN se login.
@@ -573,40 +600,46 @@ class AuthService {
     required String phone,
     required String pin,
   }) async {
-    final normalized = _normalizePhone(phone);
-    await CompanyStore.instance.activateCompany(companyId);
+    try {
+      final normalized = _normalizePhone(phone);
+      await CompanyStore.instance.activateCompany(companyId);
 
-    final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-    final idx = farmers.indexWhere((f) => f['phone'] == normalized);
+      final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
+      final idx = farmers.indexWhere((f) => f['phone'] == normalized);
 
-    if (idx == -1) {
-      return AuthResult.fail(
-        'Yeh number register nahi hai. Owner se contact karo.',
+      if (idx == -1) {
+        return AuthResult.fail(
+          'Yeh number register nahi hai. Owner se contact karo.',
+        );
+      }
+
+      final storedHash = farmers[idx]['loginPinHash'] as String?;
+      if (storedHash == null || storedHash != _hashPin(pin)) {
+        return AuthResult.fail('PIN galat hai');
+      }
+
+      final profile = await _loadCompanyProfile(companyId);
+      final farmerName = farmers[idx]['name'] as String? ?? '';
+
+      await _finalizeSession(
+        companyId: companyId,
+        role: 'Company Farmer',
+        displayName: farmerName,
+        profile: profile,
+        phoneOverride: normalized, // ✅ ADD
       );
+
+      return AuthResult.ok(
+        companyId: companyId,
+        role: 'Company Farmer',
+        displayName: farmerName,
+        ownerName: profile['ownerName'] as String? ?? '',
+        companyName: profile['companyName'] as String? ?? '',
+      );
+    } catch (e) {
+      debugPrint('[loginCompanyFarmerWithPin] failed: $e');
+      return AuthResult.fail('Login nahi ho paaya: ${e.toString()}');
     }
-
-    final storedHash = farmers[idx]['loginPinHash'] as String?;
-    if (storedHash == null || storedHash != _hashPin(pin)) {
-      return AuthResult.fail('PIN galat hai');
-    }
-
-    final profile = await _loadCompanyProfile(companyId);
-    final farmerName = farmers[idx]['name'] as String? ?? '';
-
-    await _finalizeSession(
-      companyId: companyId,
-      role: 'Company Farmer',
-      displayName: farmerName,
-      profile: profile,
-    );
-
-    return AuthResult.ok(
-      companyId: companyId,
-      role: 'Company Farmer',
-      displayName: farmerName,
-      ownerName: profile['ownerName'] as String? ?? '',
-      companyName: profile['companyName'] as String? ?? '',
-    );
   }
 
   /// ✅ PRIMARY reset path — SELF-SERVICE, farmer khud karta hai, Office
@@ -620,45 +653,51 @@ class AuthService {
     required String dob,
     required String newPin,
   }) async {
-    final normalized = _normalizePhone(phone);
-    await CompanyStore.instance.activateCompany(companyId);
+    try {
+      final normalized = _normalizePhone(phone);
+      await CompanyStore.instance.activateCompany(companyId);
 
-    final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-    final idx = farmers.indexWhere((f) => f['phone'] == normalized);
+      final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
+      final idx = farmers.indexWhere((f) => f['phone'] == normalized);
 
-    if (idx == -1) {
-      return AuthResult.fail(
-        'Yeh number register nahi hai. Owner se contact karo.',
+      if (idx == -1) {
+        return AuthResult.fail(
+          'Yeh number register nahi hai. Owner se contact karo.',
+        );
+      }
+
+      final storedDob = (farmers[idx]['dob'] as String?)?.trim() ?? '';
+      if (storedDob.isEmpty || storedDob != dob.trim()) {
+        return AuthResult.fail(
+          'Date of Birth match nahi hui. Sahi jaanam-tithi daalo — ye wahi honi chahiye jo Office Manager ko di thi.',
+        );
+      }
+
+      farmers[idx]['loginPinHash'] = _hashPin(newPin);
+      await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
+
+      final profile = await _loadCompanyProfile(companyId);
+      final farmerName = farmers[idx]['name'] as String? ?? '';
+
+      await _finalizeSession(
+        companyId: companyId,
+        role: 'Company Farmer',
+        displayName: farmerName,
+        profile: profile,
+        phoneOverride: normalized, // ✅ ADD
       );
-    }
 
-    final storedDob = (farmers[idx]['dob'] as String?)?.trim() ?? '';
-    if (storedDob.isEmpty || storedDob != dob.trim()) {
-      return AuthResult.fail(
-        'Date of Birth match nahi hui. Sahi jaanam-tithi daalo — ye wahi honi chahiye jo Office Manager ko di thi.',
+      return AuthResult.ok(
+        companyId: companyId,
+        role: 'Company Farmer',
+        displayName: farmerName,
+        ownerName: profile['ownerName'] as String? ?? '',
+        companyName: profile['companyName'] as String? ?? '',
       );
+    } catch (e) {
+      debugPrint('[resetFarmerPinWithDob] failed: $e');
+      return AuthResult.fail('PIN reset nahi ho paaya: ${e.toString()}');
     }
-
-    farmers[idx]['loginPinHash'] = _hashPin(newPin);
-    await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
-
-    final profile = await _loadCompanyProfile(companyId);
-    final farmerName = farmers[idx]['name'] as String? ?? '';
-
-    await _finalizeSession(
-      companyId: companyId,
-      role: 'Company Farmer',
-      displayName: farmerName,
-      profile: profile,
-    );
-
-    return AuthResult.ok(
-      companyId: companyId,
-      role: 'Company Farmer',
-      displayName: farmerName,
-      ownerName: profile['ownerName'] as String? ?? '',
-      companyName: profile['companyName'] as String? ?? '',
-    );
   }
 
   /// FALLBACK ONLY — agar farmer apni DOB bhi bhool jaye ya galat KYC
@@ -761,14 +800,17 @@ class AuthService {
     required String role,
     required String displayName,
     required Map<String, dynamic> profile,
+    String? phoneOverride, // ✅ NEW
   }) async {
     final uid = _auth.currentUser?.uid;
+    final effectivePhone = phoneOverride ?? (profile['phone'] as String? ?? '');
+
     if (uid != null && FirebaseBootstrap.isReady) {
       await CompanyStore.instance.linkAuthUser(
         authUid: uid,
         companyId: companyId,
         role: role,
-        phone: profile['phone'] as String? ?? '',
+        phone: effectivePhone, // ✅ badla
         displayName: displayName,
       );
     }
@@ -779,7 +821,7 @@ class AuthService {
       displayName: displayName,
       ownerName: profile['ownerName'] as String? ?? displayName,
       companyName: profile['companyName'] as String? ?? '',
-      phone: profile['phone'] as String? ?? '',
+      phone: effectivePhone, // ✅ badla
       industry: profile['industry'] as String? ?? 'poultry',
       authEmail: profile['authEmail'] as String?,
     );

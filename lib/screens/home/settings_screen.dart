@@ -1,4 +1,4 @@
-import 'dart:async'; // ✅ EDIT: StreamSubscription + Timer ke liye
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/permission_service.dart';
 import '../../services/company_store.dart'; // ✅ FIX — CloudSyncMixin ke liye
@@ -117,14 +117,24 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
       _roleDefaults[role]![moduleId]![action] = value;
     });
     await PermissionService.saveRoleDefaultMatrix(role, _roleDefaults[role]!);
-    // Force trigger save and notify
+
+    // ✅ NEW — is role ke sabhi persons ka ye module force-overwrite karo
+    final phones = (_personsByRole[role] ?? []).map((p) => p.phone).toList();
+    await PermissionService.setPersonModuleForAllInRole(
+      phones,
+      moduleId,
+      _roleDefaults[role]![moduleId]!,
+    );
+
     await CompanyStore.instance.setString(
       'lastPermissionUpdated',
       DateTime.now().toIso8601String(),
     );
     _showSavedSnackbar('Role default permission updated');
+    await _loadAll(); // ✅ NEW — local person matrices UI turant refresh ho
   }
 
+  // ─── UPDATED: ab sirf is module ka data save hota hai (savePersonModule) ──
   Future<void> _togglePerson(
     String phone,
     String moduleId,
@@ -134,7 +144,11 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
     setState(() {
       _personMatrices[phone]![moduleId]![action] = value;
     });
-    await PermissionService.savePersonMatrix(phone, _personMatrices[phone]!);
+    await PermissionService.savePersonModule(
+      phone,
+      moduleId,
+      _personMatrices[phone]![moduleId]!,
+    );
     // Force trigger save and notify
     await CompanyStore.instance.setString(
       'lastPermissionUpdated',
@@ -148,7 +162,7 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
     String role,
     String moduleId,
     bool value,
-    List<String> actionsToSet, // ✅ NEW — sirf node ke available actions
+    List<String> actionsToSet,
   ) async {
     setState(() {
       for (final a in actionsToSet) {
@@ -156,13 +170,24 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
       }
     });
     await PermissionService.saveRoleDefaultMatrix(role, _roleDefaults[role]!);
+
+    // ✅ NEW
+    final phones = (_personsByRole[role] ?? []).map((p) => p.phone).toList();
+    await PermissionService.setPersonModuleForAllInRole(
+      phones,
+      moduleId,
+      _roleDefaults[role]![moduleId]!,
+    );
+
     await CompanyStore.instance.setString(
       'lastPermissionUpdated',
       DateTime.now().toIso8601String(),
     );
     _showSavedSnackbar('All permissions for module updated');
+    await _loadAll(); // ✅ NEW
   }
 
+  // ─── UPDATED: ab sirf is module ka data save hota hai (savePersonModule) ──
   Future<void> _setAllPersonForModule(
     String phone,
     String moduleId,
@@ -174,7 +199,11 @@ class _SettingsScreenState extends State<SettingsScreen> with CloudSyncMixin {
         _personMatrices[phone]![moduleId]![a] = value;
       }
     });
-    await PermissionService.savePersonMatrix(phone, _personMatrices[phone]!);
+    await PermissionService.savePersonModule(
+      phone,
+      moduleId,
+      _personMatrices[phone]![moduleId]!,
+    );
     await CompanyStore.instance.setString(
       'lastPermissionUpdated',
       DateTime.now().toIso8601String(),

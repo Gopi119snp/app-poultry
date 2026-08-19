@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'auth/account_type_screen.dart';
 import '../screens/auth/login_screen.dart';
+import '../services/session_service.dart';
+import '../services/demo_data_service.dart';
+import 'home/home_screen.dart';
 
 // Industry Colors
 const Color _defaultColor = Color(0xFF1A237E);
@@ -267,6 +270,74 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
+
+                    // ✅ NEW — Guest Preview Mode Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              title: const Text(
+                                'Bina Register Explore Karein?',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              content: const Text(
+                                'Aap app ke features dekh sakte hain, lekin koi data save/edit nahi kar payenge. Kisi bhi waqt register karke pura access le sakte hain.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text(
+                                    'Cancel',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                ),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _headerColor,
+                                  ),
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text(
+                                    'Haan, Explore Karo',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (confirm != true) return;
+
+                          await SessionService.enterGuestMode();
+                          await DemoDataService.seedDemoData();
+
+                          if (!context.mounted) return;
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const HomeScreen(),
+                            ),
+                            (route) => false,
+                          );
+                        },
+                        child: Text(
+                          'Bina Register Kiye Explore Karo →',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: _headerColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
 
                     // Login Button — UPDATED
                     SizedBox(

@@ -51,9 +51,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _showForgotNewPass = false;
   bool _showForgotNewPassword = false;
   bool _showForgotConfirmPassword = false;
-  // ✅ Forgot password ab EMAIL OTP se hota hai (mobile OTP hata diya).
-  // Phone se lookup karke authEmail nikalte hain, wahi email OTP + reset
-  // ke liye use hota hai — user ko email alag se type nahi karna padta.
   String? _forgotResolvedEmail;
   String? _forgotResetToken;
 
@@ -61,7 +58,30 @@ class _LoginScreenState extends State<LoginScreen> {
   int _currentTab = 0;
 
   @override
+  void initState() {
+    super.initState();
+    _farmerDobController.addListener(_formatDob);
+  }
+
+  void _formatDob() {
+    String digits = _farmerDobController.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length > 8) digits = digits.substring(0, 8);
+    String formatted = '';
+    for (int i = 0; i < digits.length; i++) {
+      if (i == 2 || i == 4) formatted += '/';
+      formatted += digits[i];
+    }
+    if (formatted != _farmerDobController.text) {
+      _farmerDobController.value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }
+  }
+
+  @override
   void dispose() {
+    _farmerDobController.removeListener(_formatDob);
     _forgotResendTimer?.cancel();
     _phoneController.dispose();
     _passwordController.dispose();
@@ -118,6 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
         margin: const EdgeInsets.all(15),
       );
       await Future.delayed(const Duration(milliseconds: 800));
+
       await AppLockService.instance.routeAfterAuth(
         HomeScreen(
           ownerName: result.displayName ?? result.ownerName ?? '',
@@ -156,6 +177,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _farmerHasPin = check.hasPin;
         _farmerCompanyId = check.companyId;
         _farmerForgotPin = false;
+        _farmerDobController.clear();
       });
     } catch (e) {
       if (!mounted) return;
@@ -164,6 +186,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // Updated _submitFarmerPin with DOB validation and passing dob for new PIN setup
   Future<void> _submitFarmerPin() async {
     final pin = _farmerPinController.text.trim();
     if (pin.length != 4) {
@@ -177,6 +200,11 @@ class _LoginScreenState extends State<LoginScreen> {
         _showError('PIN match nahi kar raha');
         return;
       }
+      final dob = _farmerDobController.text.trim();
+      if (dob.isEmpty) {
+        _showError('Apni Date of Birth daalo (jo Office Manager ko di thi)');
+        return;
+      }
     }
 
     if (_farmerCompanyId == null) {
@@ -186,41 +214,48 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    final result = _farmerHasPin
-        ? await AuthService.instance.loginCompanyFarmerWithPin(
-            companyId: _farmerCompanyId!,
-            phone: _farmerPhoneController.text.trim(),
-            pin: pin,
-          )
-        : await AuthService.instance.setupCompanyFarmerPin(
-            companyId: _farmerCompanyId!,
-            phone: _farmerPhoneController.text.trim(),
-            pin: pin,
-          );
+    try {
+      final result = _farmerHasPin
+          ? await AuthService.instance.loginCompanyFarmerWithPin(
+              companyId: _farmerCompanyId!,
+              phone: _farmerPhoneController.text.trim(),
+              pin: pin,
+            )
+          : await AuthService.instance.setupCompanyFarmerPin(
+              companyId: _farmerCompanyId!,
+              phone: _farmerPhoneController.text.trim(),
+              dob: _farmerDobController.text.trim(),
+              pin: pin,
+            );
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
 
-    if (!result.success) {
-      _showError(result.errorMessage ?? 'Login fail');
-      return;
+      if (!result.success) {
+        _showError(result.errorMessage ?? 'Login fail');
+        return;
+      }
+
+      Get.snackbar(
+        '✅ Welcome!',
+        'Namaste, ${result.displayName}! 👋',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      await Future.delayed(const Duration(milliseconds: 800));
+      await AppLockService.instance.routeAfterAuth(
+        FarmerDashboard(
+          ownerName: result.displayName ?? '',
+          companyName: result.companyName ?? '',
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showError('Kuch galat ho gaya: ${e.toString()}');
     }
-
-    Get.snackbar(
-      '✅ Welcome!',
-      'Namaste, ${result.displayName}! 👋',
-      backgroundColor: primaryGreen,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
-    );
-    await Future.delayed(const Duration(milliseconds: 800));
-    await AppLockService.instance.routeAfterAuth(
-      FarmerDashboard(
-        ownerName: result.displayName ?? '',
-        companyName: result.companyName ?? '',
-      ),
-    );
   }
 
   /// ✅ Self-service PIN reset — FARMER khud karta hai, DOB confirm
@@ -250,36 +285,42 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    final result = await AuthService.instance.resetFarmerPinWithDob(
-      companyId: _farmerCompanyId!,
-      phone: _farmerPhoneController.text.trim(),
-      dob: dob,
-      newPin: pin,
-    );
+    try {
+      final result = await AuthService.instance.resetFarmerPinWithDob(
+        companyId: _farmerCompanyId!,
+        phone: _farmerPhoneController.text.trim(),
+        dob: dob,
+        newPin: pin,
+      );
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() => _isLoading = false);
 
-    if (!result.success) {
-      _showError(result.errorMessage ?? 'Reset fail ho gaya');
-      return;
+      if (!result.success) {
+        _showError(result.errorMessage ?? 'Reset fail ho gaya');
+        return;
+      }
+
+      Get.snackbar(
+        '✅ PIN Reset Ho Gaya!',
+        'Naye PIN se login ho gaya',
+        backgroundColor: primaryGreen,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(15),
+      );
+      await Future.delayed(const Duration(milliseconds: 800));
+      await AppLockService.instance.routeAfterAuth(
+        FarmerDashboard(
+          ownerName: result.displayName ?? '',
+          companyName: result.companyName ?? '',
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showError('Kuch galat ho gaya: ${e.toString()}');
     }
-
-    Get.snackbar(
-      '✅ PIN Reset Ho Gaya!',
-      'Naye PIN se login ho gaya',
-      backgroundColor: primaryGreen,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(15),
-    );
-    await Future.delayed(const Duration(milliseconds: 800));
-    await AppLockService.instance.routeAfterAuth(
-      FarmerDashboard(
-        ownerName: result.displayName ?? '',
-        companyName: result.companyName ?? '',
-      ),
-    );
   }
 
   // ----------------------------------------------------------------
@@ -847,7 +888,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Row(
                         children: [
                           _tabButton(label: '🔒 Password Login', index: 0),
-                          _tabButton(label: '📱 OTP Login', index: 1),
+                          _tabButton(
+                            label: '📱 Company Farmer',
+                            index: 1,
+                          ), // Changed here
                         ],
                       ),
                     ),
@@ -1319,6 +1363,68 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
             ),
+
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.blue.shade100),
+              ),
+              child: Text(
+                'Security ke liye apni Date of Birth confirm karo (wahi jo Office Manager ko onboarding ke time di thi).',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: Colors.blue.shade900,
+                  height: 1.4,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Date of Birth',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _farmerDobController,
+              keyboardType: TextInputType.datetime,
+              maxLength: 10, // Added
+              textInputAction: TextInputAction.done,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              decoration: InputDecoration(
+                hintText: 'DD/MM/YYYY',
+                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                prefixIcon: const Icon(
+                  Icons.cake_outlined,
+                  color: primaryGreen,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                counterText: '', // Added
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: primaryGreen, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 18,
+                ),
+              ),
+            ),
           ],
 
           const SizedBox(height: 16),
@@ -1413,6 +1519,7 @@ class _LoginScreenState extends State<LoginScreen> {
           TextField(
             controller: _farmerDobController,
             keyboardType: TextInputType.datetime,
+            maxLength: 10, // Added
             textInputAction: TextInputAction.done,
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
             decoration: InputDecoration(
@@ -1421,6 +1528,7 @@ class _LoginScreenState extends State<LoginScreen> {
               prefixIcon: const Icon(Icons.cake_outlined, color: primaryGreen),
               filled: true,
               fillColor: Colors.white,
+              counterText: '', // Added
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(color: Colors.grey.shade200),

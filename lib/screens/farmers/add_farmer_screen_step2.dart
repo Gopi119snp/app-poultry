@@ -99,6 +99,58 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
     );
   }
 
+  // ✅ NAYA: Har farmer ka readable, company-scoped unique ID banata hai.
+  //
+  // Format: {COMPANY-PREFIX}-{FARMER-NAME-PREFIX}-{PHONE-LAST-4}
+  // Example: "Singh Poultry Farms" ka "Ramesh Kumar" (phone ...9835551234)
+  //          -> SIN-RAM-1234
+  //
+  // Ye SaaS app hai (kai companies isi app ko use karengi), isliye ID mein
+  // company ka apna prefix bhi shamil hai — taaki alag-alag companies ke
+  // farmers ka ID kabhi ek jaisa na lage, chahe naam same ho.
+  //
+  // Note: Ye sirf DISPLAY/READABLE identifier hai. Asli internal unique key
+  // ab bhi 'id' (timestamp-based) hi hai, jisse batches/documents/cheque
+  // tracking pehle se linked hai — usse chhera nahi gaya hai.
+  Future<String> _generateFarmerUniqueId({
+    required String farmerName,
+    required String phone,
+  }) async {
+    // Company ka naam CompanyStore prefs mein registration ke time save
+    // hota hai — agar kisi wajah se nahi mila to generic 'CMP' fallback.
+    String companyName = '';
+    try {
+      companyName = await CompanyStore.instance.getString('companyName') ?? '';
+    } catch (_) {}
+
+    String companyPrefix = companyName.toUpperCase().replaceAll(
+      RegExp(r'[^A-Z]'),
+      '',
+    );
+    companyPrefix = companyPrefix.isEmpty
+        ? 'CMP'
+        : (companyPrefix.length >= 3
+              ? companyPrefix.substring(0, 3)
+              : companyPrefix.padRight(3, 'X'));
+
+    String namePrefix = farmerName.toUpperCase().replaceAll(
+      RegExp(r'[^A-Z]'),
+      '',
+    );
+    namePrefix = namePrefix.isEmpty
+        ? 'FAR'
+        : (namePrefix.length >= 3
+              ? namePrefix.substring(0, 3)
+              : namePrefix.padRight(3, 'X'));
+
+    String digitsOnly = phone.replaceAll(RegExp(r'\D'), '');
+    String last4 = digitsOnly.length >= 4
+        ? digitsOnly.substring(digitsOnly.length - 4)
+        : digitsOnly.padLeft(4, '0');
+
+    return '$companyPrefix-$namePrefix-$last4';
+  }
+
   Future<void> _submitFarmer() async {
     // Validations
     final aadhaar = _aadhaarController.text.replaceAll(' ', '').trim();
@@ -187,6 +239,13 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
     }
     // ──────────────────────────────────────────
 
+    // ✅ NAYA: Farmer ka readable unique ID generate karo (company-scoped).
+    final farmerName = (widget.step1Data['name'] ?? '').toString();
+    final farmerUniqueId = await _generateFarmerUniqueId(
+      farmerName: farmerName,
+      phone: (phone ?? '').toString(),
+    );
+
     final farmerData = {
       ...widget.step1Data,
       'aadhaar': aadhaar,
@@ -198,6 +257,7 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
       'hasPhoto': _farmerPhotoFile != null,
       'hasSignature': _signaturePhotoFile != null,
       'id': DateTime.now().millisecondsSinceEpoch.toString(),
+      'farmerId': farmerUniqueId, // ✅ NAYA — readable unique Farmer ID
       'registeredOn': DateTime.now().toIso8601String(),
       'status': 'active',
     };
@@ -210,17 +270,26 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
       actionType: 'ADD',
       module: 'Farmer',
       message:
-          'Naya farmer "${widget.step1Data['name']}" system mein register kiya gaya.',
+          'Naya farmer "${widget.step1Data['name']}" system mein register kiya gaya (ID: $farmerUniqueId).',
     );
     // 🛑 END NAYA CODE
 
     final companyId = await SessionService.companyId;
     if (companyId != null) {
-      await CompanyStore.instance.registerPhoneLookup(
-        phone: phone as String,
+      final companyName = await SessionService.companyName ?? '';
+      // ✅ Multi-company support — is farmer ko is company ke andar
+      // phone-searchable banata hai (collection-group index). Purana
+      // global registerPhoneLookup() yahan jaanbujh ke NAHI use kar
+      // rahe, kyunki wo sirf ek hi company store kar sakta tha — agar
+      // yahi number kisi doosri company mein bhi farmer hota, to wo
+      // registration overwrite ho jaata (login conflict). Naya index
+      // har company ke andar alag document mein store hota hai.
+      await CompanyStore.instance.registerFarmerPhoneIndex(
         companyId: companyId,
-        role: 'Company Farmer',
-        displayName: widget.step1Data['name'] as String? ?? '',
+        phone: phone as String,
+        farmerId: farmerData['id'] as String,
+        farmerName: widget.step1Data['name'] as String? ?? '',
+        companyName: companyName,
       );
     }
 
@@ -230,7 +299,7 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
 
     Get.snackbar(
       '✅ Farmer Registered!',
-      '${widget.step1Data['name']} ka profile ban gaya!',
+      '${widget.step1Data['name']} ka profile ban gaya! ID: $farmerUniqueId',
       backgroundColor: primaryGreen,
       colorText: Colors.white,
       snackPosition: SnackPosition.BOTTOM,

@@ -123,12 +123,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
   late List<dynamic> _localDailyEntries;
 
   // ── 🔐 PERMISSION FLAGS ─────────────────────────────────────────────────
-  // ✅ FIX — is screen ke row-tap se khulne wale Edit dialog (_showEditDayDialog)
-  // mein Weight/Mortality/Remaining Feed ki NAYI entry add karne ka koi
-  // permission check hi nahi tha — batch_detail_screen.dart ke "Flock
-  // Record" dialog mein to _canAddWeight/_canAddMortality/_canAddRemainingFeed
-  // se gate hota hai, lekin yahi teeno fields is screen se bhi (dusre raaste
-  // se) bina kisi check ke add ho jaate the. Ab wahi 3 flags yahan bhi.
   bool _canAddWeight = false;
   bool _canAddMortality = false;
   bool _canAddRemainingFeed = false;
@@ -165,10 +159,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
     super.dispose();
   }
 
-  // ✅ FIX — is screen ko dailyEntries widget-parameter se milte hain, isliye
-  // sirf _loadAndCompute() dobara call karne se naya data nahi aayega. Pehle
-  // is batch ka latest dailyEntries cloud se refresh karo, phir rows recompute
-  // karo.
   @override
   Future<void> onCloudDataChanged() async {
     _loadEditPermissionFlags(); // ✅ FIX — real-time permission refresh
@@ -210,8 +200,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
       try {
         _weightConfig = WeightGrowthRuleConfig.fromJson(jsonDecode(weightRaw));
       } catch (e) {
-        // #30 fix: don't swallow config errors silently — at least log them
-        // so a corrupt config doesn't silently fall back to defaults unnoticed.
         debugPrint('DailyUpdateList: weightGrowthRuleConfig parse failed: $e');
       }
     }
@@ -259,8 +247,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
 
     _computeRows();
 
-    // #31 fix: guard setState after the async gaps above in case the
-    // screen was closed while these awaits were still in flight.
     if (!mounted) return;
     setState(() => _loading = false);
   }
@@ -268,9 +254,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
   ({double chickPrice, double feedRate, double adminCost, double kgPerBag})
   _resolveCostRates(double weightKgForSizeCheck) {
     if (_appliedRuleId == 1 && _rule1Config != null) {
-      // NOTE (#8): boundary behaviour at exactly 1.2 kg is unchanged here —
-      // confirm with business rule whether 1.2 kg itself should count as
-      // Big or Small before changing `>` to `>=`.
       final bool isBigSize = weightKgForSizeCheck > 1.2;
       final c = _rule1Config!;
       if (isBigSize) {
@@ -330,8 +313,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
     final DateTime today = DateTime.now();
     final int rawAgeDays = today.difference(startDate).inDays + 1;
 
-    // #22 fix: a future start date used to force a fake "Day 1" to render
-    // today. Now we simply show no rows until the batch actually starts.
     if (rawAgeDays < 1) {
       _batchNotStarted = true;
       _rows = [];
@@ -340,8 +321,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
     _batchNotStarted = false;
     final int chicksAgeDays = rawAgeDays;
 
-    // ---- Parse cost entries, keeping timestamp so same-day duplicates can
-    // be resolved by "most recently entered" instead of list order (#19,#20,#21) ----
     final List<Map<String, dynamic>> costEntries = [];
     for (final e in _localDailyEntries) {
       if (e['type'].toString().toLowerCase() != 'cost') continue;
@@ -353,8 +332,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
         'mortality': int.tryParse(e['mortality'].toString()) ?? 0,
         'feedBags': int.tryParse(e['feed'].toString()) ?? 0,
         'weightKg': double.tryParse(e['weight'].toString()) ?? 0.0,
-        // #17/#18 fix: null = "not reported" is now distinct from an
-        // explicitly reported 0 bags remaining.
         'remainingFeedBags': remainingRaw.isEmpty
             ? null
             : int.tryParse(remainingRaw),
@@ -363,17 +340,11 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
         'timestamp': DateTime.tryParse(e['timestamp']?.toString() ?? '') ?? d,
       });
     }
-    // #19/#20/#21 fix: sort by actual entry timestamp so "the last one we
-    // see while looping" is genuinely the most recent report, not just
-    // whatever order happened to be in the list.
     costEntries.sort(
       (a, b) =>
           (a['timestamp'] as DateTime).compareTo(b['timestamp'] as DateTime),
     );
 
-    // #1 fix: sale entries are now read here too, so sold birds come out of
-    // Live Chicks — previously only mortality did, which meant feed,
-    // biomass, FCR and Cost/Kg kept being computed for birds already sold.
     final List<Map<String, dynamic>> saleEntries = [];
     for (final e in _localDailyEntries) {
       if (e['type'].toString().toLowerCase() != 'sale') continue;
@@ -402,17 +373,9 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
     int cumulativeSold = 0;
     double cumulativeFeedConsumedKg = 0.0;
 
-    // ✅ FIX — delivered / returned feed are immutable running totals.
-    // Feed Stock (auto) is PURELY calculated from these + consumption —
-    // it is never overwritten by a farmer's "Actual Remaining Feed"
-    // report anymore. That report now only feeds the separate
-    // "Feed Stock (Manual)" column below, and the Fraud Risk Engine.
     double grossDeliveredKg = 0.0;
     double cumulativeReturnedKg = 0.0;
 
-    // #9/#10 fix: chick cost is locked once (purchase-time snapshot) and
-    // feed cost accrues incrementally at each day's own rate, so a later
-    // rate/category change no longer rewrites already-incurred historical cost.
     double? lockedChickCost;
     double cumulativeFeedCostRs = 0.0;
 
@@ -439,7 +402,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
         }
       }
 
-      // #1 fix: accumulate sales up to and including this day.
       int soldToday = 0;
       for (final s in saleEntries) {
         if (_sameDay(s['date'] as DateTime, date)) {
@@ -456,8 +418,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
           if (w > 0) weightEnteredToday = w;
           final rf = entry['remainingFeedBags'] as int?;
           if (rf != null) {
-            // #17 fix: an explicit 0 is now respected as a real report,
-            // not treated as "nothing reported".
             remainingFeedBagsToday = rf;
             remainingFeedReportedToday = true;
           }
@@ -472,7 +432,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
       }
 
       cumulativeMortality += mortalityToday;
-      // #1 fix: Live Chicks now subtracts sold birds too.
       final int liveChicks =
           (initialChicks - cumulativeMortality - cumulativeSold).clamp(
             0,
@@ -497,11 +456,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
           ) /
           1000.0;
 
-      // NOTE (#6/#7): manual weight still carries forward to future days
-      // until the next measurement, unchanged from current behaviour. This
-      // affects both FCR/Cost drift over time and Rule 1 size classification
-      // — confirm with business rule before changing this (measurement-day
-      // only vs. carry-forward vs. growth-curve estimate).
       if (weightEnteredToday != null) {
         lastManualWeightKg = weightEnteredToday;
       }
@@ -509,34 +463,20 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
 
       final ratesToday = _resolveCostRates(manualWeightKg ?? autoWeightKg);
 
-      // #9/#10 fix: chick cost snapshot taken once, not recalculated every
-      // day off whatever the current rate/category happens to be.
       lockedChickCost ??= initialChicks * ratesToday.chickPrice;
 
-      // ---- Feed stock: immutable delivered/returned totals (#2 partial, #3, #4) ----
       final double deliveredTodayKg =
           feedBagsDeliveredToday * ratesToday.kgPerBag;
       grossDeliveredKg += deliveredTodayKg;
       cumulativeReturnedKg += returnFeedKgToday;
 
-      // #9/#10 fix: feed cost accrues at TODAY's rate for TODAY's
-      // consumption only — historical days keep the rate that applied when
-      // their feed was actually consumed.
       cumulativeFeedCostRs += dailyFeedKg * ratesToday.feedRate;
 
       final double netAvailableFeedKg =
           grossDeliveredKg - cumulativeReturnedKg - cumulativeFeedConsumedKg;
-      // ✅ FIX — Feed Stock (auto) is now ALWAYS this pure calculation.
-      // It accumulates day over day and is never reset/overwritten by a
-      // farmer's remaining-feed report.
       final double feedStockKg = netAvailableFeedKg;
       final bool isShortfall = feedStockKg < 0;
 
-      // ✅ NEW — "Feed Stock (Manual)" column: only set on the exact day a
-      // report came in. Shows the reported figure and how it compares to
-      // the auto figure (KG diff + % diff, % calculated on the reported
-      // value as the base — a division by zero only if farmer literally
-      // reported 0 bags, handled below).
       double? manualStockReportedKg;
       double? manualStockDiffKg;
       double? manualStockDiffPercent;
@@ -547,22 +487,11 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
         manualStockDiffKg = reportedStockKg - feedStockKg;
         manualStockDiffPercent = reportedStockKg != 0
             ? (manualStockDiffKg / reportedStockKg) * 100
-            : null; // reported 0 bags — % vs itself is undefined
-        // Fraud Risk Engine still needs to know the latest reported actual
-        // (unchanged) — this is how we catch feed that's gone missing
-        // (e.g. sold off) even though the auto column no longer resets.
+            : null;
         lastActualRemainingFeedKg = reportedStockKg;
         remainingFeedEverReported = true;
       }
 
-      // ---- FCR ----
-      // NOTE (#26/#27): these still use liveChicks/cumulative feed as-is.
-      // With #1 fixed, liveChicks now correctly excludes sold birds, which
-      // improves this, but cumulativeFeedConsumedKg still includes feed
-      // consumed by birds before they were sold (correct for a
-      // "feed-to-date" FCR). If you want FCR based on harvested+standing
-      // biomass instead, that's a separate formula decision (#27/#28) —
-      // flagging rather than silently changing your FCR definition.
       final double autoBiomassKg = liveChicks * autoWeightKg;
       final double autoFcr = autoBiomassKg > 0
           ? cumulativeFeedConsumedKg / autoBiomassKg
@@ -576,7 +505,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
             : null;
       }
 
-      // Cost per kg (using manual weight if available)
       final double biomassForCost =
           (manualWeightKg != null && manualWeightKg > 0)
           ? liveChicks * manualWeightKg
@@ -590,8 +518,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
           : 0.0;
 
       final FraudRiskAssessment fraud = FraudRiskEngine.assess(
-        // #4 fix: pass the real net-delivered figure (gross - returned),
-        // not a value that reconciliation drift has silently mutated.
         feedDeliveredKg: grossDeliveredKg - cumulativeReturnedKg,
         expectedConsumedKg: cumulativeFeedConsumedKg,
         actualRemainingKg: lastActualRemainingFeedKg,
@@ -744,10 +670,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                       'chickPricePerPiece': chick,
                       'feedRatePerKg': feed,
                       'adminCostPerKg': admin,
-                      // #11 fix: kgPerBag was being dropped on every save
-                      // (this sheet has no field for it, but it must still
-                      // be preserved rather than silently lost — otherwise
-                      // it reverts to the 50.0 default on next load).
                       'kgPerBag': _fallbackKgPerBag,
                     }),
                   );
@@ -972,11 +894,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                   style: const TextStyle(fontSize: 11.5, color: Colors.black87),
                 ),
               ),
-              // ✅ FIX — har field ka apna permission check — is dialog mein
-              // pehle teeno fields hamesha dikhte the, chahe user ko
-              // batch_detail_screen.dart ke Flock Record dialog mein us
-              // field ka add-access diya bhi na gaya ho. Ab yahan bhi wahi
-              // permission respect hota hai.
               if (_canAddMortality) ...[
                 TextField(
                   controller: mortalityCtrl,
@@ -998,6 +915,14 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                   ),
                   decoration: InputDecoration(
                     labelText: 'Avg Weight (kg)',
+                    // ✅ FIX — chhote chicks ke liye sahi tareeka batane
+                    // wala hint add kiya, taaki "40 gram" ki jagah galti se
+                    // "40" (matlab 40 KG) na daala jaaye.
+                    hintText: 'e.g. 0.06 (60 gram) ya 1.8 (1.8 KG)',
+                    helperText:
+                        'Hamesha KG mein daalo — chhote chick ke liye chhoti decimal '
+                        'value likho, jaise 0.04 ya 0.06',
+                    helperMaxLines: 2,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -1070,6 +995,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
       colorText: Colors.white,
       snackPosition: SnackPosition.BOTTOM,
       margin: const EdgeInsets.all(15),
+      duration: const Duration(seconds: 6),
     );
   }
 
@@ -1096,9 +1022,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
       return;
     }
 
-    // #15 fix: a non-empty but unparsable value (e.g. "abc") used to get
-    // silently saved as raw text and later treated as 0 wherever it was
-    // read. Now it's rejected up front instead of corrupting the data.
     if (weightInput.isNotEmpty && double.tryParse(weightInput) == null) {
       _showError('Weight ki value samajh nahi aayi. Sirf number likhein.');
       return;
@@ -1130,12 +1053,27 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
         ? null
         : int.parse(remainingFeedInput);
 
-    // #16 fix: weight = 0, if entered, used to save fine but then get
-    // silently ignored by the calculation (only `w > 0` counted as a real
-    // entry) — so the user saw "Saved" but nothing actually changed. Now we
-    // reject it up front with a clear message instead of a silent no-op.
     if (weightVal != null && weightVal <= 0) {
       _showError('Weight 0 se bada hona chahiye.');
+      return;
+    }
+
+    // ✅ FIX — Weight ek REALISTIC range mein honi chahiye (KG). Ye field
+    // KG expect karta hai; agar koi galti se chick ka wazan grams mein
+    // (jaise "40" ka matlab tha 40 gram / 0.04 KG) daal de, to system
+    // chup-chaap use 40 KG maan leta tha. Isse Cost/Kg aur FCR Manual jaise
+    // saare downstream calculations bilkul galat ho jaate the (biomass
+    // itna bada ban jaata tha ki FCR round ho ke "0.000" tak dikhne lagta
+    // tha, aur Cost/Kg artificially bahut kam dikhta tha). Ab koi bhi
+    // biologically-impossible weight (8 KG se zyada) save hone se pehle
+    // hi block ho jaati hai.
+    if (weightVal != null && weightVal > 8.0) {
+      _showError(
+        'Aapne $weightVal KG daala hai — ye ek murgi ke liye possible '
+        'nahi hai. Agar chick chhota hai (jaise 40 gram), to KG mein '
+        'likhein: 0.04 — poora "40" likhne ka matlab 40 KG ho jaata hai, '
+        'jo galat hai.',
+      );
       return;
     }
 
@@ -1187,9 +1125,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
       }
     }
 
-    // #14 fix: compare actual calendar dates instead of raw date strings,
-    // so "01/07/2026" vs "1/7/2026" vs an ISO string can't be used to dodge
-    // the 3-entries-per-day limit.
     final DateTime? selectedDate = _parseDdMmYyyy(dateStr);
     final int sameDateCostCount = _localDailyEntries.where((e) {
       if (e['type'].toString().toLowerCase() != 'cost') return false;
@@ -1217,9 +1152,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
       final Map<String, dynamic> logEntry = {
         'type': 'cost',
         'date': dateStr,
-        // #17/#18 fix: keep the raw input as-is instead of forcing an
-        // empty field to the string '0'. An empty string now genuinely
-        // means "nothing entered", distinct from an explicit "0".
         'weight': weightInput,
         'mortality': mortalityInput,
         'feed': feedInput,
@@ -1298,9 +1230,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
 
   @override
   Widget build(BuildContext context) {
-    // ✅ FIX — 'dailyUpdateList' ke 'view' se gated. batch_detail_screen.dart
-    // mein ye button already _canViewDailyUpdateList se gated tha, ab
-    // screen khud bhi apne aap ko protect karti hai (already-open scenario).
     return PermissionScreenGate(
       moduleId: 'dailyUpdateList',
       action: 'view',
@@ -1380,7 +1309,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                 ),
                 child: Column(
                   children: [
-                    // Cost banner
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
                       child: Container(
@@ -1453,7 +1381,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                       ),
                     ),
 
-                    // Zoom control
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
                       child: Container(
@@ -1552,7 +1479,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                       ),
                     ),
 
-                    // Tip banner
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                       child: Container(
@@ -1592,14 +1518,10 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                       ),
                     ),
 
-                    // Table
                     Expanded(
                       child: _rows.isEmpty
                           ? Center(
                               child: Text(
-                                // #22/#23 fix: honest empty-state messaging
-                                // instead of silently faking a Day 1 or
-                                // silently treating a bad date as "today".
                                 _startDateInvalid
                                     ? 'Batch ki start date sahi format mein nahi hai — pehle use theek karein.'
                                     : _batchNotStarted
@@ -1683,12 +1605,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                                         final bool isEditable = _isEditableDate(
                                           r.date,
                                         );
-                                        // ✅ FIX — pehle sirf date-window check
-                                        // hota tha, permission bilkul check
-                                        // nahi hota tha. Ab agar user ke paas
-                                        // teeno mein se koi bhi add-permission
-                                        // nahi hai, to edit icon/tap dikhega
-                                        // hi nahi (neeche _canEditAnyField se).
                                         return DataRow(
                                           color: WidgetStateProperty.all(
                                             r.hasMismatch
@@ -1824,7 +1740,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                                                 ),
                                               ),
                                             ),
-                                            // ── FEED STOCK CELL with shortfall and return marker ──
                                             DataCell(
                                               Column(
                                                 crossAxisAlignment:
@@ -1862,7 +1777,6 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                                                 ],
                                               ),
                                             ),
-                                            // ── FEED STOCK (MANUAL) — farmer-reported vs auto comparison ──
                                             DataCell(
                                               r.manualStockReportedToday
                                                   ? Column(

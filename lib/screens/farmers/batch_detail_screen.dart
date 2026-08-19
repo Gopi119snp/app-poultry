@@ -6461,7 +6461,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'TEST123 CHANGED',
+              'Batch Tracking Detail',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,

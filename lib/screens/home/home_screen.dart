@@ -668,60 +668,6 @@ class _HomeScreenState extends State<HomeScreen>
     await _loadStockData();
   }
 
-  Future<void> _devMasterResetAllData() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.delete_forever_rounded, color: Colors.red, size: 28),
-            SizedBox(width: 8),
-            Text(
-              'Master Reset Data?',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: const Text(
-          'Isse registration details, managers, farmers aur batch entries ka saara data phone se udh jayega. Kya aap sure hain?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              'Haan, Delete Karo',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      await AuthService.instance.signOut();
-      await SessionService.clearAll();
-      Get.offAll(() => const WelcomeScreen());
-      Get.snackbar(
-        'App Reset Successfully',
-        'Saara testing data khali ho gaya hai.',
-        backgroundColor: Colors.black87,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(15),
-      );
-    }
-  }
-
   void _showLiftingSettingsDialog() {
     final minController = TextEditingController(text: '$_minLiftingDays');
     final maxController = TextEditingController(text: '$_maxLiftingDays');
@@ -5586,14 +5532,6 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           actions: [
             IconButton(
-              icon: const Icon(
-                Icons.delete_forever_rounded,
-                color: Colors.redAccent,
-                size: 26,
-              ),
-              onPressed: _devMasterResetAllData,
-            ),
-            IconButton(
               icon: const Icon(Icons.search, color: Colors.white, size: 26),
               onPressed: () {
                 Get.to(() => const GlobalSearchScreen());
@@ -5837,6 +5775,65 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ],
             ),
+          ),
+          // ✅ Guest Mode Banner added here
+          FutureBuilder<bool>(
+            future: SessionService.isGuestMode,
+            builder: (context, snapshot) {
+              if (snapshot.data != true) return const SizedBox.shrink();
+              return Container(
+                margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade300),
+                ),
+                child: Row(
+                  children: [
+                    const Text('👀', style: TextStyle(fontSize: 20)),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Aap Explore Mode mein hain — data save/edit nahi hoga.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade800,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                      ),
+                      onPressed: () async {
+                        await SessionService.exitGuestMode();
+                        if (!context.mounted) return;
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const WelcomeScreen(),
+                          ),
+                          (route) => false,
+                        );
+                      },
+                      child: const Text(
+                        'Register',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
           const SizedBox(height: 20),
           Padding(
