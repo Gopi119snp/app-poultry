@@ -65,6 +65,9 @@ class CompanyStore {
     'customRoles', // Owner ke banaye custom role names (Office/Field Manager se alag)
     'rolePermissions', // Har role ke module-wise View/Add/Edit/Delete permissions
     'personPermissions', // Har individual staff member (name+phone) ka custom permission override
+    'farmerAllocationMode', // ✅ NEW — single ya multiple allocation mode
+    'subscriptionStatus', // 'trial' | 'active' | 'expired'
+    'trialExpiry', // ISO8601 string — company banne ke 7 din baad
   };
 
   static const intKeys = {
@@ -441,6 +444,11 @@ class CompanyStore {
     'minLiftingDays': 23,
     'maxLiftingDays': 60,
     'appliedCompanyRuleId': 1,
+    // ✅ NEW — har naye company ke liye 7-din ka free trial shuru
+    'subscriptionStatus': 'trial',
+    'trialExpiry': DateTime.now()
+        .add(const Duration(days: 7))
+        .toIso8601String(),
   };
 
   Future<void> _writeProfileToPrefs(

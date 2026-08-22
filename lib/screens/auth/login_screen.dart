@@ -7,6 +7,7 @@ import '../../services/auth_service.dart';
 import '../../services/company_store.dart';
 import '../../services/otp_service.dart';
 import '../../services/app_lock_service.dart';
+import '../../widgets/subscription_gate.dart'; // ✅ NEW — SubscriptionGate import
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -140,9 +141,11 @@ class _LoginScreenState extends State<LoginScreen> {
       await Future.delayed(const Duration(milliseconds: 800));
 
       await AppLockService.instance.routeAfterAuth(
-        HomeScreen(
-          ownerName: result.displayName ?? result.ownerName ?? '',
-          companyName: result.companyName ?? '',
+        SubscriptionGate(
+          child: HomeScreen(
+            ownerName: result.displayName ?? result.ownerName ?? '',
+            companyName: result.companyName ?? '',
+          ),
         ),
       );
     } catch (e) {

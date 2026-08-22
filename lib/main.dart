@@ -10,6 +10,7 @@ import 'services/company_store.dart';
 import 'services/firebase_bootstrap.dart';
 import 'services/session_service.dart';
 import 'services/app_lock_service.dart';
+import 'widgets/subscription_gate.dart'; // ✅ NEW — SubscriptionGate import
 import 'package:firebase_auth/firebase_auth.dart'; // ✅ NAYA — anonymous auth ke liye
 
 Future<void> main() async {
@@ -153,8 +154,13 @@ class _SplashScreenState extends State<SplashScreen> {
           );
           break;
         default:
+          // ✅ NEW — SubscriptionGate se wrap kiya, taaki trial/expired
+          // company cold-start pe bhi lock screen dekhe, seedha
+          // HomeScreen access na ho jaye.
           Get.off(
-            () => HomeScreen(ownerName: ownerName, companyName: companyName),
+            () => SubscriptionGate(
+              child: HomeScreen(ownerName: ownerName, companyName: companyName),
+            ),
           );
       }
     } else {

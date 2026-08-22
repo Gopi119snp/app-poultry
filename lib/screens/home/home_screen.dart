@@ -32,6 +32,7 @@ import 'notifications_screen.dart';
 import 'feed_stock_history_screen.dart';
 import 'all_recent_activity_screen.dart';
 import 'income_engine.dart';
+import '../staff/farmer_allocation_screen.dart'; // ✅ Added import for Farmer Allocation
 
 class HomeScreen extends StatefulWidget {
   final String ownerName;
@@ -5909,6 +5910,35 @@ class _HomeScreenState extends State<HomeScreen>
                           Get.to(() => const AccountsScreen());
                         },
                       ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // ✅ NEW: Farmer Allocation Button
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => Get.to(() => const StaffListScreen()),
+                        icon: const Icon(
+                          Icons.groups_rounded,
+                          color: Colors.white,
+                        ),
+                        label: const Text(
+                          'Farmer Allocation',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1B5E20),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ],

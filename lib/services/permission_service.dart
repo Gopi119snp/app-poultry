@@ -906,4 +906,32 @@ class PermissionService {
     }
     return can(moduleId, action);
   }
+
+  // ── SUBSCRIPTION / TRIAL STATUS ─────────────────────────────────────────────
+
+  /// ✅ NEW — Subscription/trial status check. Website (Razorpay Cloud
+  /// Function) ke through hi 'active' set hota hai. Trial khud 7 din baad
+  /// yahin (client-side) expire maana jaata hai — koi extra server job
+  /// nahi chahiye.
+  static Future<bool> isAccountActive() async {
+    if (await SessionService.isGuestMode)
+      return true; // demo mode hamesha chalega
+    if (await SessionService.isOwner) {
+      // Owner ke liye bhi apply hota hai — Owner khud subscription manage
+      // karta hai, isliye Owner ko bhi lock dikhna chahiye agar expire ho gaya.
+    }
+
+    final status = await CompanyStore.instance.getString('subscriptionStatus');
+
+    if (status == 'active') return true;
+    if (status == 'expired') return false;
+
+    // status == 'trial' ya null (purana company jisme field nahi hai)
+    final trialExpiryStr = await CompanyStore.instance.getString('trialExpiry');
+    if (trialExpiryStr == null)
+      return true; // purana company — grandfather in, safe default
+    final trialExpiry = DateTime.tryParse(trialExpiryStr);
+    if (trialExpiry == null) return true;
+    return DateTime.now().isBefore(trialExpiry);
+  }
 }

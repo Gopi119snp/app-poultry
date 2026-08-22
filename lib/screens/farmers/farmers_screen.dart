@@ -68,6 +68,17 @@ class _FarmersScreenState extends State<FarmersScreen> {
     widget.onFarmerAdded?.call();
   }
 
+  // ✅ NEW — farmer ke 'allocatedEmployees' field se staff naam nikalta hai
+  // (farmer_allocation_screen.dart isi field ko set karta hai)
+  List<String> _allocatedStaffNames(Map<String, dynamic> farmer) {
+    final raw = farmer['allocatedEmployees'];
+    if (raw is! List) return [];
+    return raw
+        .map((e) => (e is Map ? e['name']?.toString() : null) ?? '')
+        .where((n) => n.isNotEmpty)
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -205,6 +216,8 @@ class _FarmersScreenState extends State<FarmersScreen> {
   }
 
   Widget _farmerCard(Map<String, dynamic> farmer) {
+    final staffNames = _allocatedStaffNames(farmer); // ✅ NEW
+
     return GestureDetector(
       // FIXED: Isko async banaya taaki jab FarmerProfileScreen se wapas aayein toh naya batch save hone par list aur kpi auto-refresh ho ske
       onTap: () async {
@@ -272,6 +285,32 @@ class _FarmersScreenState extends State<FarmersScreen> {
                       color: Colors.black87,
                     ),
                   ),
+                  // ✅ NEW — allocated staff ka naam farmer ke naam ke neeche
+                  if (staffNames.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.badge_rounded,
+                          size: 12,
+                          color: Colors.blue.shade400,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            staffNames.join(', '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.blue.shade600,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 2),
                   Text(
                     '📱 ${farmer['phone'] ?? ''}',

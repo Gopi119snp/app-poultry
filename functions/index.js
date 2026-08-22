@@ -1,3 +1,6 @@
+const crypto = require("crypto");
+const Razorpay = require("razorpay");
+
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -25,29 +28,6 @@ function getMailTransporter() {
  * ============================================================================
  * resetPasswordAfterOtp — Secure server-side password reset (EMAIL OTP based)
  * ============================================================================
- *
- * Kyun zaroori hai: Firebase ka client-side SDK sirf CURRENTLY SIGNED-IN
- * user ka apna password change kar sakta hai. "Forgot Password" ka poora
- * matlab hi ye hai ki user sign-in NAHI kar sakta (password bhool gaya) —
- * isliye client se seedha password change karna Firebase allow hi nahi
- * karta. Isiliye ye server-side Cloud Function (Admin SDK use karke)
- * chahiye, jo kisi bhi user ka password force-update kar sakti hai.
- *
- * Security: Mobile OTP (Phone Auth) ki jagah ab Email OTP + ek short-lived
- * "resetToken" use hota hai — koi Firebase phone-auth session ki zaroorat
- * nahi. Flow:
- *   1. User "Forgot Password" mein apna email daalta hai
- *   2. sendEmailOtp(email) → 6-digit code email par jata hai
- *   3. verifyEmailOtpForReset(email, code) → code sahi hone par server
- *      ek random `resetToken` generate karke Firestore mein 10-minute
- *      expiry ke saath store karta hai, aur usi token ko client ko
- *      wapas bhejta hai (client isse spoof nahi kar sakta kyunki server
- *      hi generate karta hai)
- *   4. Client isi resetToken + newPassword ke saath resetPasswordAfterOtp
- *      call karta hai
- *   5. Function token verify karti hai (exists + expire nahi hua +
- *      email match), phir email se asli Firebase Auth user dhundke
- *      password update karti hai, aur token consume (delete) kar deti hai
  */
 exports.resetPasswordAfterOtp = functions.https.onCall(async (data, context) => {
   const email = ((data && data.email) || "").trim().toLowerCase();
@@ -72,7 +52,6 @@ exports.resetPasswordAfterOtp = functions.https.onCall(async (data, context) => 
 
   const db = admin.firestore();
 
-  // ── 1. resetToken valid hai? ──────────────────────────────────────────
   const tokenRef = db.collection("password_reset_tokens").doc(resetToken);
   const tokenSnap = await tokenRef.get();
 
@@ -100,9 +79,6 @@ exports.resetPasswordAfterOtp = functions.https.onCall(async (data, context) => 
     );
   }
 
-  // ── 2. phone_lookup se is email wale account ka role check karo ────────
-  // (existing app rule — sirf Owner/Personal Farmer khud reset kar sakte
-  // hain, Manager ka password Owner set/reset karta hai)
   const lookupSnap = await db
     .collection("phone_lookup")
     .where("authEmail", "==", email)
@@ -119,11 +95,10 @@ exports.resetPasswordAfterOtp = functions.https.onCall(async (data, context) => 
     }
   }
 
-  // ── 3. Asli Firebase Auth user dhundo aur password update karo ────────
   try {
     const targetUser = await admin.auth().getUserByEmail(email);
     await admin.auth().updateUser(targetUser.uid, { password: newPassword });
-    await tokenRef.delete(); // token ek hi baar use ho sakta hai
+    await tokenRef.delete();
 
     return { success: true, message: "Password successfully update ho gaya." };
   } catch (err) {
@@ -137,10 +112,8 @@ exports.resetPasswordAfterOtp = functions.https.onCall(async (data, context) => 
 
 /**
  * ============================================================================
- * sendEmailOtp — Company registration ke waqt email verify karne ke liye
+ * sendEmailOtp
  * ============================================================================
- * 6-digit code generate karti hai, Firestore mein 5-minute expiry ke saath
- * store karti hai, aur Gmail SMTP se real email bhejti hai.
  */
 exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
   const email = ((data && data.email) || "").trim().toLowerCase();
@@ -162,12 +135,6 @@ exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
-  // ✅ Har email ka time IST mein saaf dikhana + subject line mein bhi
-  // time daalna — taaki Gmail purane/naye OTP emails ko ek hi thread mein
-  // group na kare (jisse confusion hota tha ki konsa email latest hai).
-  // Isse har naya OTP email ALAG dikhega, inbox mein sabse upar (sabse
-  // naya time), aur email ke andar bhi explicit warning hai ki agar isse
-  // purana koi email dikhe to use ignore karo.
   const sentTimeIST = new Date().toLocaleTimeString("en-IN", {
     timeZone: "Asia/Kolkata",
     hour: "2-digit",
@@ -207,7 +174,7 @@ exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
 
 /**
  * ============================================================================
- * verifyEmailOtp — user ne jo code type kiya, use Firestore se match karti hai
+ * verifyEmailOtp
  * ============================================================================
  */
 exports.verifyEmailOtp = functions.https.onCall(async (data, context) => {
@@ -257,13 +224,8 @@ exports.verifyEmailOtp = functions.https.onCall(async (data, context) => {
 
 /**
  * ============================================================================
- * verifyEmailOtpForReset — Forgot Password ke liye Email OTP verify karta hai
+ * verifyEmailOtpForReset
  * ============================================================================
- * verifyEmailOtp jaisa hi hai, bas success hone par ek short-lived
- * `resetToken` bhi generate karke Firestore mein 10-minute expiry ke saath
- * store karta hai aur client ko wapas bhejta hai. Ye token hi
- * resetPasswordAfterOtp mein "main genuinely OTP-verified hoon" prove karta
- * hai — client kabhi khud se ye token fake nahi bana sakta.
  */
 exports.verifyEmailOtpForReset = functions.https.onCall(async (data, context) => {
   const email = ((data && data.email) || "").trim().toLowerCase();
@@ -308,7 +270,6 @@ exports.verifyEmailOtpForReset = functions.https.onCall(async (data, context) =>
 
   await docRef.delete();
 
-  // Reset token generate karo — random 32-char hex string
   const resetToken = Array.from({ length: 32 }, () =>
     Math.floor(Math.random() * 16).toString(16)
   ).join("");
@@ -320,4 +281,145 @@ exports.verifyEmailOtpForReset = functions.https.onCall(async (data, context) =>
   });
 
   return { success: true, resetToken };
+});
+
+/**
+ * ============================================================================
+ * RAZORPAY — Subscription billing (website only, per-active-farmer pricing)
+ * ============================================================================
+ * ✅ NEW — RAZORPAY_KEY_ID aur RAZORPAY_KEY_SECRET `functions/.env` se
+ * aate hain, bilkul GMAIL_USER/GMAIL_APP_PASSWORD ki tarah — kabhi code
+ * mein hardcode mat karna.
+ */
+function getRazorpayInstance() {
+  return new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+}
+
+/**
+ * ✅ NEW — createRazorpayOrder: Amount hamesha SERVER khud calculate karta
+ * hai (active farmer count × ₹200), client se bheja hua amount kabhi
+ * trust nahi karte — warna koi bhi client-side amount chhed-chhaad karke
+ * kam paisa mein "pay" kar sakta tha.
+ */
+exports.createRazorpayOrder = functions.https.onCall(async (data, context) => {
+  const companyId = ((data && data.companyId) || "").trim();
+  if (!companyId) {
+    throw new functions.https.HttpsError("invalid-argument", "companyId chahiye.");
+  }
+
+  const db = admin.firestore();
+  const dataSnap = await db
+    .collection("companies")
+    .doc(companyId)
+    .collection("data")
+    .doc("main")
+    .get();
+  const docData = dataSnap.exists ? dataSnap.data() : {};
+
+  let farmers = [];
+  try {
+    farmers = JSON.parse(docData.companyFarmers || "[]");
+  } catch (_) {}
+  const activeFarmerCount =
+    farmers.filter((f) => f.status === "active").length || farmers.length || 0;
+
+  const RATE_PER_FARMER = 200; // ₹ per farmer per month
+  const amountInRupees = Math.max(activeFarmerCount, 1) * RATE_PER_FARMER;
+  const amountInPaise = amountInRupees * 100;
+
+  try {
+    const razorpay = getRazorpayInstance();
+    const order = await razorpay.orders.create({
+      amount: amountInPaise,
+      currency: "INR",
+      receipt: `tracko_${companyId}_${Date.now()}`,
+      notes: { companyId, farmerCount: String(activeFarmerCount) },
+    });
+
+    return {
+      orderId: order.id,
+      amount: amountInPaise,
+      currency: "INR",
+      farmerCount: activeFarmerCount,
+    };
+  } catch (err) {
+    console.error("[createRazorpayOrder] failed:", err);
+    throw new functions.https.HttpsError(
+      "internal",
+      "Order create nahi ho paaya: " + err.message
+    );
+  }
+});
+
+/**
+ * ✅ NEW — verifyRazorpayPayment: payment ke baad client isse call karta
+ * hai. Signature Razorpay ke Key Secret se verify hoti hai — sirf tabhi
+ * subscriptionStatus 'active' hota hai jab signature genuinely match kare.
+ */
+exports.verifyRazorpayPayment = functions.https.onCall(async (data, context) => {
+  const companyId = ((data && data.companyId) || "").trim();
+  const razorpay_order_id = (data && data.razorpay_order_id) || "";
+  const razorpay_payment_id = (data && data.razorpay_payment_id) || "";
+  const razorpay_signature = (data && data.razorpay_signature) || "";
+
+  if (!companyId || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Payment details incomplete hain."
+    );
+  }
+
+  const expectedSignature = crypto
+    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+    .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+    .digest("hex");
+
+  if (expectedSignature !== razorpay_signature) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "Payment verify nahi ho paaya — signature match nahi kar rahi."
+    );
+  }
+
+  try {
+    const razorpay = getRazorpayInstance();
+    const order = await razorpay.orders.fetch(razorpay_order_id);
+    if (!order || !order.notes || order.notes.companyId !== companyId) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Order is company ka nahi hai."
+      );
+    }
+
+    const db = admin.firestore();
+    const oneMonthMs = 30 * 24 * 60 * 60 * 1000;
+
+    await db
+      .collection("companies")
+      .doc(companyId)
+      .collection("data")
+      .doc("main")
+      .set(
+        {
+          subscriptionStatus: "active",
+          subscriptionExpiry: admin.firestore.Timestamp.fromMillis(
+            Date.now() + oneMonthMs
+          ),
+          lastPaymentId: razorpay_payment_id,
+          lastPaymentAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+    return { success: true };
+  } catch (err) {
+    console.error("[verifyRazorpayPayment] failed:", err);
+    throw new functions.https.HttpsError(
+      "internal",
+      "Verification mein error: " + err.message
+    );
+  }
 });
