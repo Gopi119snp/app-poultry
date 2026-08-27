@@ -66,6 +66,7 @@ class CompanyStore {
     'rolePermissions', // Har role ke module-wise View/Add/Edit/Delete permissions
     'personPermissions', // Har individual staff member (name+phone) ka custom permission override
     'farmerAllocationMode', // ✅ NEW — single ya multiple allocation mode
+    'staffPerformanceBenchmarkConfig', // ✅ NEW — Staff Performance ke Good/Average/Poor numbers
     'subscriptionStatus', // 'trial' | 'active' | 'expired'
     'trialExpiry', // ISO8601 string — company banne ke 7 din baad
   };

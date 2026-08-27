@@ -10,6 +10,7 @@ import 'batch_performance_screen.dart';
 import 'farmer_profit_loss_screen.dart';
 import 'total_income_report_screen.dart';
 import 'accounts_screen.dart' show AppDateFilter, isDateInFilter;
+import '../staff/staff_performance_screens.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📊 REPORTS SCREEN — Main hub with strict individual permission checks
@@ -216,6 +217,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             ),
                             const SizedBox(height: 12),
                           ],
+
+                          // 5. Staff Performance
+                          _ReportCard(
+                            emoji: '👥',
+                            title: 'Staff Performance',
+                            subtitle:
+                                'Har staff ke farmers ka FCR, Mortality, Weight Growth aur profit/loss',
+                            color: Colors.indigo,
+                            onTap: () => Get.to(
+                              () => const StaffPerformanceOverviewScreen(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
 
                           // 4. Total Income (Farmer Profit / Loss ke theek neeche)[cite: 5]
                           if (_canViewTotalIncome) ...[

@@ -145,6 +145,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   String _farmerIfsc = '';
   String _farmerAddress = '';
   String _companyName = '';
+  List<Map<String, dynamic>> _allocatedEmployees =
+      []; // ✅ NEW — is farmer ko allocate staff
 
   Uint8List? _farmerAvatarBytes;
   Uint8List? _farmerSignatureBytes;
@@ -781,6 +783,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
             }
           }
           _farmerAddress = currentFarmer['address'] ?? '';
+          final rawAllocated = currentFarmer['allocatedEmployees'];
+          _allocatedEmployees = rawAllocated is List
+              ? rawAllocated
+                    .map((e) => Map<String, dynamic>.from(e as Map))
+                    .toList()
+              : [];
         });
 
         _companyName = '';
@@ -6486,6 +6494,17 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 ),
               ),
             ),
+            if (_allocatedEmployees.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                '👤 Staff: ${_allocatedEmployees.map((e) => e['name']).join(", ")}',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ],
         ),
         actions: [
