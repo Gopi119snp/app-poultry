@@ -372,6 +372,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
     int cumulativeMortality = 0;
     int cumulativeSold = 0;
     double cumulativeFeedConsumedKg = 0.0;
+    double cumulativeFeedConsumedKgForCost =
+        0.0; // ✅ NAYA — sirf Cost/Kg ke liye
 
     double grossDeliveredKg = 0.0;
     double cumulativeReturnedKg = 0.0;
@@ -448,6 +450,8 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
         entryDate: date,
       );
       cumulativeFeedConsumedKg += dailyFeedKg;
+      cumulativeFeedConsumedKgForCost +=
+          dailyFeedKg; // ✅ NAYA — pehle ye bhi pure-auto hi chalta hai
 
       final double autoWeightKg =
           WeightGrowthEngine.getBodyWeightGram(
@@ -472,10 +476,12 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
 
       cumulativeFeedCostRs += dailyFeedKg * ratesToday.feedRate;
 
-      final double netAvailableFeedKg =
+      // ✅ FIX (Shortfall → 0): raw (unclamped) value sirf internal diff/fraud
+      // check ke liye rakhi, taaki wo logic bilkul waisa hi rahe jaisa tha.
+      final double rawFeedStockKg =
           grossDeliveredKg - cumulativeReturnedKg - cumulativeFeedConsumedKg;
-      final double feedStockKg = netAvailableFeedKg;
-      final bool isShortfall = feedStockKg < 0;
+      final double feedStockKg = rawFeedStockKg < 0 ? 0.0 : rawFeedStockKg;
+      final bool isShortfall = rawFeedStockKg < 0;
 
       double? manualStockReportedKg;
       double? manualStockDiffKg;
@@ -484,12 +490,27 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
         final double reportedStockKg =
             (remainingFeedBagsToday ?? 0) * ratesToday.kgPerBag;
         manualStockReportedKg = reportedStockKg;
-        manualStockDiffKg = reportedStockKg - feedStockKg;
+        // ⚠️ Unchanged — diff hamesha RAW (auto-projected) value se compare
+        // hoti hai, taaki fraud-detection ka behaviour bilkul same rahe.
+        manualStockDiffKg = reportedStockKg - rawFeedStockKg;
         manualStockDiffPercent = reportedStockKg != 0
             ? (manualStockDiffKg / reportedStockKg) * 100
             : null;
         lastActualRemainingFeedKg = reportedStockKg;
         remainingFeedEverReported = true;
+
+        // ✅ FIX (Cost/Kg reconciliation) — sirf COST-tracking cumulative ko
+        // "asli sach" (delivered - returned - reported remaining) par anchor
+        // karo. Total Feed / FCR Auto / Feed Stock columns isse touch NAHI
+        // hote — wo hamesha pure auto-curve hi dikhate rahenge.
+        final double impliedActualConsumedKg =
+            grossDeliveredKg - cumulativeReturnedKg - reportedStockKg;
+        if (impliedActualConsumedKg >= 0) {
+          final double consumptionAdjustmentKg =
+              impliedActualConsumedKg - cumulativeFeedConsumedKgForCost;
+          cumulativeFeedConsumedKgForCost = impliedActualConsumedKg;
+          cumulativeFeedCostRs += consumptionAdjustmentKg * ratesToday.feedRate;
+        }
       }
 
       final double autoBiomassKg = liveChicks * autoWeightKg;
@@ -1740,30 +1761,34 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                                                 ),
                                               ),
                                             ),
+                                            // ─── Feed Stock (kg) ────────────────────────
                                             DataCell(
                                               Column(
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
-                                                  r.feedStockKg < 0
-                                                      ? Text(
-                                                          'Shortfall: ${r.feedStockKg.abs().toStringAsFixed(2)}',
-                                                          style:
-                                                              const TextStyle(
-                                                                color:
-                                                                    Colors.red,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                              ),
-                                                        )
-                                                      : Text(
-                                                          r.feedStockKg
-                                                              .toStringAsFixed(
-                                                                2,
-                                                              ),
-                                                        ),
+                                                  Text(
+                                                    r.feedStockKg
+                                                        .toStringAsFixed(2),
+                                                    style: r.isShortfall
+                                                        ? const TextStyle(
+                                                            color: Colors.red,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                          )
+                                                        : null,
+                                                  ),
+                                                  if (r.isShortfall)
+                                                    const Text(
+                                                      'Feed Khatam',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        color: Colors.red,
+                                                        fontStyle:
+                                                            FontStyle.italic,
+                                                      ),
+                                                    ),
                                                   if (r.returnFeedKgToday > 0)
                                                     Text(
                                                       '↩️ Return: ${r.returnFeedKgToday.toStringAsFixed(1)} KG',
@@ -1777,6 +1802,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                                                 ],
                                               ),
                                             ),
+                                            // ─── Feed Stock (Manual) ────────────────────
                                             DataCell(
                                               r.manualStockReportedToday
                                                   ? Column(
