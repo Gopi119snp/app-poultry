@@ -7,6 +7,47 @@ import 'staff_performance_benchmark_screen.dart';
 
 const Color _spGreen = Color(0xFF1B5E20);
 
+// ✅ NEW — Data Reliability Score ke liye color/label helpers
+Color _reliabilityColor(double pct) {
+  if (pct >= 80) return Colors.green.shade700;
+  if (pct >= 50) return Colors.amber.shade800;
+  return Colors.red.shade700;
+}
+
+String _reliabilityLabel(double pct) => '📋 ${pct.toStringAsFixed(0)}% Reliable';
+
+Widget _reliabilityBadge(double pct, bool hasEnoughData) {
+  if (!hasEnoughData) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        '📋 Data kam hai',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey.shade600,
+        ),
+      ),
+    );
+  }
+  final color = _reliabilityColor(pct);
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(
+      _reliabilityLabel(pct),
+      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+    ),
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 🎚️ BATCH SCOPE SELECTOR — Owner yahi decide karta hai ki report kis data
 // par based ho (Current batch / All batches / Last N batches)
@@ -96,7 +137,9 @@ class _ScopeSelectorState extends State<_ScopeSelector> {
                     ),
                     decoration: InputDecoration(
                       isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                      ),
                       hintText: 'e.g. 7',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -159,6 +202,7 @@ class _StaffRanking {
   final double totalProfit;
   final double? profitPerChick; // null = chicks data hi nahi (rank nahi milegi)
   final List<PerformanceTrendAlert> trendAlerts; // ✅ NEW
+  final double? avgReliability; // ✅ NEW — null = itna data nahi hai
 
   const _StaffRanking({
     required this.employee,
@@ -170,6 +214,7 @@ class _StaffRanking {
     required this.totalProfit,
     required this.profitPerChick,
     required this.trendAlerts,
+    required this.avgReliability,
   });
 }
 
@@ -224,10 +269,7 @@ class _StaffPerformanceOverviewScreenState
   // aani chahiye, filter karne se rank badalni nahi chahiye
   List<MapEntry<int, _StaffRanking>> get _filteredRankings {
     final query = _searchCtrl.text.trim().toLowerCase();
-    final indexed = _rankings
-        .asMap()
-        .entries
-        .toList(); // 0-based index = rank-1
+    final indexed = _rankings.asMap().entries.toList(); // 0-based index = rank-1
     if (query.isEmpty) return indexed;
     return indexed.where((e) {
       final name = (e.value.employee['name']?.toString() ?? '').toLowerCase();
@@ -285,6 +327,18 @@ class _StaffPerformanceOverviewScreenState
       final totalProfit = profits.fold(0.0, (s, p) => s + p.trueTotalProfit);
       final profitPerChick = totalChicks > 0 ? totalProfit / totalChicks : null;
 
+      // ✅ NEW — is staff ke reliable-data-wale farmers ka average score
+      final reliableSummaries = summaries
+          .where((s) => s.hasEnoughDataForReliability)
+          .toList();
+      final double? avgReliability = reliableSummaries.isEmpty
+          ? null
+          : reliableSummaries.fold(
+                  0.0,
+                  (sum, s) => sum + s.manualReportReliability,
+                ) /
+                reliableSummaries.length;
+
       rankings.add(
         _StaffRanking(
           employee: emp,
@@ -296,6 +350,7 @@ class _StaffPerformanceOverviewScreenState
           totalProfit: totalProfit,
           profitPerChick: profitPerChick,
           trendAlerts: trendAlerts,
+          avgReliability: avgReliability,
         ),
       );
     }
@@ -393,10 +448,7 @@ class _StaffPerformanceOverviewScreenState
                           prefixIcon: const Icon(Icons.search_rounded),
                           suffixIcon: _searchCtrl.text.isNotEmpty
                               ? IconButton(
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 18,
-                                  ),
+                                  icon: const Icon(Icons.close_rounded, size: 18),
                                   onPressed: () => _searchCtrl.clear(),
                                 )
                               : null,
@@ -525,6 +577,12 @@ class _StaffPerformanceOverviewScreenState
                     ],
                   ),
                 ),
+                // ✅ NEW — Data Reliability quick badge
+                if (r.avgReliability != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: _reliabilityBadge(r.avgReliability!, true),
+                  ),
                 Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
               ],
             ),
@@ -540,16 +598,14 @@ class _StaffPerformanceOverviewScreenState
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color:
-                      r.trendAlerts.any(
+                  color: r.trendAlerts.any(
                         (a) => a.severity == TrendSeverity.danger,
                       )
                       ? Colors.red.shade50
                       : Colors.orange.shade50,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color:
-                        r.trendAlerts.any(
+                    color: r.trendAlerts.any(
                           (a) => a.severity == TrendSeverity.danger,
                         )
                         ? Colors.red.shade200
@@ -561,8 +617,7 @@ class _StaffPerformanceOverviewScreenState
                     Icon(
                       Icons.trending_down_rounded,
                       size: 15,
-                      color:
-                          r.trendAlerts.any(
+                      color: r.trendAlerts.any(
                             (a) => a.severity == TrendSeverity.danger,
                           )
                           ? Colors.red.shade700
@@ -575,8 +630,7 @@ class _StaffPerformanceOverviewScreenState
                         style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.bold,
-                          color:
-                              r.trendAlerts.any(
+                          color: r.trendAlerts.any(
                                 (a) => a.severity == TrendSeverity.danger,
                               )
                               ? Colors.red.shade800
@@ -623,24 +677,15 @@ class _StaffPerformanceOverviewScreenState
                 children: [
                   Text(
                     '🟢 ${r.goodCount} Achha',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: Colors.green.shade700,
-                    ),
+                    style: TextStyle(fontSize: 10.5, color: Colors.green.shade700),
                   ),
                   Text(
                     '🟡 ${r.avgCount} Average',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: Colors.amber.shade800,
-                    ),
+                    style: TextStyle(fontSize: 10.5, color: Colors.amber.shade800),
                   ),
                   Text(
                     '🔴 ${r.poorCount} Kharab',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: Colors.red.shade700,
-                    ),
+                    style: TextStyle(fontSize: 10.5, color: Colors.red.shade700),
                   ),
                 ],
               ),
@@ -661,10 +706,7 @@ class _StaffPerformanceOverviewScreenState
                   children: [
                     Text(
                       'Company Profit/Loss',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey.shade600,
-                      ),
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
                     ),
                     Text(
                       '${r.totalProfit >= 0 ? "+" : "-"}₹${r.totalProfit.abs().toStringAsFixed(0)}',
@@ -683,10 +725,7 @@ class _StaffPerformanceOverviewScreenState
                   children: [
                     Text(
                       'Profit / Chick (Efficiency)',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey.shade600,
-                      ),
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
                     ),
                     Text(
                       r.profitPerChick != null
@@ -967,7 +1006,9 @@ class _StaffPerformanceDetailScreenState
         .where((s) => s.overallRating(_benchmark) == PerformanceRating.good)
         .toList();
     final avg = _summaries
-        .where((s) => s.overallRating(_benchmark) == PerformanceRating.average)
+        .where(
+          (s) => s.overallRating(_benchmark) == PerformanceRating.average,
+        )
         .toList();
     final poor = _summaries
         .where((s) => s.overallRating(_benchmark) == PerformanceRating.poor)
@@ -979,16 +1020,13 @@ class _StaffPerformanceDetailScreenState
     );
 
     // ✅ NEW — decline-trend alerts (danger pehle, phir caution)
-    final List<PerformanceTrendAlert> trendAlerts =
-        _summaries
-            .map((s) => s.trendAlert(_benchmark))
-            .whereType<PerformanceTrendAlert>()
-            .toList()
-          ..sort(
-            (a, b) => a.severity == b.severity
-                ? 0
-                : (a.severity == TrendSeverity.danger ? -1 : 1),
-          );
+    final List<PerformanceTrendAlert> trendAlerts = _summaries
+        .map((s) => s.trendAlert(_benchmark))
+        .whereType<PerformanceTrendAlert>()
+        .toList()
+      ..sort((a, b) => a.severity == b.severity
+          ? 0
+          : (a.severity == TrendSeverity.danger ? -1 : 1));
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -1027,8 +1065,7 @@ class _StaffPerformanceDetailScreenState
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color:
-                            trendAlerts.any(
+                        color: trendAlerts.any(
                               (a) => a.severity == TrendSeverity.danger,
                             )
                             ? Colors.red.shade200
@@ -1052,8 +1089,7 @@ class _StaffPerformanceDetailScreenState
                         ),
                         const SizedBox(height: 10),
                         ...trendAlerts.map((a) {
-                          final bool danger =
-                              a.severity == TrendSeverity.danger;
+                          final bool danger = a.severity == TrendSeverity.danger;
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             padding: const EdgeInsets.all(10),
@@ -1120,6 +1156,68 @@ class _StaffPerformanceDetailScreenState
                           fontWeight: FontWeight.bold,
                           fontSize: 13.5,
                         ),
+                      ),
+                      // ✅ NEW — is staff ke saare farmers ka average Data
+                      // Reliability, aur agar bahut kam hai to warning
+                      Builder(
+                        builder: (context) {
+                          final reliable = _summaries
+                              .where((s) => s.hasEnoughDataForReliability)
+                              .toList();
+                          if (reliable.isEmpty) return const SizedBox.shrink();
+                          final avgReliability = reliable.fold(
+                                0.0,
+                                (sum, s) => sum + s.manualReportReliability,
+                              ) /
+                              reliable.length;
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    _reliabilityBadge(avgReliability, true),
+                                    const SizedBox(width: 8),
+                                    const Expanded(
+                                      child: Text(
+                                        'Average Data Reliability (kitna % din asli manual data mila)',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.black45,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (avgReliability < 50)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange.shade50,
+                                        borderRadius: BorderRadius.circular(
+                                          10,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '⚠️ Is staff ke farmers ka weight bahut kam manually report hota hai — '
+                                        'FCR/Weight Growth rating zyada tar sirf estimate se bani hai, isliye '
+                                        'poora bharosa mat karo. Field se asli weight report karwana shuru karein.',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          height: 1.4,
+                                          color: Colors.orange.shade900,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -1242,12 +1340,16 @@ class _StaffPerformanceDetailScreenState
                                         return const SizedBox.shrink();
                                       }
                                       return Padding(
-                                        padding: const EdgeInsets.only(top: 4),
+                                        padding: const EdgeInsets.only(
+                                          top: 4,
+                                        ),
                                         child: Transform.rotate(
                                           angle: -0.4,
                                           child: Text(
                                             _profits[idx].farmerName,
-                                            style: const TextStyle(fontSize: 8),
+                                            style: const TextStyle(
+                                              fontSize: 8,
+                                            ),
                                           ),
                                         ),
                                       );
@@ -1394,7 +1496,8 @@ class _StaffPerformanceDetailScreenState
   Widget _compareRow(
     String label,
     double staffValue,
-    double companyAvgValue, {
+    double companyAvgValue,
+    {
     required bool lowerIsBetter,
     required String Function(double) fmt,
   }) {
@@ -1835,8 +1938,17 @@ class _FarmerPerformanceDetailScreenState
                   ),
                 ),
               ),
+              // ✅ NEW — Data Reliability badge
+              _reliabilityBadge(
+                s.manualReportReliability,
+                s.hasEnoughDataForReliability,
+              ),
+              const SizedBox(width: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: ratingColor(rating).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
@@ -2015,6 +2127,7 @@ class _FarmerPerformanceDetailScreenState
       ),
     );
   }
+
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2322,10 +2435,7 @@ class _DailyGraphCardState extends State<_DailyGraphCard> {
             ),
           ),
         const SizedBox(width: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 9.5, color: Colors.black54),
-        ),
+        Text(label, style: const TextStyle(fontSize: 9.5, color: Colors.black54)),
       ],
     );
   }
