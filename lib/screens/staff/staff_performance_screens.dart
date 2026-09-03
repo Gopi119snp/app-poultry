@@ -1184,67 +1184,6 @@ class _StaffPerformanceDetailScreenState
                           fontSize: 13.5,
                         ),
                       ),
-                      // ✅ NEW — is staff ke saare farmers ka average Data
-                      // Reliability, aur agar bahut kam hai to warning
-                      Builder(
-                        builder: (context) {
-                          final reliable = _summaries
-                              .where((s) => s.hasEnoughDataForReliability)
-                              .toList();
-                          if (reliable.isEmpty) return const SizedBox.shrink();
-                          final avgReliability =
-                              reliable.fold(
-                                0.0,
-                                (sum, s) => sum + s.manualReportReliability,
-                              ) /
-                              reliable.length;
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    _reliabilityBadge(avgReliability, true),
-                                    const SizedBox(width: 8),
-                                    const Expanded(
-                                      child: Text(
-                                        'Average Data Reliability (kitna % din asli manual data mila)',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.black45,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (avgReliability < 50)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 8),
-                                    child: Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: Colors.orange.shade50,
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(
-                                        '⚠️ Is staff ke farmers ka weight bahut kam manually report hota hai — '
-                                        'FCR/Weight Growth rating zyada tar sirf estimate se bani hai, isliye '
-                                        'poora bharosa mat karo. Field se asli weight report karwana shuru karein.',
-                                        style: TextStyle(
-                                          fontSize: 10.5,
-                                          height: 1.4,
-                                          color: Colors.orange.shade900,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
                       const SizedBox(height: 12),
                       Row(
                         children: [

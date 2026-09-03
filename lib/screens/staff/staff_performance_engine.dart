@@ -355,8 +355,7 @@ FarmerBatchSummary? _computeBatchSummary(
 
     if (type == 'cost') {
       final mort = int.tryParse(e['mortality']?.toString() ?? '') ?? 0;
-      if (mort != 0)
-        mortalityByDay[dayNum] = (mortalityByDay[dayNum] ?? 0) + mort;
+      if (mort != 0) mortalityByDay[dayNum] = (mortalityByDay[dayNum] ?? 0) + mort;
       totalMortality += mort;
 
       final wt = double.tryParse(e['weight']?.toString() ?? '') ?? 0.0;
@@ -372,8 +371,7 @@ FarmerBatchSummary? _computeBatchSummary(
       final rf = (e['returnFeedKg'] is num)
           ? (e['returnFeedKg'] as num).toDouble()
           : 0.0;
-      if (rf != 0)
-        returnFeedByDay[dayNum] = (returnFeedByDay[dayNum] ?? 0) + rf;
+      if (rf != 0) returnFeedByDay[dayNum] = (returnFeedByDay[dayNum] ?? 0) + rf;
     } else if (type == 'sale') {
       // Sale ke baad bhi weight/mortality tracking calculation ke liye
       // koi extra kaam nahi — biomass 'live chicks' se hi handle ho jaata
@@ -608,7 +606,8 @@ Future<CompanyAverageMetrics> computeCompanyAverageMetrics({
   final double avgFcr =
       summaries.fold(0.0, (s, e) => s + e.finalFcr) / summaries.length;
   final double avgMortality =
-      summaries.fold(0.0, (s, e) => s + e.finalMortalityPct) / summaries.length;
+      summaries.fold(0.0, (s, e) => s + e.finalMortalityPct) /
+      summaries.length;
   final double avgWeightGrowth =
       summaries.fold(0.0, (s, e) => s + e.finalWeightGrowthPct) /
       summaries.length;
@@ -620,6 +619,7 @@ Future<CompanyAverageMetrics> computeCompanyAverageMetrics({
     sampleCount: summaries.length,
   );
 }
+
 
 Future<List<EmployeeFarmerProfit>> computeEmployeeFarmersProfit({
   required List<Map<String, dynamic>> farmers,
@@ -660,9 +660,7 @@ Future<List<EmployeeFarmerProfit>> computeEmployeeFarmersProfit({
 
   List<Map<String, dynamic>> feedStock = [];
   try {
-    feedStock = List<Map<String, dynamic>>.from(
-      await ensureFeedStockMigrated(),
-    );
+    feedStock = List<Map<String, dynamic>>.from(await ensureFeedStockMigrated());
   } catch (_) {}
 
   List<Map<String, dynamic>> medStock = [];
@@ -764,13 +762,11 @@ Future<List<EmployeeFarmerProfit>> computeEmployeeFarmersProfit({
     try {
       for (final rawE in (json.decode(otherJson) as List)) {
         final e = Map<String, dynamic>.from(rawE);
-        final d =
-            parseDdMmYyyy(e['date']?.toString()) ??
+        final d = parseDdMmYyyy(e['date']?.toString()) ??
             DateTime.tryParse(e['date']?.toString() ?? '');
         if (d == null) continue;
         final amt = (e['amount'] as num?)?.toDouble() ?? 0.0;
-        monthlyOpExpense[_monthKey(d)] =
-            (monthlyOpExpense[_monthKey(d)] ?? 0) + amt;
+        monthlyOpExpense[_monthKey(d)] = (monthlyOpExpense[_monthKey(d)] ?? 0) + amt;
       }
     } catch (_) {}
   }
@@ -781,13 +777,11 @@ Future<List<EmployeeFarmerProfit>> computeEmployeeFarmersProfit({
     try {
       for (final rawE in (json.decode(labourJson) as List)) {
         final e = Map<String, dynamic>.from(rawE);
-        final d =
-            parseDdMmYyyy(e['date']?.toString()) ??
+        final d = parseDdMmYyyy(e['date']?.toString()) ??
             DateTime.tryParse(e['date']?.toString() ?? '');
         if (d == null) continue;
         final amt = (e['totalAmount'] as num?)?.toDouble() ?? 0.0;
-        monthlyOpExpense[_monthKey(d)] =
-            (monthlyOpExpense[_monthKey(d)] ?? 0) + amt;
+        monthlyOpExpense[_monthKey(d)] = (monthlyOpExpense[_monthKey(d)] ?? 0) + amt;
       }
     } catch (_) {}
   }
@@ -803,8 +797,7 @@ Future<List<EmployeeFarmerProfit>> computeEmployeeFarmersProfit({
         if ((e['type'] ?? '').toString().toLowerCase() != 'sale') continue;
         final d = parseDdMmYyyy(e['date']?.toString());
         if (d == null) continue;
-        final kg =
-            double.tryParse(e['totalWeightSold']?.toString() ?? '') ?? 0.0;
+        final kg = double.tryParse(e['totalWeightSold']?.toString() ?? '') ?? 0.0;
         if (kg <= 0) continue;
         monthlyKgSold[_monthKey(d)] = (monthlyKgSold[_monthKey(d)] ?? 0) + kg;
       }
@@ -899,8 +892,7 @@ Future<List<EmployeeFarmerProfit>> computeEmployeeFarmersProfit({
       if (!medInProd) farmerPayout -= medAmt.billed;
       if (farmerPayout < 0) farmerPayout = 0;
 
-      final trueTotal =
-          totalSaleMoney -
+      final trueTotal = totalSaleMoney -
           chicksAmt.cost -
           feedAmt.cost -
           medAmt.cost -
