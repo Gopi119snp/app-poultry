@@ -7,6 +7,48 @@ import 'staff_performance_benchmark_screen.dart';
 
 const Color _spGreen = Color(0xFF1B5E20);
 
+// ✅ NEW — Data Reliability Score ke liye color/label helpers
+Color _reliabilityColor(double pct) {
+  if (pct >= 80) return Colors.green.shade700;
+  if (pct >= 50) return Colors.amber.shade800;
+  return Colors.red.shade700;
+}
+
+String _reliabilityLabel(double pct) =>
+    '📋 ${pct.toStringAsFixed(0)}% Reliable';
+
+Widget _reliabilityBadge(double pct, bool hasEnoughData) {
+  if (!hasEnoughData) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        '📋 Data kam hai',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey.shade600,
+        ),
+      ),
+    );
+  }
+  final color = _reliabilityColor(pct);
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(
+      _reliabilityLabel(pct),
+      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+    ),
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 🎚️ BATCH SCOPE SELECTOR — Owner yahi decide karta hai ki report kis data
 // par based ho (Current batch / All batches / Last N batches)
@@ -159,6 +201,7 @@ class _StaffRanking {
   final double totalProfit;
   final double? profitPerChick; // null = chicks data hi nahi (rank nahi milegi)
   final List<PerformanceTrendAlert> trendAlerts; // ✅ NEW
+  final double? avgReliability; // ✅ NEW — null = itna data nahi hai
 
   const _StaffRanking({
     required this.employee,
@@ -170,6 +213,7 @@ class _StaffRanking {
     required this.totalProfit,
     required this.profitPerChick,
     required this.trendAlerts,
+    required this.avgReliability,
   });
 }
 
@@ -285,6 +329,18 @@ class _StaffPerformanceOverviewScreenState
       final totalProfit = profits.fold(0.0, (s, p) => s + p.trueTotalProfit);
       final profitPerChick = totalChicks > 0 ? totalProfit / totalChicks : null;
 
+      // ✅ NEW — is staff ke reliable-data-wale farmers ka average score
+      final reliableSummaries = summaries
+          .where((s) => s.hasEnoughDataForReliability)
+          .toList();
+      final double? avgReliability = reliableSummaries.isEmpty
+          ? null
+          : reliableSummaries.fold(
+                  0.0,
+                  (sum, s) => sum + s.manualReportReliability,
+                ) /
+                reliableSummaries.length;
+
       rankings.add(
         _StaffRanking(
           employee: emp,
@@ -296,6 +352,7 @@ class _StaffPerformanceOverviewScreenState
           totalProfit: totalProfit,
           profitPerChick: profitPerChick,
           trendAlerts: trendAlerts,
+          avgReliability: avgReliability,
         ),
       );
     }
@@ -525,6 +582,12 @@ class _StaffPerformanceOverviewScreenState
                     ],
                   ),
                 ),
+                // ✅ NEW — Data Reliability quick badge
+                if (r.avgReliability != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: _reliabilityBadge(r.avgReliability!, true),
+                  ),
                 Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
               ],
             ),
@@ -1120,6 +1183,67 @@ class _StaffPerformanceDetailScreenState
                           fontWeight: FontWeight.bold,
                           fontSize: 13.5,
                         ),
+                      ),
+                      // ✅ NEW — is staff ke saare farmers ka average Data
+                      // Reliability, aur agar bahut kam hai to warning
+                      Builder(
+                        builder: (context) {
+                          final reliable = _summaries
+                              .where((s) => s.hasEnoughDataForReliability)
+                              .toList();
+                          if (reliable.isEmpty) return const SizedBox.shrink();
+                          final avgReliability =
+                              reliable.fold(
+                                0.0,
+                                (sum, s) => sum + s.manualReportReliability,
+                              ) /
+                              reliable.length;
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    _reliabilityBadge(avgReliability, true),
+                                    const SizedBox(width: 8),
+                                    const Expanded(
+                                      child: Text(
+                                        'Average Data Reliability (kitna % din asli manual data mila)',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.black45,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (avgReliability < 50)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange.shade50,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Text(
+                                        '⚠️ Is staff ke farmers ka weight bahut kam manually report hota hai — '
+                                        'FCR/Weight Growth rating zyada tar sirf estimate se bani hai, isliye '
+                                        'poora bharosa mat karo. Field se asli weight report karwana shuru karein.',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          height: 1.4,
+                                          color: Colors.orange.shade900,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -1835,6 +1959,12 @@ class _FarmerPerformanceDetailScreenState
                   ),
                 ),
               ),
+              // ✅ NEW — Data Reliability badge
+              _reliabilityBadge(
+                s.manualReportReliability,
+                s.hasEnoughDataForReliability,
+              ),
+              const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(

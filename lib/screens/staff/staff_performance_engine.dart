@@ -141,6 +141,29 @@ class FarmerBatchSummary {
       );
 
   // ═══════════════════════════════════════════════════════════════════════
+  // 📋 DATA RELIABILITY SCORE — kitne % din ka weight/FCR data ASAL MEIN
+  // manually report hua (na ki sirf standard curve se estimate). Mortality
+  // ismein nahi aati kyunki wo hamesha hi actual/reported hoti hai.
+  //
+  // Ye batata hai ki FCR/Weight Growth ki rating (Achha/Average/Kharab)
+  // par kitna bharosa kiya jaaye — agar zyada tar din auto-estimate se
+  // chale hain, to rating farmer ki asal performance nahi, sirf ek
+  // andaza reflect karti hai.
+  // ═══════════════════════════════════════════════════════════════════════
+  double get manualReportReliability {
+    final real = dailyPoints.where((p) => p.day > 0).toList();
+    if (real.isEmpty) return 0.0;
+    final manualCount = real.where((p) => p.weightIsManual).length;
+    return (manualCount / real.length) * 100;
+  }
+
+  // Bahut kam din ka data ho (jaise batch abhi 1-2 din ka hi hai) to
+  // reliability % khud hi meaningless ho jaata hai — UI isko dikha ke
+  // "itna kam data hai" jaisa note de sakti hai.
+  bool get hasEnoughDataForReliability =>
+      dailyPoints.where((p) => p.day > 0).length >= 3;
+
+  // ═══════════════════════════════════════════════════════════════════════
   // ⚠️ DECLINE TREND DETECTION — batch ke apne hi daily data se nikalta hai
   // (koi purani history save karne ki zaroorat nahi). Batch ke BEECH ke
   // performance ko ABHI (latest/final) ke performance se compare karta hai

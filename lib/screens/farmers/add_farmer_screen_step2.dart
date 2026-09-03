@@ -274,28 +274,35 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
     );
     // 🛑 END NAYA CODE
 
-    final companyId = await SessionService.companyId;
-    if (companyId != null) {
-      final companyName = await SessionService.companyName ?? '';
-      // ✅ Multi-company support — is farmer ko is company ke andar
-      // phone-searchable banata hai (collection-group index). Purana
-      // global registerPhoneLookup() yahan jaanbujh ke NAHI use kar
-      // rahe, kyunki wo sirf ek hi company store kar sakta tha — agar
-      // yahi number kisi doosri company mein bhi farmer hota, to wo
-      // registration overwrite ho jaata (login conflict). Naya index
-      // har company ke andar alag document mein store hota hai.
-      await CompanyStore.instance.registerFarmerPhoneIndex(
-        companyId: companyId,
-        phone: phone as String,
-        farmerId: farmerData['id'] as String,
-        farmerName: widget.step1Data['name'] as String? ?? '',
-        companyName: companyName,
-      );
+    // 🛑 FIX: Ye Firestore wali network call try-catch mein le li hai.
+    // Farmer ka data upar already local storage mein save ho chuka hai —
+    // agar ye phone-index wali call slow ho, fail ho jaaye, ya koi
+    // exception de (internet issue, permission, etc.), to bhi registration
+    // process atakna nahi chahiye. Pehle ye call bina try-catch ke thi,
+    // isliye agar ye fail/hang hoti thi to neeche wali setState(false)
+    // line kabhi chalti hi nahi thi — button hamesha spin karta reh jaata
+    // tha, jabki farmer already save ho chuka hota tha.
+    try {
+      final companyId = await SessionService.companyId;
+      if (companyId != null) {
+        final companyName = await SessionService.companyName ?? '';
+        await CompanyStore.instance.registerFarmerPhoneIndex(
+          companyId: companyId,
+          phone: phone as String,
+          farmerId: farmerData['id'] as String,
+          farmerName: widget.step1Data['name'] as String? ?? '',
+          companyName: companyName,
+        );
+      }
+    } catch (e) {
+      // Farmer ka record already save ho chuka hai — sirf uska
+      // phone-search index nahi ban paya. Silently log karo, user
+      // ka flow rokna zaroori nahi.
+      debugPrint('registerFarmerPhoneIndex failed (non-fatal): $e');
     }
 
-    setState(() => _isLoading = false);
-
     if (!mounted) return;
+    setState(() => _isLoading = false);
 
     Get.snackbar(
       '✅ Farmer Registered!',

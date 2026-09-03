@@ -763,21 +763,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               color: Colors.orange.shade700,
             ),
 
-            const SizedBox(height: 16),
-
-            _sectionCard(
-              title: '⭐ Subscription',
-              children: [
-                _infoRow(Icons.timer_rounded, 'Plan', '7 Din Free Trial'),
-                _divider(),
-                _infoRow(
-                  Icons.currency_rupee_rounded,
-                  'Baad Mein',
-                  '₹200/farmer/month',
-                ),
-              ],
-            ),
-
+            // Subscription section removed, replaced by single SizedBox
             const SizedBox(height: 16),
 
             _sectionCard(

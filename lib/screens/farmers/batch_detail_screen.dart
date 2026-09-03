@@ -2224,6 +2224,60 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     );
   }
 
+  // ================================================================
+  // ✅ NAYA METHOD: Size classification choice dialog for Rule 1
+  // ================================================================
+  Future<String?> _showSizeClassificationChoiceDialog({
+    required bool autoIsBigSize,
+    required double weightUsedForAuto,
+  }) {
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Size Classification',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Calculated Average Weight: ${weightUsedForAuto.toStringAsFixed(3)} KG',
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Automatic ke hisaab se: ${autoIsBigSize ? "Big Size" : "Small Size"}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Kaise classify karna hai?',
+              style: TextStyle(fontSize: 12.5),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'auto'),
+            child: const Text('✅ Automatic Use Karo'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'manual_small'),
+            child: const Text('Manual: Small Size'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'manual_big'),
+            child: const Text('Manual: Big Size'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _generateAndShowSettlementRasid({
     required int totalFeedBags,
     required double totalFeedKg,
@@ -2249,20 +2303,51 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       fallback: latestAvgWeight,
     );
 
+    // ✅ FIX — Rasid mein "Avg Bird Weight (Last)" ab Sale-weighted average
+    // (Total Weight Sold ÷ Total Chicks Sold) dikhayega, Flock Record ke
+    // sample-estimate ki jagah — kyunki Sale ka data hi asli/accurate hai
+    // jispar payment nikalta hai. Flock Record sirf ek estimate hota hai
+    // (kuch chicks utha ke weight liya), Rasid ke liye sirf sach wala number
+    // use hona chahiye.
+    double rasidAvgWeight = sizeClassificationWeight;
+
     if (_appliedRuleId == 1) {
-      bool isBigSize = sizeClassificationWeight > 1.2;
-      _showRule1SettlementRasid(
-        isBigSize: isBigSize,
-        initialChicks: initialChicks,
-        totalFeedBags: totalFeedBags,
-        totalFeedKg: totalFeedKg,
-        totalMortality: totalMortality,
-        totalChicksSold: totalChicksSold,
-        totalWeightSoldKg: totalWeightSoldKg,
-        totalSaleMoney: totalSaleMoney,
-        totalMedicineExpense: totalMedicineExpense,
-        latestAvgWeight: latestAvgWeight,
-      );
+      bool isBigSize = sizeClassificationWeight > 1.2; // Auto default
+      String classificationMethod = 'auto';
+      String autoCalculatedSizeLabel = isBigSize ? 'big' : 'small';
+
+      // ✅ NAYA — Auto ya Manual choose karne ka option
+      _showSizeClassificationChoiceDialog(
+        autoIsBigSize: isBigSize,
+        weightUsedForAuto: sizeClassificationWeight,
+      ).then((choice) {
+        if (choice == null)
+          return; // user ne dialog cancel kiya — kuch mat karo
+
+        if (choice == 'manual_big') {
+          isBigSize = true;
+          classificationMethod = 'manual';
+        } else if (choice == 'manual_small') {
+          isBigSize = false;
+          classificationMethod = 'manual';
+        }
+        // choice == 'auto' → kuch nahi badla, upar wali auto value hi rahegi
+
+        _showRule1SettlementRasid(
+          isBigSize: isBigSize,
+          classificationMethod: classificationMethod,
+          autoCalculatedSizeLabel: autoCalculatedSizeLabel,
+          initialChicks: initialChicks,
+          totalFeedBags: totalFeedBags,
+          totalFeedKg: totalFeedKg,
+          totalMortality: totalMortality,
+          totalChicksSold: totalChicksSold,
+          totalWeightSoldKg: totalWeightSoldKg,
+          totalSaleMoney: totalSaleMoney,
+          totalMedicineExpense: totalMedicineExpense,
+          latestAvgWeight: rasidAvgWeight, // ✅ ab sale-weighted average
+        );
+      });
     } else if (_appliedRuleId == 2) {
       _showRule2SettlementRasid(
         initialChicks: initialChicks,
@@ -2273,7 +2358,7 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         totalWeightSoldKg: totalWeightSoldKg,
         totalSaleMoney: totalSaleMoney,
         totalMedicineExpense: totalMedicineExpense,
-        latestAvgWeight: latestAvgWeight,
+        latestAvgWeight: rasidAvgWeight, // ✅ yahan bhi
       );
     }
   }
@@ -2334,6 +2419,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   // ── RULE 1 ────────────────────────────────────────────────────────────────
   void _showRule1SettlementRasid({
     required bool isBigSize,
+    required String classificationMethod,
+    required String autoCalculatedSizeLabel,
     required int initialChicks,
     required int totalFeedBags,
     required double totalFeedKg,
@@ -2449,6 +2536,10 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       'finalCommPerKg': finalComm,
       'grossEarning': grossEarning,
       'netPayout': netPayout,
+      // ✅ NEW AUDIT FIELDS FOR SIZE CLASSIFICATION
+      'sizeClassificationMethod': classificationMethod,
+      'autoCalculatedSize': autoCalculatedSizeLabel,
+      if (classificationMethod == 'manual') 'overriddenBy': widget.userRole,
       'generatedAt': DateTime.now().toIso8601String(),
     };
 

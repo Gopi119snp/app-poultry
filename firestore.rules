@@ -36,5 +36,33 @@ service cloud.firestore {
           || (isSignedIn() && request.auth.uid == companyId);
       }
     }
+
+    // Coupons — sirf Cloud Functions (Admin SDK) inhe touch karte hain.
+    // Explicit 'false' rakha hai defense-in-depth ke liye; bina isके bhi
+    // ye collection default-deny se already surakshit thi (koi rule match
+    // nahi karta to Firestore khud deny kar deta hai), lekin explicit
+    // rakhna future-proof hai agar kabhi koi wildcard rule add ho jaye.
+    match /coupons/{code} {
+      allow read, write: if false;
+    }
+
+    // Payment dedupe lock — sirf activateSubscriptionForPayment
+    // (Cloud Function) ke liye. Client isse kabhi touch nahi karta.
+    match /processed_razorpay_payments/{paymentId} {
+      allow read, write: if false;
+    }
+
+    // Email OTPs — sirf sendEmailOtp / verifyEmailOtp Cloud Functions
+    // ke liye. Client seedha padh/likh nahi sakta.
+    match /email_otps/{email} {
+      allow read, write: if false;
+    }
+
+    // Password reset tokens — sirf resetPasswordAfterOtp /
+    // verifyEmailOtpForReset Cloud Functions ke liye.
+    match /password_reset_tokens/{token} {
+      allow read, write: if false;
+    }
+
   }
 }

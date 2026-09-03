@@ -1104,6 +1104,42 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
       return;
     }
 
+    // ✅ FIX — Remaining Feed ek IMPOSSIBLE value nahi ho sakti. Agar farmer
+    // itna "remaining" bataye jo ab tak ki total delivery se hi zyada hai,
+    // to iska matlab ya to delivery entry missing hai, ya reported number
+    // galat hai. Aisi entry ko save hi nahi hone denge — jaise weight ke
+    // liye 8 KG wali sanity check hai.
+    if (remainingVal != null) {
+      double totalDeliveredKg = 0.0;
+      double totalReturnedKg = 0.0;
+      for (final e in _localDailyEntries) {
+        final type = e['type'].toString().toLowerCase();
+        if (type == 'cost') {
+          final bags = int.tryParse(e['feed'].toString()) ?? 0;
+          totalDeliveredKg += bags * _fallbackKgPerBag;
+        } else if (type == 'returnfeed') {
+          totalReturnedKg += (e['returnFeedKg'] is num)
+              ? (e['returnFeedKg'] as num).toDouble()
+              : double.tryParse(e['returnFeedKg'].toString()) ?? 0.0;
+        }
+      }
+      final double reportedRemainingKg = remainingVal * _fallbackKgPerBag;
+      final double impliedConsumedKg =
+          totalDeliveredKg - totalReturnedKg - reportedRemainingKg;
+
+      if (impliedConsumedKg < 0) {
+        _showError(
+          'Ye value possible nahi hai. Ab tak sirf '
+          '${totalDeliveredKg.toStringAsFixed(1)} KG feed deliver hui hai '
+          '(return: ${totalReturnedKg.toStringAsFixed(1)} KG), lekin aap '
+          '${reportedRemainingKg.toStringAsFixed(1)} KG remaining bata rahe '
+          'hain. Pehle Office Manager se delivery entry check karein ya '
+          'sahi remaining value daalen.',
+        );
+        return;
+      }
+    }
+
     int currentTotalFeed = 0;
     int totalMortalitySoFar = 0;
     int totalChicksSoldSoFar = 0;
@@ -1526,7 +1562,7 @@ class _DailyUpdateListScreenState extends State<DailyUpdateListScreen>
                             Expanded(
                               child: Text(
                                 'Kisi bhi din ki ROW par TAP karke Mortality/Weight/Feed add karo. '
-                                'Side mein scroll karke saare columns bhi dekh sakte ho.',
+                                'Side mein scroll kar ke saare columns bhi dekh sakte ho.',
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   color: Colors.green.shade900,
