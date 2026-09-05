@@ -592,6 +592,7 @@ class _HomeScreenState extends State<HomeScreen>
     String nickName = '',
     String addedByRole = 'Owner',
     String addedByName = '',
+    DateTime? purchaseDate, // ✅ NEW
   }) async {
     await addOrUpdateMedicinePurchase(
       name: name,
@@ -602,6 +603,7 @@ class _HomeScreenState extends State<HomeScreen>
       nickName: nickName,
       addedByName: addedByName.isEmpty ? widget.ownerName : addedByName,
       addedByRole: addedByRole,
+      purchaseDate: purchaseDate, // ✅ NEW
     );
     await _loadStockData();
   }
@@ -788,6 +790,7 @@ class _HomeScreenState extends State<HomeScreen>
     String freeType = 'Number';
     final rateCtrl = TextEditingController();
     final transportCtrl = TextEditingController();
+    DateTime selectedPurchaseDate = DateTime.now(); // ✅ NEW
 
     return showDialog(
       context: context,
@@ -862,6 +865,16 @@ class _HomeScreenState extends State<HomeScreen>
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ✅ NEW: Purchase Date — default aaj
+                    buildDatePickerField(
+                      context: context,
+                      selectedDate: selectedPurchaseDate,
+                      label: 'Purchase Date',
+                      onChanged: (d) =>
+                          setModalState(() => selectedPurchaseDate = d),
                     ),
                     const SizedBox(height: 24),
                     const Text(
@@ -1147,7 +1160,7 @@ class _HomeScreenState extends State<HomeScreen>
                         'effectiveRate': effectiveRate,
                         'addedByRole': addedByRole,
                         'addedByName': addedByName,
-                        'date': DateTime.now().toIso8601String(),
+                        'date': selectedPurchaseDate.toIso8601String(),
                       });
 
                       await CompanyStore.instance.setString(
@@ -1209,6 +1222,8 @@ class _HomeScreenState extends State<HomeScreen>
       return b * p;
     }
 
+    DateTime selectedPurchaseDate = DateTime.now(); // ✅ NEW
+
     return showDialog(
       context: context,
       barrierDismissible: false,
@@ -1262,6 +1277,16 @@ class _HomeScreenState extends State<HomeScreen>
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ✅ NEW: Purchase Date — default aaj
+                    buildDatePickerField(
+                      context: context,
+                      selectedDate: selectedPurchaseDate,
+                      label: 'Purchase Date',
+                      onChanged: (d) =>
+                          setModalState(() => selectedPurchaseDate = d),
                     ),
                     const SizedBox(height: 20),
                     _feedTypeSection(
@@ -1423,6 +1448,7 @@ class _HomeScreenState extends State<HomeScreen>
                           company: company,
                           addedByName: addedByName,
                           addedByRole: addedByRole,
+                          purchaseDate: selectedPurchaseDate, // ✅ NEW
                         );
                       }
                       if (gBags > 0) {
@@ -1433,6 +1459,7 @@ class _HomeScreenState extends State<HomeScreen>
                           company: company,
                           addedByName: addedByName,
                           addedByRole: addedByRole,
+                          purchaseDate: selectedPurchaseDate, // ✅ NEW
                         );
                       }
                       if (fBags > 0) {
@@ -1443,6 +1470,7 @@ class _HomeScreenState extends State<HomeScreen>
                           company: company,
                           addedByName: addedByName,
                           addedByRole: addedByRole,
+                          purchaseDate: selectedPurchaseDate, // ✅ NEW
                         );
                       }
 
@@ -1487,6 +1515,7 @@ class _HomeScreenState extends State<HomeScreen>
     final medActualPriceCtrl = TextEditingController();
     final medFarmerPriceCtrl = TextEditingController();
     String selectedMedUnit = 'ml';
+    DateTime selectedPurchaseDate = DateTime.now(); // ✅ NEW
 
     return showDialog(
       context: context,
@@ -1608,6 +1637,16 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         );
                       }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ✅ NEW: Purchase Date — default aaj
+                    buildDatePickerField(
+                      context: context,
+                      selectedDate: selectedPurchaseDate,
+                      label: 'Purchase Date',
+                      onChanged: (d) =>
+                          setModalState(() => selectedPurchaseDate = d),
                     ),
                     const SizedBox(height: 20),
                     Container(
@@ -1746,6 +1785,7 @@ class _HomeScreenState extends State<HomeScreen>
                         nickName: medNickNameCtrl.text.trim(),
                         addedByRole: addedByRole,
                         addedByName: addedByName,
+                        purchaseDate: selectedPurchaseDate, // ✅ NEW
                       );
 
                       if (!mounted) return;

@@ -2,6 +2,7 @@ import 'dart:async'; // ✅ FIX — naya import, StreamController ke liye
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart'; // 🛑 NAYA — resolvePhoneLookup call karne ke liye
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,7 +15,11 @@ import 'session_service.dart';
 /// Firestore layout:
 ///   companies/{companyId}/profile        → owner/company metadata
 ///   companies/{companyId}/data/main      → farmers, stock, settings, history
-///   phone_lookup/{10digitPhone}          → fast login routing
+///   phone_lookup/{10digitPhone}          → fast login routing (client se
+///                                           read nahi hoti — sirf
+///                                           resolvePhoneLookup Cloud
+///                                           Function padhti hai, dekho
+///                                           lookupPhone() neeche)
 ///   users/{firebaseAuthUid}              → auth uid → companyId + role
 class CompanyStore {
   CompanyStore._();
@@ -75,6 +80,12 @@ class CompanyStore {
     'minLiftingDays',
     'maxLiftingDays',
     'appliedCompanyRuleId',
+    // ✅ NEW — paid-plan ki expiry date, millis-since-epoch mein. Firestore
+    // mein ye asal mein 'subscriptionExpiry' naam se Timestamp type mein
+    // store hoti hai (billing website ke Cloud Function se) — isliye
+    // generic sync loop isse handle nahi kar sakta. _writeDataDocToPrefs
+    // mein alag se convert karke isi naam se save hota hai.
+    'subscriptionExpiryMs',
   };
 
   bool _hydrated = false;
@@ -288,12 +299,46 @@ class CompanyStore {
         });
   }
 
+  // 🛑 FIX — phone_lookup ab client se DIRECT Firestore read nahi hoti.
+  // Pehle yahan `_phoneLookup.doc(normalized).get()` seedha Firestore se
+  // padhta tha — jo login/forgot-password/company-farmer-check flows mein
+  // LOGIN SE PEHLE (user abhi signed-in nahi hota) call hota tha, aur
+  // firestore.rules ka "allow read: if isSignedIn()" hamesha permission-
+  // denied deta tha.
+  //
+  // Ab isके bajaye secure Cloud Function `resolvePhoneLookup` call hoti
+  // hai, jo Admin SDK se padhti hai (security rules bypass, koi auth
+  // zaroorat nahi) aur sirf zaroori fields wapas bhejti hai. Return type
+  // aur shape bilkul same rakha hai (companyId/role/authEmail/displayName
+  // wala Map), taaki isko call karne wale saare existing functions
+  // (AuthService ke login/registration methods, forgot-password flow)
+  // bina kisi badlaav ke chalte rahein.
   Future<Map<String, dynamic>?> lookupPhone(String phone) async {
     if (!FirebaseBootstrap.isReady) return null;
     final normalized = _normalizePhone(phone);
     if (normalized.isEmpty) return null;
-    final snap = await _phoneLookup.doc(normalized).get();
-    return snap.data();
+
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'resolvePhoneLookup',
+      );
+      final result = await callable.call<Map<String, dynamic>>({
+        'phone': normalized,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
+
+      if (data['exists'] != true) return null;
+
+      return {
+        'companyId': data['companyId'],
+        'role': data['role'],
+        'authEmail': data['authEmail'],
+        'displayName': data['displayName'],
+      };
+    } catch (e) {
+      debugPrint('[CompanyStore] lookupPhone (resolvePhoneLookup) failed: $e');
+      return null;
+    }
   }
 
   Future<void> linkAuthUser({
@@ -370,6 +415,10 @@ class CompanyStore {
       if (v != null) payload[key] = v;
     }
     for (final key in intKeys) {
+      // ✅ NOTE — 'subscriptionExpiryMs' website/server-controlled hai,
+      // isliye app kabhi ise khud cloud par push nahi karta (server hi
+      // asli 'subscriptionExpiry' Timestamp likhta hai). Ye loop harmless
+      // hai kyunki app kabhi is key ko local prefs mein set hi nahi karta.
       final v = prefs.getInt(key);
       if (v != null) payload[key] = v;
     }
@@ -485,6 +534,20 @@ class CompanyStore {
       } else if (data.containsKey(key) && data[key] is num) {
         await prefs.setInt(key, (data[key] as num).toInt());
       }
+    }
+
+    // ✅ NEW — 'subscriptionExpiry' billing website ke Cloud Function se
+    // Firestore Timestamp type mein aata hai (naam alag hai aur type bhi
+    // String/int nahi hai), isliye upar wale generic loops isse pakड़ nahi
+    // paate. Yahan alag se handle karke millis-since-epoch int banake
+    // 'subscriptionExpiryMs' naam se save karte hain — PermissionService
+    // isi naye field ko expiry-warning banner ke liye use karta hai.
+    final rawExpiry = data['subscriptionExpiry'];
+    if (rawExpiry is Timestamp) {
+      await prefs.setInt(
+        'subscriptionExpiryMs',
+        rawExpiry.millisecondsSinceEpoch,
+      );
     }
   }
 

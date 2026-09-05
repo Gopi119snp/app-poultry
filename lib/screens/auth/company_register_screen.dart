@@ -10,6 +10,7 @@ import '../../services/auth_service.dart';
 import '../../services/company_store.dart';
 import '../../services/otp_service.dart';
 import '../../services/app_lock_service.dart';
+import '../../widgets/subscription_gate.dart'; // 🛑 NAYA — SubscriptionGate import
 
 class CompanyRegisterScreen extends StatefulWidget {
   final String industry;
@@ -518,10 +519,17 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
     await Future.delayed(const Duration(milliseconds: 800));
     if (!mounted) return;
 
+    // 🛑 NAYA — SubscriptionGate se wrap kiya. Naye company ke liye trial
+    // abhi hi shuru hua hai (7 din), isliye ye normally turant lock nahi
+    // dikhayega — lekin consistency ke liye har HomeScreen/FarmerDashboard
+    // entry point SubscriptionGate se hi guzarna chahiye, koi exception
+    // nahi honi chahiye.
     await AppLockService.instance.routeAfterAuth(
-      HomeScreen(
-        ownerName: _ownerNameController.text,
-        companyName: _companyNameController.text,
+      SubscriptionGate(
+        child: HomeScreen(
+          ownerName: _ownerNameController.text,
+          companyName: _companyNameController.text,
+        ),
       ),
     );
   }

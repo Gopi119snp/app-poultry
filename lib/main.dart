@@ -146,11 +146,23 @@ class _SplashScreenState extends State<SplashScreen> {
       // use karenge, jaha permission-based system se access control hota
       // hai. Sirf Company Farmer ka alag dashboard/login-flow hai, isliye
       // wahi separate rakha hai.
+      //
+      // 🛑 NAYA — Company Farmer bhi ab SubscriptionGate se wrap hota hai.
+      // Pehle sirf default case (Owner/Manager) wrap hota tha — matlab
+      // agar company ka subscription expire ho jaaye, Company Farmer ko
+      // phir bhi FarmerDashboard ka poora access milta rehta tha. Ab
+      // subscription expire hone par Company Farmer bhi wahi neutral
+      // "Account Access Limited" screen dekhega, jaise Owner/Manager
+      // dekhte hain.
       switch (role.trim()) {
         case 'Company Farmer':
           Get.off(
-            () =>
-                FarmerDashboard(ownerName: ownerName, companyName: companyName),
+            () => SubscriptionGate(
+              child: FarmerDashboard(
+                ownerName: ownerName,
+                companyName: companyName,
+              ),
+            ),
           );
           break;
         default:

@@ -61,6 +61,14 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
   final _mortalityController = TextEditingController();
   final _dateController = TextEditingController();
 
+  // ✅ NEW: Feed ki apni alag date — sirf Feed Section (Flock Record) ke liye
+  final _feedDateController = TextEditingController();
+  DateTime _selectedFeedDate = DateTime.now();
+
+  // ✅ NEW: Medicine ki apni alag date
+  final _medicineDateController = TextEditingController();
+  DateTime _selectedMedicineDate = DateTime.now();
+
   // ── ✅ NEW: Feed ab 3 type mein — Starter / Grower / Finisher ───────────
   final _feedStarterBagsController = TextEditingController();
   final _feedStarterKgPerBagController = TextEditingController(text: '50.0');
@@ -207,6 +215,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     _dailyEntries = widget.batchData['dailyEntries'] ?? [];
     _liveBatchData = Map<String, dynamic>.from(widget.batchData);
     _dateController.text = _formatDate(DateTime.now());
+    _feedDateController.text = _formatDate(DateTime.now()); // ✅ NEW
+    _medicineDateController.text = _formatDate(DateTime.now()); // ✅ NEW
     _loadPermissionFlags();
     _loadFreshBatchData();
     _initDownloadNotifications();
@@ -637,6 +647,8 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     _feedFinisherBagsController.dispose();
     _feedFinisherKgPerBagController.dispose();
     _dateController.dispose();
+    _feedDateController.dispose(); // ✅ NEW
+    _medicineDateController.dispose(); // ✅ NEW
     _buyerNameController.dispose();
     _soldChicksController.dispose();
     _totalWeightSoldController.dispose();
@@ -1039,11 +1051,13 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
   Future<void> _pickDate(
     BuildContext context,
-    StateSetter setDialogState,
-  ) async {
+    StateSetter setDialogState, {
+    DateTime? initialDateOverride, // ✅ NEW
+    void Function(DateTime picked)? onPicked, // ✅ NEW
+  }) async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
+      initialDate: initialDateOverride ?? _selectedDate,
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
       builder: (context, child) => Theme(
@@ -1055,8 +1069,12 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     );
     if (picked != null) {
       setDialogState(() {
-        _selectedDate = picked;
-        _dateController.text = _formatDate(picked);
+        if (onPicked != null) {
+          onPicked(picked);
+        } else {
+          _selectedDate = picked;
+          _dateController.text = _formatDate(picked);
+        }
       });
     }
   }
@@ -4172,6 +4190,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     _weightPhotoMismatch = false;
     _mortalityMismatchReason = null;
     _weightMismatchReason = null;
+    // ✅ NEW: Feed date har baar dialog khulte hi aaj ki date pe reset
+    _selectedFeedDate = DateTime.now();
+    _feedDateController.text = _formatDate(_selectedFeedDate);
 
     showDialog(
       context: context,
@@ -4200,21 +4221,6 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  GestureDetector(
-                    onTap: () => _pickDate(context, setDialogState),
-                    child: AbsorbPointer(
-                      child: TextField(
-                        controller: _dateController,
-                        decoration: const InputDecoration(
-                          labelText: 'Tareekh (Date) *',
-                          prefixIcon: Icon(Icons.date_range_rounded),
-                          suffixIcon: Icon(Icons.calendar_today, size: 18),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
                   // ═══════════════════════════════════════════════════════
                   // 🏢 SECTION 1 — FEED
                   // ✅ FIX — pehle yahan `widget.userRole == 'Owner' ||
@@ -4237,6 +4243,35 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
+
+                    // ✅ NEW: Feed Delivery Date — SIRF FEED KE LIYE
+                    GestureDetector(
+                      onTap: () => _pickDate(
+                        context,
+                        setDialogState,
+                        initialDateOverride: _selectedFeedDate,
+                        onPicked: (picked) {
+                          _selectedFeedDate = picked;
+                          _feedDateController.text = _formatDate(picked);
+                        },
+                      ),
+                      child: AbsorbPointer(
+                        child: TextField(
+                          controller: _feedDateController,
+                          decoration: const InputDecoration(
+                            labelText:
+                                'Feed Delivery Date * (Sirf Feed Ke Liye)',
+                            helperText:
+                                'Ye date sirf feed entry ke liye hai. Baaki records (weight/mortality/remaining feed) hamesha AAJ ki date se save honge.',
+                            helperMaxLines: 2,
+                            prefixIcon: Icon(Icons.local_shipping_rounded),
+                            suffixIcon: Icon(Icons.calendar_today, size: 18),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
                     _feedTypeInputBlock(
                       label: 'Starter Feed',
                       bagsCtrl: _feedStarterBagsController,
@@ -4280,6 +4315,13 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                         fontWeight: FontWeight.bold,
                         color: primaryGreen,
                         letterSpacing: 0.5,
+                      ),
+                    ),
+                    Text(
+                      'Ye entries hamesha AAJ (${_formatDate(DateTime.now())}) ki date se save hongi.',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -5211,6 +5253,9 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
     List<Map<String, dynamic>> stockMedicines = [];
     Map<String, dynamic>? matchedStockMed;
     bool isStockLinked = false;
+    // ✅ NEW: Medicine date har baar dialog khulte hi aaj ki date pe reset
+    _selectedMedicineDate = DateTime.now();
+    _medicineDateController.text = _formatDate(_selectedMedicineDate);
 
     showDialog(
       context: context,
@@ -5236,6 +5281,29 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ✅ NEW: Medicine Date — user set kar sakta hai
+                  GestureDetector(
+                    onTap: () => _pickDate(
+                      context,
+                      setDialogState,
+                      initialDateOverride: _selectedMedicineDate,
+                      onPicked: (picked) {
+                        _selectedMedicineDate = picked;
+                        _medicineDateController.text = _formatDate(picked);
+                      },
+                    ),
+                    child: AbsorbPointer(
+                      child: TextField(
+                        controller: _medicineDateController,
+                        decoration: const InputDecoration(
+                          labelText: 'Medicine Date *',
+                          prefixIcon: Icon(Icons.date_range_rounded),
+                          suffixIcon: Icon(Icons.calendar_today, size: 18),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: _medicineNameController,
                     onChanged: (val) async {
@@ -5515,18 +5583,23 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         double.tryParse(_feedGrowerKgPerBagController.text.trim()) ?? 50.0;
     double finisherKgPerBag =
         double.tryParse(_feedFinisherKgPerBagController.text.trim()) ?? 50.0;
-    String dateInput = _dateController.text.trim();
+    // ✅ CHANGED: Feed ki apni date, baaki records ki date hamesha AAJ
+    String feedDateInput = _feedDateController.text.trim().isNotEmpty
+        ? _feedDateController.text.trim()
+        : _formatDate(DateTime.now());
+    String otherDateInput = _formatDate(DateTime.now());
     String remainingFeedInput = _remainingFeedController.text.trim();
 
     bool anyFeedEntered =
         starterBagsInput.isNotEmpty ||
         growerBagsInput.isNotEmpty ||
         finisherBagsInput.isNotEmpty;
+    bool anyOtherEntered =
+        weightInput.isNotEmpty ||
+        mortalityInput.isNotEmpty ||
+        remainingFeedInput.isNotEmpty;
 
-    if (weightInput.isEmpty &&
-        mortalityInput.isEmpty &&
-        !anyFeedEntered &&
-        remainingFeedInput.isEmpty) {
+    if (!anyFeedEntered && !anyOtherEntered) {
       Get.snackbar(
         'Validation Error ⚠️',
         'Kripya kam se kam ek entry bharein!',
@@ -5606,23 +5679,48 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
       }
     }
 
-    int sameDateCostCount = existingEntries
-        .where(
-          (e) =>
-              e['type'].toString().toLowerCase() == 'cost' &&
-              e['date'].toString() == dateInput,
-        )
-        .length;
-    if (sameDateCostCount >= 3) {
-      Get.snackbar(
-        'Limit Reached ⚠️',
-        '$dateInput ko 3 cost entries pehle se save hain. Max 3 allowed!',
-        backgroundColor: Colors.orange.shade700,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(15),
-      );
-      return;
+    // ✅ CHANGED: Feed aur baaki records ke liye ALAG-ALAG same-date limit check
+    if (anyFeedEntered) {
+      int sameDateFeedCount = existingEntries
+          .where(
+            (e) =>
+                e['type'].toString().toLowerCase() == 'cost' &&
+                (e['isFeedEntry'] == true) &&
+                e['date'].toString() == feedDateInput,
+          )
+          .length;
+      if (sameDateFeedCount >= 3) {
+        Get.snackbar(
+          'Limit Reached ⚠️',
+          '$feedDateInput ko 3 feed entries pehle se save hain. Max 3 allowed!',
+          backgroundColor: Colors.orange.shade700,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(15),
+        );
+        return;
+      }
+    }
+    if (anyOtherEntered) {
+      int sameDateOtherCount = existingEntries
+          .where(
+            (e) =>
+                e['type'].toString().toLowerCase() == 'cost' &&
+                (e['isFeedEntry'] != true) &&
+                e['date'].toString() == otherDateInput,
+          )
+          .length;
+      if (sameDateOtherCount >= 3) {
+        Get.snackbar(
+          'Limit Reached ⚠️',
+          '$otherDateInput ko 3 entries pehle se save hain. Max 3 allowed!',
+          backgroundColor: Colors.orange.shade700,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(15),
+        );
+        return;
+      }
     }
 
     double starterKg = starterBags * starterKgPerBag;
@@ -5648,41 +5746,70 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
           'companyFarmers',
         );
         final farmersList = _safeDecodeList(farmersJson);
-        final String entryId = _generateEntryId(); // ✅ FIX #10 idempotency
-        final Map<String, dynamic> logEntry = {
-          'type': 'cost',
-          'entryId': entryId,
-          'date': dateInput, // transactionDate (user-selected)
-          'transactionDate': dateInput, // ✅ FIX #7
-          'createdAt': DateTime.now().toIso8601String(), // ✅ FIX #7
-          'weight': weightInput.isEmpty ? '0' : weightInput,
-          'mortality': mortalityInput.isEmpty ? '0' : mortalityInput,
-          'feed': feedVal.toString(),
-          'feedStarterBags': starterBags,
-          'feedGrowerBags': growerBags,
-          'feedFinisherBags': finisherBags,
-          'feedStarterKgPerBag': starterKgPerBag,
-          'feedGrowerKgPerBag': growerKgPerBag,
-          'feedFinisherKgPerBag': finisherKgPerBag,
-          'feedTotalKg': totalFeedKg,
-          // ✅ FIX — empty ("nahi bhara") ko '0' ("0 bags bache hain" ka
-          // genuine report) ke barabar mat maano. Isse pehle khali field
-          // bhi silently '0' ban jaati thi, aur Daily Update List mein
-          // "farmer ne 0 report kiya" samajh ke poora Feed Stock overwrite
-          // ho jaata tha. Ab empty string hi save hogi jab kuch nahi bhara.
-          'remainingFeed': remainingFeedInput,
-          'enteredBy': widget.userRole,
-          'timestamp': DateTime.now().toIso8601String(),
-          if (_mortalityPhotoBytes != null)
-            'mortalityPhotoBase64': base64Encode(_mortalityPhotoBytes!),
-          if (_weightPhotoBytes != null)
-            'weightPhotoBase64': base64Encode(_weightPhotoBytes!),
-          if (_remainingFeedPhotoBytes != null)
-            'remainingFeedPhotoBase64': base64Encode(_remainingFeedPhotoBytes!),
-          'hasMismatch': hasMismatch,
-          if (mismatchReasons.isNotEmpty)
-            'mismatchReason': mismatchReasons.join(' | '),
-        };
+
+        // ✅ NEW: Feed entry — apni set ki hui date ke saath
+        Map<String, dynamic>? feedLogEntry;
+        if (anyFeedEntered) {
+          feedLogEntry = {
+            'type': 'cost',
+            'isFeedEntry': true, // ✅ NEW flag
+            'entryId': _generateEntryId(),
+            'date': feedDateInput,
+            'transactionDate': feedDateInput,
+            'createdAt': DateTime.now().toIso8601String(),
+            'weight': '0',
+            'mortality': '0',
+            'feed': feedVal.toString(),
+            'feedStarterBags': starterBags,
+            'feedGrowerBags': growerBags,
+            'feedFinisherBags': finisherBags,
+            'feedStarterKgPerBag': starterKgPerBag,
+            'feedGrowerKgPerBag': growerKgPerBag,
+            'feedFinisherKgPerBag': finisherKgPerBag,
+            'feedTotalKg': totalFeedKg,
+            'remainingFeed': '',
+            'enteredBy': widget.userRole,
+            'timestamp': DateTime.now().toIso8601String(),
+          };
+        }
+
+        // ✅ NEW: Weight/Mortality/Remaining Feed entry — hamesha AAJ ki date
+        Map<String, dynamic>? otherLogEntry;
+        if (anyOtherEntered) {
+          otherLogEntry = {
+            'type': 'cost',
+            'isFeedEntry': false,
+            'entryId': _generateEntryId(),
+            'date': otherDateInput,
+            'transactionDate': otherDateInput,
+            'createdAt': DateTime.now().toIso8601String(),
+            'weight': weightInput.isEmpty ? '0' : weightInput,
+            'mortality': mortalityInput.isEmpty ? '0' : mortalityInput,
+            'feed': '0',
+            'feedStarterBags': 0,
+            'feedGrowerBags': 0,
+            'feedFinisherBags': 0,
+            'feedStarterKgPerBag': starterKgPerBag,
+            'feedGrowerKgPerBag': growerKgPerBag,
+            'feedFinisherKgPerBag': finisherKgPerBag,
+            'feedTotalKg': 0.0,
+            'remainingFeed': remainingFeedInput,
+            'enteredBy': widget.userRole,
+            'timestamp': DateTime.now().toIso8601String(),
+            if (_mortalityPhotoBytes != null)
+              'mortalityPhotoBase64': base64Encode(_mortalityPhotoBytes!),
+            if (_weightPhotoBytes != null)
+              'weightPhotoBase64': base64Encode(_weightPhotoBytes!),
+            if (_remainingFeedPhotoBytes != null)
+              'remainingFeedPhotoBase64': base64Encode(
+                _remainingFeedPhotoBytes!,
+              ),
+            'hasMismatch': hasMismatch,
+            if (mismatchReasons.isNotEmpty)
+              'mismatchReason': mismatchReasons.join(' | '),
+          };
+        }
+
         for (var farmerItem in farmersList) {
           if (farmerItem is! Map) continue;
           if (farmerItem['id'] == widget.farmerId) {
@@ -5697,13 +5824,17 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
                       .toString()
                       .toUpperCase();
                   if (status == 'COMPLETED' || status == 'CLOSED') {
-                    // ✅ FIX #2 — defence in depth even inside the lock
                     return;
                   }
                   batchItem['dailyEntries'] ??= [];
                   final entries = batchItem['dailyEntries'] as List;
-                  if (!_isDuplicateEntryId(entries, entryId)) {
-                    entries.add(logEntry);
+                  if (feedLogEntry != null &&
+                      !_isDuplicateEntryId(entries, feedLogEntry['entryId'])) {
+                    entries.add(feedLogEntry);
+                  }
+                  if (otherLogEntry != null &&
+                      !_isDuplicateEntryId(entries, otherLogEntry['entryId'])) {
+                    entries.add(otherLogEntry);
                   }
                   break;
                 }
@@ -5729,7 +5860,6 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
 
     if (!mounted) return;
 
-    // ✅ FIX #13 — only clear/close/celebrate on CONFIRMED success
     if (!farmerFound || !batchFound) {
       Get.snackbar(
         'Save Fail ❌',
@@ -6154,11 +6284,11 @@ class _BatchDetailScreenState extends State<BatchDetailScreen> {
         final Map<String, dynamic> medicineEntry = {
           'type': 'medicine',
           'entryId': entryId,
-          'date': _dateController.text.trim().isNotEmpty
-              ? _dateController.text.trim()
-              : _formatDate(DateTime.now()), // ✅ FIX #7
-          'transactionDate': _dateController.text.trim().isNotEmpty
-              ? _dateController.text.trim()
+          'date': _medicineDateController.text.trim().isNotEmpty
+              ? _medicineDateController.text.trim()
+              : _formatDate(DateTime.now()), // ✅ CHANGED
+          'transactionDate': _medicineDateController.text.trim().isNotEmpty
+              ? _medicineDateController.text.trim()
               : _formatDate(DateTime.now()),
           'createdAt': DateTime.now().toIso8601String(),
           'medicineName': stockMedicine != null

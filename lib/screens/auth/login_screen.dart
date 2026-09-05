@@ -28,6 +28,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _newPasswordController = TextEditingController();
   final _confirmNewPasswordController = TextEditingController();
   final _forgotPhoneController = TextEditingController();
+  final _forgotEmailController =
+      TextEditingController(); // 🛑 NAYA — Forgot Password email confirmation ke liye
   final _forgotOtpController = TextEditingController();
   final _forgotNewPassController = TextEditingController();
   final _forgotConfirmPassController = TextEditingController();
@@ -93,6 +95,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _newPasswordController.dispose();
     _confirmNewPasswordController.dispose();
     _forgotPhoneController.dispose();
+    _forgotEmailController.dispose(); // 🛑 NAYA
     _forgotOtpController.dispose();
     _forgotNewPassController.dispose();
     _forgotConfirmPassController.dispose();
@@ -248,10 +251,17 @@ class _LoginScreenState extends State<LoginScreen> {
         margin: const EdgeInsets.all(15),
       );
       await Future.delayed(const Duration(milliseconds: 800));
+      // 🛑 NAYA — SubscriptionGate se wrap kiya. Pehle FarmerDashboard
+      // seedha khulta tha, bina subscription check ke — matlab agar
+      // company ka subscription expire ho chuka ho, tab bhi farmer login
+      // kar ke poora access le sakta tha. Ab yahan bhi wahi lock/warning
+      // logic apply hoga jo Owner/Manager ke liye hota hai.
       await AppLockService.instance.routeAfterAuth(
-        FarmerDashboard(
-          ownerName: result.displayName ?? '',
-          companyName: result.companyName ?? '',
+        SubscriptionGate(
+          child: FarmerDashboard(
+            ownerName: result.displayName ?? '',
+            companyName: result.companyName ?? '',
+          ),
         ),
       );
     } catch (e) {
@@ -313,10 +323,14 @@ class _LoginScreenState extends State<LoginScreen> {
         margin: const EdgeInsets.all(15),
       );
       await Future.delayed(const Duration(milliseconds: 800));
+      // 🛑 NAYA — yahan bhi SubscriptionGate se wrap kiya (upar
+      // _submitFarmerPin wali wajah wahi hai).
       await AppLockService.instance.routeAfterAuth(
-        FarmerDashboard(
-          ownerName: result.displayName ?? '',
-          companyName: result.companyName ?? '',
+        SubscriptionGate(
+          child: FarmerDashboard(
+            ownerName: result.displayName ?? '',
+            companyName: result.companyName ?? '',
+          ),
         ),
       );
     } catch (e) {
@@ -331,8 +345,17 @@ class _LoginScreenState extends State<LoginScreen> {
   // ----------------------------------------------------------------
   Future<void> _sendForgotOtp() async {
     final phone = _forgotPhoneController.text.trim();
+    final email = _forgotEmailController.text.trim(); // 🛑 NAYA
+
     if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phone)) {
       _showError('Sahi phone number daalo');
+      return;
+    }
+    // 🛑 NAYA — email bhi zaroori hai ab, phone ke saath cross-verify
+    // karne ke liye.
+    if (email.isEmpty ||
+        !RegExp(r'^[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}$').hasMatch(email)) {
+      _showError('Sahi registered email address daalo');
       return;
     }
 
@@ -353,6 +376,23 @@ class _LoginScreenState extends State<LoginScreen> {
         _showError('Is account ka email record nahi mila.');
         return;
       }
+
+      // 🛑 NAYA — sirf phone number match karna kaafi nahi tha (koi bhi
+      // jisko victim ka phone number pata ho, wo OTP trigger kar sakta
+      // tha — OTP khud victim ke email par jaati thi, lekin "OTP bheja
+      // gaya" wali screen par poora email address bhi dikh jata tha,
+      // jisse phone number se kisi ka email leak ho jata). Ab user ko
+      // apna registered EMAIL bhi type karna hoga — dono (phone + email)
+      // match karne par hi aage badhega. Mismatch par generic error
+      // dete hain, asli email kabhi reveal nahi karte — taaki attacker
+      // ko ye bhi pata na chale ki phone sahi hai ya email galat hai.
+      if (email.toLowerCase() != authEmail.toLowerCase()) {
+        _showError(
+          'Phone number aur email match nahi kar rahe. Dono sahi register kiye hue daalo.',
+        );
+        return;
+      }
+
       _forgotResolvedEmail = authEmail;
 
       if (!mounted) return;
@@ -505,6 +545,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _forgotResolvedEmail = null;
         _forgotResetToken = null;
         _forgotPhoneController.clear();
+        _forgotEmailController.clear(); // 🛑 NAYA
         _forgotOtpController.clear();
         _forgotNewPassController.clear();
         _forgotConfirmPassController.clear();
@@ -525,6 +566,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _forgotResolvedEmail = null;
       _forgotResetToken = null;
       _forgotPhoneController.clear();
+      _forgotEmailController.clear(); // 🛑 NAYA
       _forgotOtpController.clear();
       _forgotNewPassController.clear();
       _forgotConfirmPassController.clear();
@@ -563,7 +605,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       border: Border.all(color: Colors.orange.shade200),
                     ),
                     child: Text(
-                      '⚠️ Sirf Owner aur Personal Farmer apna password reset kar sakte hain.\n\nManager ka password Owner ke paas hota hai.',
+                      // 🛑 NAYA — email bhi confirm karna hoga, isliye
+                      // note update kiya.
+                      '⚠️ Sirf Owner aur Personal Farmer apna password reset kar sakte hain.\n\nManager ka password Owner ke paas hota hai.\n\nSecurity ke liye apna registered phone number AUR email dono daalo — dono match honge tabhi OTP jayega.',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.orange.shade800,
@@ -573,7 +617,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Phone field
+                  // Phone + Email fields
                   if (!_forgotOtpSent) ...[
                     const Text(
                       'Registered Phone Number',
@@ -588,11 +632,45 @@ class _LoginScreenState extends State<LoginScreen> {
                       controller: _forgotPhoneController,
                       keyboardType: TextInputType.phone,
                       maxLength: 10,
-                      textInputAction: TextInputAction.done,
+                      textInputAction: TextInputAction.next,
                       decoration: InputDecoration(
                         hintText: '10 digit mobile number',
                         prefixIcon: const Icon(Icons.phone_rounded),
                         counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(
+                            color: primaryGreen,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // 🛑 NAYA — Email field. Phone ke saath cross-verify
+                    // hota hai (_sendForgotOtp mein) taaki sirf phone
+                    // number jaanne wala koi OTP trigger na kar sake aur
+                    // registered email bhi leak na ho.
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Registered Email',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _forgotEmailController,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.done,
+                      decoration: InputDecoration(
+                        hintText: 'Registered email address',
+                        prefixIcon: const Icon(Icons.email_outlined),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),

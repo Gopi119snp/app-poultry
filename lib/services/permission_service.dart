@@ -934,4 +934,44 @@ class PermissionService {
     if (trialExpiry == null) return true;
     return DateTime.now().isBefore(trialExpiry);
   }
+
+  /// ✅ NEW — Purely informational: account (trial ya paid subscription)
+  /// kitne din mein expire hoga. Ye SubscriptionGate ke non-blocking
+  /// warning banner ke liye hai — koi payment link/UI nahi dikhata, sirf
+  /// count deta hai. Return null jab:
+  ///   - Guest/demo mode ho (koi expiry hi nahi)
+  ///   - Account already 'expired' hai (SubscriptionGate poori tarah lock
+  ///     kar dega, banner ki zaroorat nahi)
+  ///   - Expiry ki koi jaankari hi nahi hai (purani company, field missing)
+  static Future<int?> daysUntilExpiry() async {
+    if (await SessionService.isGuestMode) return null;
+
+    final status = await CompanyStore.instance.getString('subscriptionStatus');
+    if (status == 'expired') return null;
+
+    DateTime? expiry;
+    if (status == 'active') {
+      // Paid plan — subscriptionExpiryMs company_store.dart mein
+      // Firestore ke 'subscriptionExpiry' Timestamp se convert hoke
+      // aata hai (website Cloud Function isse set karta hai).
+      final expiryMs = await CompanyStore.instance.getInt(
+        'subscriptionExpiryMs',
+      );
+      if (expiryMs == null) return null;
+      expiry = DateTime.fromMillisecondsSinceEpoch(expiryMs);
+    } else {
+      // 'trial' ya null status
+      final trialExpiryStr = await CompanyStore.instance.getString(
+        'trialExpiry',
+      );
+      if (trialExpiryStr == null) return null;
+      expiry = DateTime.tryParse(trialExpiryStr);
+    }
+    if (expiry == null) return null;
+
+    final hoursLeft = expiry.difference(DateTime.now()).inHours;
+    if (hoursLeft < 0) return null; // already expired — isAccountActive()
+    // ab false dega, SubscriptionGate poori tarah lock kar dega.
+    return (hoursLeft / 24).ceil();
+  }
 }

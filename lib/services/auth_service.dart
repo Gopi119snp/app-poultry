@@ -96,6 +96,26 @@ class AuthService {
       );
     }
 
+    // 🛑 NAYA — phone-uniqueness check. Pehle ye check kahin nahi tha,
+    // isliye same phone number se baar-baar naya company account ban
+    // jaata tha (jisse login ke time phone_lookup ambiguous ho jaata aur
+    // permission errors aate). Ab Firebase Auth account banane se PEHLE
+    // hi verify karte hain ki ye number kisi aur account (Owner/Manager/
+    // Farmer) se already linked to nahi hai.
+    final normalizedPhone = _normalizePhone(phone);
+    final existingLookup = await CompanyStore.instance.lookupPhone(
+      normalizedPhone,
+    );
+    if (existingLookup != null) {
+      final existingRole = existingLookup['role'] as String? ?? 'account';
+      return AuthResult.fail(
+        'Yeh phone number pehle se register hai ($existingRole ke roop mein). '
+        'Isi number se dobara naya account nahi ban sakta. Agar ye number '
+        'aapka hi hai, to "Forgot Password" se apne purane account mein '
+        'login karo.',
+      );
+    }
+
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
         email: email.trim().toLowerCase(),
@@ -218,6 +238,20 @@ class AuthService {
         companyName: farmerName,
         phone: normalized,
         industry: industry,
+      );
+    }
+
+    // 🛑 NAYA — phone-uniqueness check (registerCompany() jaisa hi wajah).
+    // Auth account banane se PEHLE verify karte hain ki ye number kisi aur
+    // account (Owner/Manager/Farmer) se already linked to nahi hai.
+    final existingLookup = await CompanyStore.instance.lookupPhone(normalized);
+    if (existingLookup != null) {
+      final existingRole = existingLookup['role'] as String? ?? 'account';
+      return AuthResult.fail(
+        'Yeh phone number pehle se register hai ($existingRole ke roop mein). '
+        'Isi number se dobara naya account nahi ban sakta. Agar ye number '
+        'aapka hi hai, to "Forgot Password" se apne purane account mein '
+        'login karo.',
       );
     }
 

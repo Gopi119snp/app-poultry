@@ -75,6 +75,44 @@ String formatDateForBatch(String? rawDate) {
   }
 }
 
+/// ✅ NEW: Common date-picker row — purchase/allocation forms mein "Date"
+/// field ke liye reuse hota hai. Default hamesha AAJ ki date hoti hai;
+/// user tap karke change kar sakta hai.
+Widget buildDatePickerField({
+  required BuildContext context,
+  required DateTime selectedDate,
+  required void Function(DateTime) onChanged,
+  String label = 'Date',
+}) {
+  return InkWell(
+    borderRadius: BorderRadius.circular(10),
+    onTap: () async {
+      final DateTime? picked = await showDatePicker(
+        context: context,
+        initialDate: selectedDate,
+        firstDate: DateTime(2020, 1, 1),
+        lastDate: DateTime.now(),
+      );
+      if (picked != null) onChanged(picked);
+    },
+    child: InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: const Icon(Icons.calendar_today_rounded, size: 18),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 14,
+        ),
+      ),
+      child: Text(
+        '${selectedDate.day.toString().padLeft(2, '0')}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.year}',
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      ),
+    ),
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 📦 STEP 1: ChicksPurchase DATA MODEL
 // ═══════════════════════════════════════════════════════════════════════════
@@ -880,6 +918,9 @@ class _PurchaseExpenseScreenState extends State<PurchaseExpenseScreen> {
     // ADD MODE — New allocations add karna (existing logic unchanged)
     // ─────────────────────────────────────────────────────────────
 
+    // ✅ NEW: Allocation Date — default aaj
+    DateTime selectedAllocDate = DateTime.now();
+
     // Already allocated qty
     double alreadyAllocated = savedAllocations.fold(
       0.0,
@@ -1052,6 +1093,18 @@ class _PurchaseExpenseScreenState extends State<PurchaseExpenseScreen> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+
+                  // ✅ NEW: Allocation Date field
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: buildDatePickerField(
+                      context: context,
+                      selectedDate: selectedAllocDate,
+                      label: 'Allocation Date',
+                      onChanged: (d) =>
+                          setModalState(() => selectedAllocDate = d),
                     ),
                   ),
 
@@ -1968,6 +2021,7 @@ class _PurchaseExpenseScreenState extends State<PurchaseExpenseScreen> {
                                                       .text,
                                                 ) ??
                                                 0.0;
+                                            // NAYA:
                                             f['batches'].add({
                                               'id': newBatchId,
                                               'batchId': newBatchId,
@@ -1979,8 +2033,8 @@ class _PurchaseExpenseScreenState extends State<PurchaseExpenseScreen> {
                                                   (compQty * compRate)
                                                       .toStringAsFixed(2),
                                               'startDate': formatDateForBatch(
-                                                purchaseEntry['date']
-                                                    ?.toString(),
+                                                selectedAllocDate
+                                                    .toIso8601String(), // ✅ CHANGED: purchase date ki jagah allocation date
                                               ),
                                               'status': 'ACTIVE',
                                               'dailyEntries': [],
@@ -2007,7 +2061,7 @@ class _PurchaseExpenseScreenState extends State<PurchaseExpenseScreen> {
                                             0.0,
                                         'paid': 0.0,
                                         'type': 'Company',
-                                        'allocatedOn': DateTime.now()
+                                        'allocatedOn': selectedAllocDate
                                             .toIso8601String(),
                                         'allocatedByName': allocatedByName,
                                         'allocatedByRole': allocatedByRole,
@@ -2046,7 +2100,7 @@ class _PurchaseExpenseScreenState extends State<PurchaseExpenseScreen> {
                                             ) ??
                                             0.0,
                                         'type': 'Private',
-                                        'allocatedOn': DateTime.now()
+                                        'allocatedOn': selectedAllocDate
                                             .toIso8601String(),
                                         'allocatedByName': allocatedByName,
                                         'allocatedByRole': allocatedByRole,
@@ -3301,7 +3355,9 @@ Future<void> addOrUpdateFeedPurchase({
   required String company,
   String addedByName = '',
   String addedByRole = '',
+  DateTime? purchaseDate, // ✅ NEW
 }) async {
+  final DateTime effectiveDate = purchaseDate ?? DateTime.now(); // ✅ NEW
   List<Map<String, dynamic>> stock = await ensureFeedStockMigrated();
   final idx = stock.indexWhere((s) => s['id'] == feedTypeId);
   if (idx == -1) return;
@@ -3320,7 +3376,7 @@ Future<void> addOrUpdateFeedPurchase({
     'company': company,
     'bags': bags,
     'perBagPrice': perBagPrice,
-    'date': DateTime.now().toIso8601String(),
+    'date': effectiveDate.toIso8601String(), // ✅ CHANGED: use selected date
     'addedByName': addedByName,
     'addedByRole': addedByRole,
   });
@@ -3754,6 +3810,7 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
   String? selectedFarmer;
   String? selectedFarmerId;
   bool dropdownVisible = false;
+  DateTime selectedAllocDate = DateTime.now(); // ✅ NEW
 
   final starterQtyCtrl = TextEditingController();
   final starterRateCtrl = TextEditingController(
@@ -3818,6 +3875,15 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // ✅ NEW: Allocation Date — default aaj
+                        buildDatePickerField(
+                          context: context,
+                          selectedDate: selectedAllocDate,
+                          label: 'Allocation Date',
+                          onChanged: (d) =>
+                              setModalState(() => selectedAllocDate = d),
+                        ),
+                        const SizedBox(height: 16),
                         TextField(
                           controller: farmerSearchCtrl,
                           decoration: InputDecoration(
@@ -4128,14 +4194,14 @@ Future<bool?> _showFeedAllocateToFarmerDialog(
                         final String groupId = DateTime.now()
                             .millisecondsSinceEpoch
                             .toString();
-                        final String allocDate = DateTime.now()
+                        final String allocDate = selectedAllocDate
                             .toIso8601String();
 
                         if (linkedBatchId != null && farmerIdxInList >= 0) {
                           final target = farmersForBatch[farmerIdxInList];
                           for (var b in (target['batches'] ?? [])) {
                             if (b['batchId']?.toString() == linkedBatchId) {
-                              final now = DateTime.now();
+                              final DateTime now = selectedAllocDate; // ✅ NEW
                               final dateStr =
                                   '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
                               final int totalBags = (sQty + gQty + fQty)
@@ -5825,7 +5891,9 @@ Future<void> addOrUpdateMedicinePurchase({
   String nickName = '',
   String addedByName = '',
   String addedByRole = '',
+  DateTime? purchaseDate, // ✅ NEW
 }) async {
+  final DateTime effectiveDate = purchaseDate ?? DateTime.now(); // ✅ NEW
   final String? stockJson = await CompanyStore.instance.getString(
     'medicineStockList',
   );
@@ -5871,7 +5939,7 @@ Future<void> addOrUpdateMedicinePurchase({
           'farmerPrice': farmerPrice,
           'perBaseActualCost': perBaseActual,
           'perBaseFarmerRate': perBaseFarmer,
-          'date': DateTime.now().toIso8601String(),
+          'date': effectiveDate.toIso8601String(), // ✅ NEW: use selected date
           'addedByName': addedByName,
           'addedByRole': addedByRole,
         },
@@ -5919,7 +5987,7 @@ Future<void> addOrUpdateMedicinePurchase({
       'farmerPrice': farmerPrice,
       'perBaseActualCost': perBaseActual,
       'perBaseFarmerRate': perBaseFarmer,
-      'date': DateTime.now().toIso8601String(),
+      'date': effectiveDate.toIso8601String(), // ✅ NEW: use selected date
       'addedByName': addedByName,
       'addedByRole': addedByRole,
     });
@@ -7288,6 +7356,7 @@ Future<void> _showAddMoreStockDialog(
   String selectedUnit = baseUnit;
   final TextEditingController actualPriceCtrl = TextEditingController();
   final TextEditingController farmerPriceCtrl = TextEditingController();
+  DateTime selectedPurchaseDate = DateTime.now(); // ✅ NEW
 
   await showDialog(
     context: context,
@@ -7363,6 +7432,15 @@ Future<void> _showAddMoreStockDialog(
                       ),
                     ),
                   ),
+                const SizedBox(height: 12),
+
+                // ✅ NEW: Purchase Date — default aaj
+                buildDatePickerField(
+                  context: ctx2,
+                  selectedDate: selectedPurchaseDate,
+                  label: 'Purchase Date',
+                  onChanged: (d) => setDlg(() => selectedPurchaseDate = d),
+                ),
                 const SizedBox(height: 12),
 
                 // Actual price
@@ -7457,6 +7535,7 @@ Future<void> _showAddMoreStockDialog(
                   farmerPrice: farmerPrice,
                   addedByName: addedByName,
                   addedByRole: addedByRole,
+                  purchaseDate: selectedPurchaseDate, // ✅ NEW
                 );
 
                 Navigator.pop(ctx);
@@ -7493,6 +7572,7 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
   final actualPriceCtrl = TextEditingController();
   final farmerPriceCtrl = TextEditingController();
   String selectedUnit = 'ml';
+  DateTime selectedPurchaseDate = DateTime.now(); // ✅ NEW
 
   await showDialog(
     context: context,
@@ -7590,6 +7670,15 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                         ),
                       );
                     }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // ✅ NEW: Purchase Date — default aaj
+                  buildDatePickerField(
+                    context: ctx2,
+                    selectedDate: selectedPurchaseDate,
+                    label: 'Purchase Date',
+                    onChanged: (d) => setDlg(() => selectedPurchaseDate = d),
                   ),
                   const SizedBox(height: 20),
 
@@ -7730,6 +7819,7 @@ Future<void> showMedicineAddDialog(BuildContext context) async {
                           nickName: nickCtrl.text.trim(),
                           addedByName: addedByName,
                           addedByRole: addedByRole,
+                          purchaseDate: selectedPurchaseDate, // ✅ NEW
                         );
 
                         Navigator.pop(ctx);
@@ -8312,6 +8402,7 @@ Future<void> _showMedicineAllocationDialog(
   final rateCtrl = TextEditingController(
     text: currentFarmerRate > 0 ? currentFarmerRate.toStringAsFixed(2) : '',
   );
+  DateTime selectedAllocDate = DateTime.now(); // ✅ NEW
 
   await showDialog(
     context: context,
@@ -8385,6 +8476,14 @@ Future<void> _showMedicineAllocationDialog(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // ✅ NEW: Allocation Date — default aaj
+                        buildDatePickerField(
+                          context: ctx2,
+                          selectedDate: selectedAllocDate,
+                          label: 'Allocation Date',
+                          onChanged: (d) => setDlg(() => selectedAllocDate = d),
+                        ),
+                        const SizedBox(height: 16),
                         // Farmer search
                         TextField(
                           controller: farmerSearchCtrl,
@@ -8751,7 +8850,8 @@ Future<void> _showMedicineAllocationDialog(
                                   (all[i]['weightedAvgCost'] as num?)
                                       ?.toDouble() ??
                                   0.0,
-                              'allocatedOn': DateTime.now().toIso8601String(),
+                              'allocatedOn': selectedAllocDate
+                                  .toIso8601String(),
                               'allocatedByName': allocByName,
                               'allocatedByRole': allocByRole,
                             });
@@ -9406,6 +9506,7 @@ class _AllocateMedicineToFarmerScreenState
   Map<String, String> _farmerDisplayToId = {}; // ✅ NEW
   bool _dropdownVisible = false;
   List<String> _farmerOptions = [];
+  DateTime _selectedAllocDate = DateTime.now(); // ✅ NEW
 
   // Medicine search — poore lots ki list yahin available rehti hai,
   // lekin form sirf usi medicine ka dikhta hai jise search karke choose kiya ho
@@ -9682,7 +9783,7 @@ class _AllocateMedicineToFarmerScreenState
     final String byName = await SessionService.currentName ?? '';
     final String byRole = await SessionService.currentRole ?? '';
     final String allocId = DateTime.now().millisecondsSinceEpoch.toString();
-    final String allocDate = DateTime.now().toIso8601String();
+    final String allocDate = _selectedAllocDate.toIso8601String();
 
     // Load stock
     final String? sj = await CompanyStore.instance.getString(
@@ -9741,7 +9842,7 @@ class _AllocateMedicineToFarmerScreenState
         final target = farmersForBatch[farmerIdxInList];
         for (var b in (target['batches'] ?? [])) {
           if (b['batchId']?.toString() == linkedBatchId) {
-            final now = DateTime.now();
+            final DateTime now = _selectedAllocDate; // ✅ NEW
             final dateStr =
                 '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
             b['dailyEntries'] ??= [];
@@ -9831,6 +9932,15 @@ class _AllocateMedicineToFarmerScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ✅ NEW: Allocation Date — default aaj
+                  buildDatePickerField(
+                    context: context,
+                    selectedDate: _selectedAllocDate,
+                    label: 'Allocation Date',
+                    onChanged: (d) => setState(() => _selectedAllocDate = d),
+                  ),
+                  const SizedBox(height: 20),
+
                   // ── Farmer search ──
                   const Text(
                     '👨‍🌾 Farmer Select Karein',
