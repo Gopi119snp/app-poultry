@@ -8,6 +8,8 @@ import '../welcome_screen.dart';
 import '../../services/auth_service.dart';
 import '../../services/company_store.dart';
 import '../../services/session_service.dart';
+import '../../widgets/legal_document_dialog.dart'; // 🛑 NAYA — Terms/Privacy in-app viewer
+import '../../utils/legal_text.dart'; // 🛑 NAYA — Terms/Privacy ka poora text
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -381,6 +383,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   return;
                 }
 
+                // 🛑 NAYA — global phone-uniqueness check. Upar wale checks
+                // sirf ISI company ke Owner aur managers ke against dekhte
+                // hain. Lekin niche `createStaffAuthAccount()` seedha global
+                // `phone_lookup` collection ko overwrite kar deta hai — agar
+                // ye number kisi AUR company ke Owner/Personal Farmer/staff
+                // ka pehle se registered hai, to uska login silently hijack
+                // ho jata (bilkul wahi bug jo RAMENDRA FARM/RAM SHRI ke sath
+                // hua tha). Isliye save se pehle global lookup se confirm
+                // karte hain.
+                //
+                // Edit mode mein agar phone number wahi hai jo is manager
+                // (existing) ka pehle se apna registered number tha, to
+                // check skip karte hain — warna khud apna number hi block
+                // ho jayega.
+                final bool isUnchangedOwnNumber =
+                    existing != null && existing['phone'] == inputPhone;
+
+                if (!isUnchangedOwnNumber) {
+                  final existingLookup = await CompanyStore.instance
+                      .lookupPhone(inputPhone);
+                  if (existingLookup != null) {
+                    final linkedRole =
+                        existingLookup['role'] as String? ?? 'kisi account';
+                    _showError(
+                      'Yeh phone number pehle se "$linkedRole" ke roop mein register hai (kisi doosre account se). '
+                      'Isi number se dobara add nahi ho sakta — alag number use karein.',
+                    );
+                    return;
+                  }
+                }
+
                 final managerData = {
                   'name': inputName,
                   'phone': inputPhone,
@@ -589,7 +622,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 16),
+                // 🛑 NAYA — Managers/Company Farmers ko bhi Terms & Privacy
+                // Policy padhne ka access chahiye, sirf Owner ko nahi.
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => LegalDocumentDialog.show(
+                      context,
+                      title: 'Terms & Conditions',
+                      content: kTermsAndConditionsText,
+                    ),
+                    icon: const Icon(Icons.description_outlined, size: 18),
+                    label: const Text('Terms & Privacy Policy Dekho'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primaryGreen,
+                      side: const BorderSide(color: primaryGreen),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -777,6 +833,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Icons.agriculture_rounded,
                   'Module',
                   'Poultry Management',
+                ),
+                _divider(),
+                // 🛑 NAYA — Terms & Conditions aur Privacy Policy ab app ke
+                // andar hi (popup) padhi ja sakti hain, koi website link
+                // nahi khulta.
+                _tappableInfoRow(
+                  Icons.description_outlined,
+                  'Terms & Conditions',
+                  onTap: () => LegalDocumentDialog.show(
+                    context,
+                    title: 'Terms & Conditions',
+                    content: kTermsAndConditionsText,
+                  ),
+                ),
+                _divider(),
+                _tappableInfoRow(
+                  Icons.privacy_tip_outlined,
+                  'Privacy Policy',
+                  onTap: () => LegalDocumentDialog.show(
+                    context,
+                    title: 'Privacy Policy',
+                    content: kPrivacyPolicyText,
+                  ),
                 ),
               ],
             ),
@@ -1226,6 +1305,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // 🛑 NAYA — _infoRow jaisa hi dikhta hai, lekin tappable hai aur ek
+  // chevron-right icon dikhata hai — Terms & Privacy Policy jaise
+  // in-app popup navigation ke liye.
+  Widget _tappableInfoRow(
+    IconData icon,
+    String label, {
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, color: primaryGreen, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.grey.shade400,
+              size: 20,
+            ),
+          ],
+        ),
       ),
     );
   }

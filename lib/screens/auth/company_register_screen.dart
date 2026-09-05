@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart'; // 🛑 NAYA — TapGestureRecognizer ke liye
 import 'package:get/get.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -11,6 +12,8 @@ import '../../services/company_store.dart';
 import '../../services/otp_service.dart';
 import '../../services/app_lock_service.dart';
 import '../../widgets/subscription_gate.dart'; // 🛑 NAYA — SubscriptionGate import
+import '../../widgets/legal_document_dialog.dart'; // 🛑 NAYA — Terms/Privacy in-app viewer
+import '../../utils/legal_text.dart'; // 🛑 NAYA — Terms/Privacy ka poora text
 
 class CompanyRegisterScreen extends StatefulWidget {
   final String industry;
@@ -69,6 +72,10 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
 
   bool _showPassword = false;
   bool _showConfirmPassword = false;
+
+  // 🛑 NAYA — Terms & Privacy Policy compulsory consent. Jab tak ye true
+  // nahi hota, "Complete Registration" button disabled rehta hai.
+  bool _agreedToTerms = false;
 
   // Verification Handling Flags
   bool _otpSent = false;
@@ -456,6 +463,15 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
   }
 
   Future<void> _register() async {
+    // 🛑 NAYA — sabse pehle check karo ki consent diya gaya hai ya nahi.
+    // Ye button ke disabled state se bhi guard hota hai, lekin defensive
+    // double-check yahan bhi rakha hai.
+    if (!_agreedToTerms) {
+      _showError(
+        'Aage badhne ke liye Terms & Conditions aur Privacy Policy accept karna zaroori hai',
+      );
+      return;
+    }
     if (_passwordController.text.length < 6) {
       _showError('Password kam se kam 6 characters ka hona chahiye');
       return;
@@ -910,14 +926,95 @@ class _CompanyRegisterScreenState extends State<CompanyRegisterScreen> {
                                 ),
                         ),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 28),
+                      // 🛑 NAYA — Terms & Privacy Policy compulsory consent.
+                      // Poora text app ke andar hi (popup) dikhta hai, koi
+                      // website link nahi khulta — user "Terms &
+                      // Conditions" ya "Privacy Policy" pe tap karke poora
+                      // text yahin padh sakta hai.
+                      InkWell(
+                        onTap: () {
+                          if (!mounted) return;
+                          setState(() => _agreedToTerms = !_agreedToTerms);
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Checkbox(
+                              value: _agreedToTerms,
+                              activeColor: widget.industryColor,
+                              onChanged: (val) {
+                                if (!mounted) return;
+                                setState(() => _agreedToTerms = val ?? false);
+                              },
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 14),
+                                child: RichText(
+                                  text: TextSpan(
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      color: Colors.black87,
+                                      height: 1.5,
+                                    ),
+                                    children: [
+                                      const TextSpan(text: 'Main '),
+                                      TextSpan(
+                                        text: 'Terms & Conditions',
+                                        style: TextStyle(
+                                          color: widget.industryColor,
+                                          fontWeight: FontWeight.bold,
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                        recognizer: TapGestureRecognizer()
+                                          ..onTap = () {
+                                            LegalDocumentDialog.show(
+                                              context,
+                                              title: 'Terms & Conditions',
+                                              content: kTermsAndConditionsText,
+                                            );
+                                          },
+                                      ),
+                                      const TextSpan(text: ' aur '),
+                                      TextSpan(
+                                        text: 'Privacy Policy',
+                                        style: TextStyle(
+                                          color: widget.industryColor,
+                                          fontWeight: FontWeight.bold,
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                        recognizer: TapGestureRecognizer()
+                                          ..onTap = () {
+                                            LegalDocumentDialog.show(
+                                              context,
+                                              title: 'Privacy Policy',
+                                              content: kPrivacyPolicyText,
+                                            );
+                                          },
+                                      ),
+                                      const TextSpan(
+                                        text:
+                                            ' padh liya hai aur unse sehmat hoon. *',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _register,
+                          onPressed: _agreedToTerms ? _register : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: widget.industryColor,
                             foregroundColor: Colors.white,
+                            disabledBackgroundColor: Colors.grey.shade300,
                             padding: const EdgeInsets.symmetric(vertical: 20),
                             elevation: 4,
                             shadowColor: widget.industryColor.withOpacity(0.3),
