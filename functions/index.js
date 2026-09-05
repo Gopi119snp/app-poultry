@@ -334,6 +334,56 @@ exports.resolvePhoneLookup = functions.https.onCall(async (data, context) => {
 
 /**
  * ============================================================================
+ * resolveFarmerCompany — 🛑 NAYA (Company Farmer login fix)
+ * ============================================================================
+ * Company Farmer login flow mein farmer sirf apna PHONE NUMBER type karta
+ * hai — usse khud apni companyId pata nahi hoti. App ko ye pata karna hota
+ * hai ki ye phone number KAUNSI company ke farmer records mein hai.
+ *
+ * Farmer ka data global `phone_lookup` collection mein NAHI hota (jaan-
+ * boojh kar — taaki farmer ka number kisi Owner/Manager ke phone_lookup ko
+ * overwrite na kar sake). Iski jagah har company apna alag index rakhti hai:
+ * `companies/{companyId}/farmerPhoneIndex/{phone}`.
+ *
+ * Ye function saari companies ke farmerPhoneIndex mein ek collection-group
+ * query se dhundhta hai (Admin SDK, jo Firestore rules bypass karta hai —
+ * client kabhi seedha ye query nahi chala sakta, security ke liye). Sirf
+ * login ke liye zaroori fields hi wapas bhejta hai.
+ */
+exports.resolveFarmerCompany = functions.https.onCall(async (data, context) => {
+  const rawPhone = ((data && data.phone) || "").toString();
+  const phone = rawPhone.replace(/\D/g, "").slice(-10);
+
+  if (!phone || phone.length !== 10) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Sahi 10 digit phone number chahiye."
+    );
+  }
+
+  const db = admin.firestore();
+  const snap = await db
+    .collectionGroup("farmerPhoneIndex")
+    .where("phone", "==", phone)
+    .limit(1)
+    .get();
+
+  if (snap.empty) {
+    return { exists: false };
+  }
+
+  const d = snap.docs[0].data();
+  return {
+    exists: true,
+    companyId: d.companyId || null,
+    farmerId: d.farmerId || null,
+    farmerName: d.farmerName || null,
+    companyName: d.companyName || null,
+  };
+});
+
+/**
+ * ============================================================================
  * ADMIN ACCESS
  * ============================================================================
  */

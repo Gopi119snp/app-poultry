@@ -257,6 +257,15 @@ class CompanyStore {
   /// ✅ Per-company farmer phone index — collection-group query ke liye.
   /// Global registerPhoneLookup() ki tarah overwrite nahi karta, kyunki
   /// har company apna alag doc rakhti hai: companies/{companyId}/farmerPhoneIndex/{phone}
+  ///
+  /// 🛑 FIX — pehle 'phone' field is document mein save hi nahi hoti thi,
+  /// sirf document-ID (normalized phone) ke roop mein store hota tha.
+  /// Isse collection-group query (jo comment mein mention hai) kabhi
+  /// possible hi nahi thi — Firestore collection-group query field-value
+  /// se match karti hai, sirf document-ID se saari companies mein search
+  /// nahi kar sakti bina full path jaane. Ab 'phone' field bhi explicitly
+  /// save karte hain, taaki resolveFarmerCompany Cloud Function ise
+  /// query kar sake (dekho company_store.dart ka lookupFarmerCompany()).
   Future<void> registerFarmerPhoneIndex({
     required String companyId,
     required String phone,
@@ -271,12 +280,48 @@ class CompanyStore {
     await _companyRef(
       companyId,
     ).collection('farmerPhoneIndex').doc(normalized).set({
+      'phone': normalized, // 🛑 FIX — ab query karne layak field bhi hai
       'farmerId': farmerId,
       'farmerName': farmerName,
       'companyId': companyId,
       'companyName': companyName,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  // 🛑 NAYA — Farmer ke phone number se uski company dhundhta hai, saari
+  // companies mein collection-group search karke (Admin SDK ke through,
+  // secure Cloud Function se — client kabhi seedha collection-group query
+  // nahi chalata). Ye farmer login flow (Company Farmer tab) ke liye hai,
+  // jahan farmer ko khud apni companyId pata nahi hoti.
+  Future<Map<String, dynamic>?> lookupFarmerCompany(String phone) async {
+    if (!FirebaseBootstrap.isReady) return null;
+    final normalized = _normalizePhone(phone);
+    if (normalized.isEmpty) return null;
+
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'resolveFarmerCompany',
+      );
+      final result = await callable.call<Map<String, dynamic>>({
+        'phone': normalized,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
+
+      if (data['exists'] != true) return null;
+
+      return {
+        'companyId': data['companyId'],
+        'farmerId': data['farmerId'],
+        'farmerName': data['farmerName'],
+        'companyName': data['companyName'],
+      };
+    } catch (e) {
+      debugPrint(
+        '[CompanyStore] lookupFarmerCompany (resolveFarmerCompany) failed: $e',
+      );
+      return null;
+    }
   }
 
   Future<void> registerStaffMembership({

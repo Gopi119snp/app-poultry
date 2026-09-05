@@ -891,8 +891,16 @@ class AuthService {
     return false;
   }
 
+  // 🛑 FIX — pehle ye bhi global `lookupPhone()` (phone_lookup collection)
+  // call karta tha — lekin farmers jaan-boojh kar us collection mein kabhi
+  // likhe hi nahi jate (taaki unka number kisi Owner/Manager ka phone_lookup
+  // overwrite na kar sake). Isliye ye function farmer ke liye hamesha null
+  // return karta tha, chahe farmer sahi se add kiya gaya ho — Company
+  // Farmer login kabhi kaam hi nahi kar raha tha. Ab `lookupFarmerCompany()`
+  // call karta hai, jo saari companies ke `farmerPhoneIndex` mein secure
+  // collection-group search karta hai (Cloud Function ke through).
   Future<String?> _findCompanyIdForFarmerPhone(String phone) async {
-    final lookup = await CompanyStore.instance.lookupPhone(phone);
+    final lookup = await CompanyStore.instance.lookupFarmerCompany(phone);
     return lookup?['companyId'] as String?;
   }
 
