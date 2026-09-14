@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import 'company_store.dart';
 import 'firebase_bootstrap.dart';
@@ -511,55 +512,35 @@ class AuthService {
   }
 
   // ==========================================================================
-  // COMPANY FARMER LOGIN — NUMBER MATCH + PIN (zero-cost, no OTP/SMS)
+  // COMPANY FARMER LOGIN — NUMBER MATCH + PIN (Cloud Functions ke through,
+  // Admin SDK bypass rules) + Custom Auth Token (taaki farmer bhi properly
+  // Firebase Auth mein "signed in" ho jaye, aur dashboard ki normal
+  // Firestore reads bhi Security Rules pass kar sakein).
   // ==========================================================================
-  //
-  // Kyun: Company Farmer ka number already Office Manager KYC ke through
-  // "trusted" ban chuka hota hai jab wo add_farmer_screen se add karta hai.
-  // Isliye login ke liye dobara OTP verify karwana zaroorat nahi — bas
-  // number match karo, aur ek 4-digit PIN (jo farmer khud pehli baar set
-  // karta hai) se future logins secure karo. Koi SMS/API cost nahi.
-
-  String _hashPin(String pin) => sha256.convert(utf8.encode(pin)).toString();
 
   /// Step 1 — Number check karta hai: kya ye Company Farmer record mein
   /// hai, aur kya uska PIN pehle se set hai (returning farmer) ya nahi
   /// (naya/pehli-baar login — PIN set karwana hoga).
   Future<FarmerPhoneCheckResult> checkCompanyFarmerPhone(String phone) async {
     final normalized = _normalizePhone(phone);
-    String? companyId;
-
     try {
-      if (FirebaseBootstrap.isReady) {
-        final lookup = await CompanyStore.instance.lookupPhone(normalized);
-        companyId = lookup?['companyId'] as String?;
-        companyId ??= await _findCompanyIdForFarmerPhone(normalized);
-        if (companyId != null) {
-          await CompanyStore.instance.activateCompany(companyId);
-        }
-      } else {
-        companyId = await SessionService.companyId;
-      }
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'checkCompanyFarmerPin',
+      );
+      final result = await callable.call<Map<String, dynamic>>({
+        'phone': normalized,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
 
-      if (companyId == null) {
+      if (data['exists'] != true) {
         return FarmerPhoneCheckResult(exists: false, hasPin: false);
       }
-
-      final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-      final match = farmers.where((f) => f['phone'] == normalized).toList();
-
-      if (match.isEmpty) {
-        return FarmerPhoneCheckResult(exists: false, hasPin: false);
-      }
-
-      final hasPin =
-          (match.first['loginPinHash'] as String?)?.isNotEmpty == true;
 
       return FarmerPhoneCheckResult(
         exists: true,
-        hasPin: hasPin,
-        companyId: companyId,
-        farmerName: match.first['name'] as String? ?? '',
+        hasPin: data['hasPin'] == true,
+        companyId: data['companyId'] as String?,
+        farmerName: data['farmerName'] as String? ?? '',
       );
     } catch (e) {
       debugPrint('[checkCompanyFarmerPhone] failed: $e');
@@ -567,11 +548,13 @@ class AuthService {
     }
   }
 
-  /// Step 2a — Pehli baar login: farmer apna 4-digit PIN set karta hai — lekin
-  /// pehle apni Date of Birth confirm karta hai (jo Office Manager ne
-  /// onboarding KYC mein li thi). Isse pakka hota hai ki jo number type
-  /// kar raha hai wahi asli farmer hai — sirf number jaan ke koi random
-  /// insaan PIN hijack nahi kar sakta.
+  /// Step 2a — Pehli baar login: farmer apna 4-digit PIN set karta hai —
+  /// lekin pehle apni Date of Birth confirm karta hai (jo Office Manager
+  /// ne onboarding KYC mein li thi). PIN set karne aur DOB verify karne
+  /// ka kaam ab `setupCompanyFarmerPin` Cloud Function (Admin SDK) karta
+  /// hai, taaki Firestore Security Rules kabhi block na karein. Success
+  /// hone par mila hua Custom Auth Token use karke farmer ko properly
+  /// Firebase Auth mein sign-in karte hain.
   Future<AuthResult> setupCompanyFarmerPin({
     required String companyId,
     required String phone,
@@ -580,55 +563,54 @@ class AuthService {
   }) async {
     try {
       final normalized = _normalizePhone(phone);
-      await CompanyStore.instance.activateCompany(companyId);
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'setupCompanyFarmerPin',
+      );
+      final result = await callable.call<Map<String, dynamic>>({
+        'phone': normalized,
+        'dob': dob,
+        'pin': pin,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
 
-      final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-      final idx = farmers.indexWhere((f) => f['phone'] == normalized);
+      await _auth.signInWithCustomToken(data['customToken'] as String);
 
-      if (idx == -1) {
-        return AuthResult.fail(
-          'Yeh number register nahi hai. Owner se contact karo.',
-        );
-      }
+      final resolvedCompanyId = data['companyId'] as String;
+      await CompanyStore.instance.activateCompany(resolvedCompanyId);
 
-      // ✅ DOB verification — account hijack rokne ke liye. Random insaan
-      // jisko sirf farmer ka number pata hai, wo pehle khud PIN set nahi
-      // kar sakega jab tak use farmer ki DOB bhi na pata ho.
-      final storedDob = (farmers[idx]['dob'] as String?)?.trim() ?? '';
-      if (storedDob.isEmpty || storedDob != dob.trim()) {
-        return AuthResult.fail(
-          'Date of Birth match nahi hui. Sahi jaanam-tithi daalo — ye wahi honi chahiye jo Office Manager ko di thi.',
-        );
-      }
-
-      farmers[idx]['loginPinHash'] = _hashPin(pin);
-      await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
-
-      final profile = await _loadCompanyProfile(companyId);
-      final farmerName = farmers[idx]['name'] as String? ?? '';
+      final farmerName = data['farmerName'] as String? ?? '';
+      final profile = {
+        'ownerName': data['ownerName'] ?? '',
+        'companyName': data['companyName'] ?? '',
+      };
 
       await _finalizeSession(
-        companyId: companyId,
+        companyId: resolvedCompanyId,
         role: 'Company Farmer',
         displayName: farmerName,
         profile: profile,
-        phoneOverride: normalized, // ✅ ADD
+        phoneOverride: normalized,
       );
 
       return AuthResult.ok(
-        companyId: companyId,
+        companyId: resolvedCompanyId,
         role: 'Company Farmer',
         displayName: farmerName,
         ownerName: profile['ownerName'] as String? ?? '',
         companyName: profile['companyName'] as String? ?? '',
       );
+    } on FirebaseFunctionsException catch (e) {
+      return AuthResult.fail(e.message ?? 'PIN set nahi ho paaya.');
     } catch (e) {
       debugPrint('[setupCompanyFarmerPin] failed: $e');
       return AuthResult.fail('PIN set nahi ho paaya: ${e.toString()}');
     }
   }
 
-  /// Step 2b — Returning farmer: number + PIN se login.
+  /// Step 2b — Returning farmer: number + PIN se login. PIN check karne
+  /// ka kaam ab `loginCompanyFarmerWithPin` Cloud Function (Admin SDK)
+  /// karta hai. Success hone par mila hua Custom Auth Token use karke
+  /// farmer ko properly Firebase Auth mein sign-in karte hain.
   Future<AuthResult> loginCompanyFarmerWithPin({
     required String companyId,
     required String phone,
@@ -636,40 +618,43 @@ class AuthService {
   }) async {
     try {
       final normalized = _normalizePhone(phone);
-      await CompanyStore.instance.activateCompany(companyId);
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'loginCompanyFarmerWithPin',
+      );
+      final result = await callable.call<Map<String, dynamic>>({
+        'phone': normalized,
+        'pin': pin,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
 
-      final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-      final idx = farmers.indexWhere((f) => f['phone'] == normalized);
+      await _auth.signInWithCustomToken(data['customToken'] as String);
 
-      if (idx == -1) {
-        return AuthResult.fail(
-          'Yeh number register nahi hai. Owner se contact karo.',
-        );
-      }
+      final resolvedCompanyId = data['companyId'] as String;
+      await CompanyStore.instance.activateCompany(resolvedCompanyId);
 
-      final storedHash = farmers[idx]['loginPinHash'] as String?;
-      if (storedHash == null || storedHash != _hashPin(pin)) {
-        return AuthResult.fail('PIN galat hai');
-      }
-
-      final profile = await _loadCompanyProfile(companyId);
-      final farmerName = farmers[idx]['name'] as String? ?? '';
+      final farmerName = data['farmerName'] as String? ?? '';
+      final profile = {
+        'ownerName': data['ownerName'] ?? '',
+        'companyName': data['companyName'] ?? '',
+      };
 
       await _finalizeSession(
-        companyId: companyId,
+        companyId: resolvedCompanyId,
         role: 'Company Farmer',
         displayName: farmerName,
         profile: profile,
-        phoneOverride: normalized, // ✅ ADD
+        phoneOverride: normalized,
       );
 
       return AuthResult.ok(
-        companyId: companyId,
+        companyId: resolvedCompanyId,
         role: 'Company Farmer',
         displayName: farmerName,
         ownerName: profile['ownerName'] as String? ?? '',
         companyName: profile['companyName'] as String? ?? '',
       );
+    } on FirebaseFunctionsException catch (e) {
+      return AuthResult.fail(e.message ?? 'Login nahi ho paaya.');
     } catch (e) {
       debugPrint('[loginCompanyFarmerWithPin] failed: $e');
       return AuthResult.fail('Login nahi ho paaya: ${e.toString()}');
@@ -680,7 +665,9 @@ class AuthService {
   /// Manager/Owner ki zaroorat nahi. Farmer apni **Date of Birth**
   /// confirm karta hai (jo onboarding ke time Office Manager ne KYC mein
   /// li thi) — match hone par naya PIN set ho jata hai aur farmer seedha
-  /// login bhi ho jata hai.
+  /// login bhi ho jata hai. Ab ye kaam `resetCompanyFarmerPinWithDob`
+  /// Cloud Function (Admin SDK) karta hai, taaki Firestore Security Rules
+  /// kabhi block na karein.
   Future<AuthResult> resetFarmerPinWithDob({
     required String companyId,
     required String phone,
@@ -689,45 +676,44 @@ class AuthService {
   }) async {
     try {
       final normalized = _normalizePhone(phone);
-      await CompanyStore.instance.activateCompany(companyId);
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'resetCompanyFarmerPinWithDob',
+      );
+      final result = await callable.call<Map<String, dynamic>>({
+        'phone': normalized,
+        'dob': dob,
+        'newPin': newPin,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
 
-      final farmers = await CompanyStore.instance.getJsonList('companyFarmers');
-      final idx = farmers.indexWhere((f) => f['phone'] == normalized);
+      await _auth.signInWithCustomToken(data['customToken'] as String);
 
-      if (idx == -1) {
-        return AuthResult.fail(
-          'Yeh number register nahi hai. Owner se contact karo.',
-        );
-      }
+      final resolvedCompanyId = data['companyId'] as String;
+      await CompanyStore.instance.activateCompany(resolvedCompanyId);
 
-      final storedDob = (farmers[idx]['dob'] as String?)?.trim() ?? '';
-      if (storedDob.isEmpty || storedDob != dob.trim()) {
-        return AuthResult.fail(
-          'Date of Birth match nahi hui. Sahi jaanam-tithi daalo — ye wahi honi chahiye jo Office Manager ko di thi.',
-        );
-      }
-
-      farmers[idx]['loginPinHash'] = _hashPin(newPin);
-      await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
-
-      final profile = await _loadCompanyProfile(companyId);
-      final farmerName = farmers[idx]['name'] as String? ?? '';
+      final farmerName = data['farmerName'] as String? ?? '';
+      final profile = {
+        'ownerName': data['ownerName'] ?? '',
+        'companyName': data['companyName'] ?? '',
+      };
 
       await _finalizeSession(
-        companyId: companyId,
+        companyId: resolvedCompanyId,
         role: 'Company Farmer',
         displayName: farmerName,
         profile: profile,
-        phoneOverride: normalized, // ✅ ADD
+        phoneOverride: normalized,
       );
 
       return AuthResult.ok(
-        companyId: companyId,
+        companyId: resolvedCompanyId,
         role: 'Company Farmer',
         displayName: farmerName,
         ownerName: profile['ownerName'] as String? ?? '',
         companyName: profile['companyName'] as String? ?? '',
       );
+    } on FirebaseFunctionsException catch (e) {
+      return AuthResult.fail(e.message ?? 'PIN reset nahi ho paaya.');
     } catch (e) {
       debugPrint('[resetFarmerPinWithDob] failed: $e');
       return AuthResult.fail('PIN reset nahi ho paaya: ${e.toString()}');
@@ -738,7 +724,9 @@ class AuthService {
   /// data record ho gaya ho, tab Office Manager/Owner (farmer_profile
   /// screen mein "Reset Farmer PIN" button se) ye emergency-override use
   /// kar sakte hain — bas PIN clear karega, farmer agli baar phir DOB se
-  /// khud naya PIN bana lega.
+  /// khud naya PIN bana lega. Ye call hamesha Owner/Manager ke already
+  /// signed-in session se hota hai, isliye seedha Firestore read/write
+  /// yahan sahi hai (Security Rules pass ho jaati hain).
   Future<void> resetCompanyFarmerPin({
     required String companyId,
     required String phone,

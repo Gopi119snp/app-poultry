@@ -1780,3 +1780,265 @@ exports.checkExpiredSubscriptions = functions.pubsub
       }
     }
   });
+
+/**
+ * ============================================================================
+ * COMPANY FARMER PIN LOGIN — Secure server-side (Admin SDK) versions
+ * ============================================================================
+ * Pehle ye saara kaam (companyFarmers padhna/likhna) client se seedha
+ * Firestore se hota tha. Lekin farmer kabhi Firebase Auth se sign-in nahi
+ * karta (sirf phone+PIN), isliye security rules (jo "isSignedIn()" maangti
+ * hain) hamesha permission-denied deti thi. Ab ye saara kaam Admin SDK se
+ * (rules bypass karke) yahan hota hai, aur login safal hone par ek Firebase
+ * Custom Auth Token banate hain — taaki client `signInWithCustomToken()`
+ * call karke properly "signed in" ho jaye, aur uske baad dashboard ki saari
+ * normal Firestore reads (jo rules maangti hain) bhi kaam karein.
+ */
+
+function hashFarmerPin(pin) {
+  return crypto.createHash("sha256").update(pin).digest("hex");
+}
+
+async function ensureFarmerAuthUser({ companyId, phone, displayName }) {
+  const uid = `farmer_${companyId}_${phone}`;
+  try {
+    await admin.auth().getUser(uid);
+  } catch (e) {
+    await admin.auth().createUser({ uid, displayName: displayName || undefined });
+  }
+  await admin.firestore().collection("users").doc(uid).set(
+    {
+      companyId,
+      role: "Company Farmer",
+      phone,
+      displayName: displayName || null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  return uid;
+}
+
+async function findFarmerCompanyId(db, phone) {
+  const idxSnap = await db
+    .collectionGroup("farmerPhoneIndex")
+    .where("phone", "==", phone)
+    .limit(1)
+    .get();
+  if (idxSnap.empty) return null;
+  return idxSnap.docs[0].data().companyId;
+}
+
+exports.checkCompanyFarmerPin = functions.https.onCall(async (data) => {
+  const phone = ((data && data.phone) || "").toString().replace(/\D/g, "").slice(-10);
+  console.log("[checkCompanyFarmerPin] incoming phone:", phone);
+
+  if (phone.length !== 10) {
+    throw new functions.https.HttpsError("invalid-argument", "Sahi phone number chahiye.");
+  }
+
+  const db = admin.firestore();
+  const companyId = await findFarmerCompanyId(db, phone);
+  console.log("[checkCompanyFarmerPin] found companyId:", companyId);
+
+  if (!companyId) return { exists: false };
+
+  const mainSnap = await db.collection("companies").doc(companyId).collection("data").doc("main").get();
+  console.log("[checkCompanyFarmerPin] main doc exists:", mainSnap.exists);
+
+  let farmers = [];
+  try {
+    farmers = JSON.parse((mainSnap.data() || {}).companyFarmers || "[]");
+  } catch (e) {
+    console.log("[checkCompanyFarmerPin] JSON parse failed:", e.message);
+  }
+  console.log("[checkCompanyFarmerPin] farmers count:", farmers.length);
+  console.log("[checkCompanyFarmerPin] farmers phones:", farmers.map((f) => f.phone));
+
+  const farmer = farmers.find((f) => f.phone === phone);
+  console.log("[checkCompanyFarmerPin] matched farmer:", farmer ? farmer.name : "NONE");
+
+  if (!farmer) return { exists: false };
+
+  return {
+    exists: true,
+    hasPin: !!farmer.loginPinHash,
+    companyId,
+    farmerName: farmer.name || "",
+  };
+});
+
+/**
+ * 🐞 DEBUG BUILD — inme try...catch add kiya gaya hai jo asli crash
+ * error ko HttpsError("unknown", ...) ke through screen/console par
+ * bhej dega. Isse pata chal jayega backend mein exact kya fail ho raha
+ * hai (jaise field name galat, ya kuch aur).
+ */
+exports.setupCompanyFarmerPin = functions.https.onCall(async (data) => {
+  try {
+    const phone = ((data && data.phone) || "").toString().replace(/\D/g, "").slice(-10);
+    const dob = ((data && data.dob) || "").toString().trim();
+    const pin = ((data && data.pin) || "").toString().trim();
+
+    if (phone.length !== 10 || pin.length !== 4) {
+      throw new functions.https.HttpsError("invalid-argument", "Phone aur 4-digit PIN chahiye.");
+    }
+
+    const db = admin.firestore();
+    const companyId = await findFarmerCompanyId(db, phone);
+    if (!companyId) {
+      throw new functions.https.HttpsError("not-found", "Yeh number register nahi hai.");
+    }
+
+    const mainRef = db.collection("companies").doc(companyId).collection("data").doc("main");
+    const mainSnap = await mainRef.get();
+    let farmers = [];
+    try {
+      farmers = JSON.parse((mainSnap.data() || {}).companyFarmers || "[]");
+    } catch (_) {}
+
+    const idx = farmers.findIndex((f) => f.phone === phone);
+    if (idx === -1) {
+      throw new functions.https.HttpsError("not-found", "Yeh number register nahi hai.");
+    }
+
+    const storedDob = (farmers[idx].dob || "").toString().trim();
+    if (!storedDob || storedDob !== dob) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Date of Birth match nahi hui. (Aapne daala: " + dob + ", Record mein hai: " + storedDob + ")"
+      );
+    }
+
+    farmers[idx].loginPinHash = hashFarmerPin(pin);
+    await mainRef.set({ companyFarmers: JSON.stringify(farmers) }, { merge: true });
+
+    const companyProfileSnap = await db.collection("companies").doc(companyId).get();
+    const companyProfile = companyProfileSnap.exists ? companyProfileSnap.data() : {};
+
+    const uid = await ensureFarmerAuthUser({ companyId, phone, displayName: farmers[idx].name });
+    const customToken = await admin.auth().createCustomToken(uid, { companyId, role: "Company Farmer" });
+
+    return {
+      success: true,
+      customToken,
+      companyId,
+      farmerName: farmers[idx].name || "",
+      ownerName: companyProfile.ownerName || "",
+      companyName: companyProfile.companyName || "",
+    };
+  } catch (err) {
+    console.error("Crash details:", err);
+    if (err instanceof functions.https.HttpsError) throw err;
+    // NAYA: Ye line backend crash ka asli karan aapke phone screen par bhejegiya!
+    throw new functions.https.HttpsError("unknown", "Asli Error: " + err.message);
+  }
+});
+
+exports.loginCompanyFarmerWithPin = functions.https.onCall(async (data) => {
+  try {
+    const phone = ((data && data.phone) || "").toString().replace(/\D/g, "").slice(-10);
+    const pin = ((data && data.pin) || "").toString().trim();
+
+    if (phone.length !== 10 || pin.length !== 4) {
+      throw new functions.https.HttpsError("invalid-argument", "Phone aur 4-digit PIN chahiye.");
+    }
+
+    const db = admin.firestore();
+    const companyId = await findFarmerCompanyId(db, phone);
+    if (!companyId) {
+      throw new functions.https.HttpsError("not-found", "Yeh number register nahi hai.");
+    }
+
+    const mainRef = db.collection("companies").doc(companyId).collection("data").doc("main");
+    const mainSnap = await mainRef.get();
+    let farmers = [];
+    try {
+      farmers = JSON.parse((mainSnap.data() || {}).companyFarmers || "[]");
+    } catch (_) {}
+    const farmer = farmers.find((f) => f.phone === phone);
+    if (!farmer) {
+      throw new functions.https.HttpsError("not-found", "Yeh number register nahi hai.");
+    }
+
+    if (!farmer.loginPinHash || farmer.loginPinHash !== hashFarmerPin(pin)) {
+      throw new functions.https.HttpsError("permission-denied", "PIN galat hai.");
+    }
+
+    const companyProfileSnap = await db.collection("companies").doc(companyId).get();
+    const companyProfile = companyProfileSnap.exists ? companyProfileSnap.data() : {};
+
+    const uid = await ensureFarmerAuthUser({ companyId, phone, displayName: farmer.name });
+    const customToken = await admin.auth().createCustomToken(uid, { companyId, role: "Company Farmer" });
+
+    return {
+      success: true,
+      customToken,
+      companyId,
+      farmerName: farmer.name || "",
+      ownerName: companyProfile.ownerName || "",
+      companyName: companyProfile.companyName || "",
+    };
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) throw err;
+    throw new functions.https.HttpsError("unknown", "Asli Error: " + err.message);
+  }
+});
+
+exports.resetCompanyFarmerPinWithDob = functions.https.onCall(async (data) => {
+  try {
+    const phone = ((data && data.phone) || "").toString().replace(/\D/g, "").slice(-10);
+    const dob = ((data && data.dob) || "").toString().trim();
+    const newPin = ((data && data.newPin) || "").toString().trim();
+
+    if (phone.length !== 10 || newPin.length !== 4) {
+      throw new functions.https.HttpsError("invalid-argument", "Phone aur naya 4-digit PIN chahiye.");
+    }
+
+    const db = admin.firestore();
+    const companyId = await findFarmerCompanyId(db, phone);
+    if (!companyId) {
+      throw new functions.https.HttpsError("not-found", "Yeh number register nahi hai.");
+    }
+
+    const mainRef = db.collection("companies").doc(companyId).collection("data").doc("main");
+    const mainSnap = await mainRef.get();
+    let farmers = [];
+    try {
+      farmers = JSON.parse((mainSnap.data() || {}).companyFarmers || "[]");
+    } catch (_) {}
+    const idx = farmers.findIndex((f) => f.phone === phone);
+    if (idx === -1) {
+      throw new functions.https.HttpsError("not-found", "Yeh number register nahi hai.");
+    }
+
+    const storedDob = (farmers[idx].dob || "").toString().trim();
+    if (!storedDob || storedDob !== dob) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Date of Birth match nahi hui. (Aapne daala: " + dob + ", Record mein hai: " + storedDob + ")"
+      );
+    }
+
+    farmers[idx].loginPinHash = hashFarmerPin(newPin);
+    await mainRef.set({ companyFarmers: JSON.stringify(farmers) }, { merge: true });
+
+    const companyProfileSnap = await db.collection("companies").doc(companyId).get();
+    const companyProfile = companyProfileSnap.exists ? companyProfileSnap.data() : {};
+
+    const uid = await ensureFarmerAuthUser({ companyId, phone, displayName: farmers[idx].name });
+    const customToken = await admin.auth().createCustomToken(uid, { companyId, role: "Company Farmer" });
+
+    return {
+      success: true,
+      customToken,
+      companyId,
+      farmerName: farmers[idx].name || "",
+      ownerName: companyProfile.ownerName || "",
+      companyName: companyProfile.companyName || "",
+    };
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) throw err;
+    throw new functions.https.HttpsError("unknown", "Asli Error: " + err.message);
+  }
+});

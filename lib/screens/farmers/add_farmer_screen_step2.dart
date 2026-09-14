@@ -189,7 +189,7 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
 
     final ifsc = _ifscController.text.trim().toUpperCase();
     if (ifsc.length != 11 || !RegExp(r'^[A-Z]{4}[A-Z0-9]{7}$').hasMatch(ifsc)) {
-      _showError('IFSC code 11 characters ka hona chahiye — e.g. UCBA0632884');
+      _showError('IFSC code 11 characters ka hona chahiye');
       return;
     }
 
@@ -237,9 +237,8 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
       );
       return;
     }
-    // ──────────────────────────────────────────
 
-    // ✅ NAYA: Farmer ka readable unique ID generate karo (company-scoped).
+    // NAYA: Farmer ka readable unique ID generate karo
     final farmerName = (widget.step1Data['name'] ?? '').toString();
     final farmerUniqueId = await _generateFarmerUniqueId(
       farmerName: farmerName,
@@ -257,7 +256,7 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
       'hasPhoto': _farmerPhotoFile != null,
       'hasSignature': _signaturePhotoFile != null,
       'id': DateTime.now().millisecondsSinceEpoch.toString(),
-      'farmerId': farmerUniqueId, // ✅ NAYA — readable unique Farmer ID
+      'farmerId': farmerUniqueId,
       'registeredOn': DateTime.now().toIso8601String(),
       'status': 'active',
     };
@@ -265,40 +264,38 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
     farmers.add(farmerData);
     await CompanyStore.instance.saveJsonList('companyFarmers', farmers);
 
-    // 🛑 NAYA CODE: Activity Logger for Add Farmer
     ActivityLogger.log(
       actionType: 'ADD',
       module: 'Farmer',
       message:
-          'Naya farmer "${widget.step1Data['name']}" system mein register kiya gaya (ID: $farmerUniqueId).',
+          'Naya farmer "$farmerName" system mein register kiya gaya (ID: $farmerUniqueId).',
     );
-    // 🛑 END NAYA CODE
 
-    // 🛑 FIX: Ye Firestore wali network call try-catch mein le li hai.
-    // Farmer ka data upar already local storage mein save ho chuka hai —
-    // agar ye phone-index wali call slow ho, fail ho jaaye, ya koi
-    // exception de (internet issue, permission, etc.), to bhi registration
-    // process atakna nahi chahiye. Pehle ye call bina try-catch ke thi,
-    // isliye agar ye fail/hang hoti thi to neeche wali setState(false)
-    // line kabhi chalti hi nahi thi — button hamesha spin karta reh jaata
-    // tha, jabki farmer already save ho chuka hota tha.
+    // 🔥 MAIN FIX: Index creation with explicit error checking
     try {
       final companyId = await SessionService.companyId;
-      if (companyId != null) {
-        final companyName = await SessionService.companyName ?? '';
-        await CompanyStore.instance.registerFarmerPhoneIndex(
-          companyId: companyId,
-          phone: phone as String,
-          farmerId: farmerData['id'] as String,
-          farmerName: widget.step1Data['name'] as String? ?? '',
-          companyName: companyName,
-        );
+      if (companyId == null || companyId.isEmpty) {
+        _showError('Company ID nahi mila! Index create nahi ho saka.');
+        setState(() => _isLoading = false);
+        return;
       }
+
+      final companyName = await SessionService.companyName ?? '';
+      await CompanyStore.instance.registerFarmerPhoneIndex(
+        companyId: companyId,
+        phone: phone.toString(),
+        farmerId: farmerData['id'].toString(),
+        farmerName: farmerName,
+        companyName: companyName,
+      );
+
+      debugPrint('✅ Farmer index successfully created for: $phone');
     } catch (e) {
-      // Farmer ka record already save ho chuka hai — sirf uska
-      // phone-search index nahi ban paya. Silently log karo, user
-      // ka flow rokna zaroori nahi.
-      debugPrint('registerFarmerPhoneIndex failed (non-fatal): $e');
+      debugPrint('❌ registerFarmerPhoneIndex failed: $e');
+      setState(() => _isLoading = false);
+      // Ab koi bhi problem hogi toh ye aapko saaf-saaf error dikhayega!
+      _showError('Backend Index Error: $e');
+      return;
     }
 
     if (!mounted) return;
@@ -306,7 +303,7 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
 
     Get.snackbar(
       '✅ Farmer Registered!',
-      '${widget.step1Data['name']} ka profile ban gaya! ID: $farmerUniqueId',
+      '$farmerName ka profile ban gaya! ID: $farmerUniqueId',
       backgroundColor: primaryGreen,
       colorText: Colors.white,
       snackPosition: SnackPosition.BOTTOM,
@@ -314,11 +311,9 @@ class _AddFarmerScreenStep2State extends State<AddFarmerScreenStep2> {
       margin: const EdgeInsets.all(15),
     );
 
-    // ── FIX: Direct Farmers list pe wapas (Using Native Navigator to bypass open GetX snackbars overlay context) ──────
     await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
 
-    // NATIVE POP: Yeh GetX ke open overlays se atke bina direct Step 2 ko pop kar ke Step 1 ko signal bhej dega
     Navigator.of(context).pop(true);
   }
 

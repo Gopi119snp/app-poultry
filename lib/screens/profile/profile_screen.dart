@@ -10,6 +10,7 @@ import '../../services/company_store.dart';
 import '../../services/session_service.dart';
 import '../../widgets/legal_document_dialog.dart'; // 🛑 NAYA — Terms/Privacy in-app viewer
 import '../../utils/legal_text.dart'; // 🛑 NAYA — Terms/Privacy ka poora text
+import 'account_settings_screen.dart'; // 🛑 NAYA — Delete Account ab yahan nested hai
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -25,6 +26,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _companyName = '';
   String _phone = '';
   String _industry = '';
+  String _companyId = ''; // 🛑 NAYA — account deletion call ke liye zaroori
   String _profileImagePath = ''; // Image path store karne ke liye
   String _ownerSignatureBase64 =
       ''; // Owner signature, base64 mein CompanyStore se
@@ -72,6 +74,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _companyName = await SessionService.companyName ?? '';
     _phone = await SessionService.phone ?? '';
     _industry = await SessionService.industry ?? 'Poultry';
+    _companyId = await SessionService.companyId ?? ''; // 🛑 NAYA
 
     final prefs = await SharedPreferences.getInstance();
     _profileImagePath = prefs.getString('profileImagePath') ?? '';
@@ -646,6 +649,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
+                // 🛑 NAYA — Delete/Request-deletion ab is nested screen mein
+                // hai, Profile ka main view saaf rakhne ke liye.
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AccountSettingsScreen(
+                          isOwner: false,
+                          companyName: _companyName,
+                          phone: _phone,
+                          currentUserName: _currentUserName,
+                          currentUserRole: _currentUserRole,
+                          companyId: _companyId,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.manage_accounts_outlined, size: 18),
+                    label: const Text('Account Settings'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.grey.shade700,
+                      side: BorderSide(color: Colors.grey.shade300),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -855,6 +889,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     context,
                     title: 'Privacy Policy',
                     content: kPrivacyPolicyText,
+                  ),
+                ),
+                _divider(),
+                // 🛑 NAYA — "Delete My Account" ab is nested screen ke
+                // andar hai, taaki Profile ka main view roz-marra use hone
+                // wali cheezon (managers list, waghera) ke saath ek
+                // destructive action na dikhaye.
+                _tappableInfoRow(
+                  Icons.manage_accounts_outlined,
+                  'Account Settings',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AccountSettingsScreen(
+                        isOwner: true,
+                        companyName: _companyName,
+                        phone: _phone,
+                        currentUserName: _ownerName,
+                        currentUserRole: 'Owner',
+                        companyId: _companyId,
+                      ),
+                    ),
                   ),
                 ),
               ],
